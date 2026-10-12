@@ -460,7 +460,10 @@ async function handleCommand(u, cmd, arg, say, ensureCb) {
       const cfgKey = TOGGLES[cmd];
       const a = arg.toLowerCase();
       if (a !== "on" && a !== "off") {
-        await say(`Pakai: ${cmd} on  atau  ${cmd} off. Status lengkap: /atur`);
+        // Tanpa on/off yang valid: langsung kasih tombol /atur biar gak perlu ngetik ulang
+        if (ensureCb) await ensureCb();
+        const v = await aturView(u);
+        await say(v.text, { reply_markup: v.reply_markup });
         return;
       }
       await redis("HSET", key(u, "cfg"), cfgKey, a);
