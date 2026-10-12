@@ -881,7 +881,7 @@ async function recapText(u, interactive = false) {
   const week = all.filter((e) => e.ts >= weekStart);
   const month = all.filter((e) => e.ts >= monthStart);
   if (!month.length) {
-    return { text: "Belum ada pengeluaran tercatat bulan ini. Coba ketik: makan siang 25rb", weekCount: 0, monthCount: 0 };
+    return { text: "💰 Pengeluaran\n\nBelum ada pengeluaran tercatat bulan ini.\n\nCara mencatat, ketik:\n  makan siang 25rb\n  bensin 50rb", weekCount: 0, monthCount: 0 };
   }
   const bw = breakdown(week), bm = breakdown(month);
   const base = Math.max(0, month.length - 8); // nomor = urutan di bulan ini, dipakai /hapusbeli N
