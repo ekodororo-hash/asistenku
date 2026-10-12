@@ -1,6 +1,6 @@
 // Webhook bot Telegram: /api/telegram
 const {
-  HOURS, BTN, redis, key, getBot, saveBot, sendTelegram, downloadTelegramFile, gemini, trimHist,
+  HOURS, BTN, redis, key, getBot, saveBot, sendTelegram, downloadTelegramFile, gemini, geminiSearch, sourceLine, trimHist,
   fmtWib, wib, rupiah, cfgOn, getLocation, setLocation, getWeather, getNews,
   recapText, deleteExpenseNumber, loadContext, buildSystem,
   getTasks, addTask, toggleTask, deleteTask, unlinkTaskReminder, parseWib, fmtDue,
@@ -30,6 +30,7 @@ const START_TEXT =
   "/cuaca  /lokasi kota  /berita topik\n" +
   "/memori  /lupakan  /atur\n\n" +
   `Otomatis: ringkasan pagi, check-in malam, dan rekap pengeluaran mingguan. Atur di /atur.\n` +
+  "Tanya info terkini (jadwal bola, harga, berita, dll) juga bisa, aku cari otomatis di Google.\n" +
   "Aku mengingat hal-hal penting tentangmu supaya ngobrolnya nyambung. Lihat dengan /memori, hapus dengan /lupakan.\n\n" +
   "Tugas, catatan, uang, dan obrolan di sini sama persis dengan yang ada di web. Pesan yang kamu tulis di web juga disalin ke sini (matikan dengan /salin off).";
 
@@ -543,7 +544,8 @@ module.exports = async (req, res) => {
       };
     }
 
-    const raw = await gemini(u, buildSystem(mode, ctx), contents);
+    const found = await geminiSearch(u, buildSystem(mode, ctx), contents);
+    const raw = found.text;
     const { clean, notes } = await processTags(u, raw);
     const reply = clean || (notes.length ? "" : "(tidak ada jawaban)");
 
@@ -551,7 +553,7 @@ module.exports = async (req, res) => {
     await redis("SET", key(u, "hist"), JSON.stringify(hist.slice(-30)));
 
     const echo = voice && mode !== "curhat" ? `🎙️ "${text}"\n\n` : "";
-    await say(echo + [reply, ...notes].filter(Boolean).join("\n\n"));
+    await say(echo + [reply, ...notes, sourceLine(found.sources)].filter(Boolean).join("\n\n"));
   } catch (e) {
     try { await say("Maaf, ada error: " + e.message); } catch {}
   }
