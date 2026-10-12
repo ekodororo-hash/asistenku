@@ -4,7 +4,7 @@ const {
   fmtWib, wib, rupiah, cfgOn, getLocation, setLocation, getWeather, getNews,
   recapText, deleteExpenseNumber, incomeListText, deleteIncomeNumber, loadContext, buildSystem,
   getTasks, addTask, toggleTask, deleteTask, unlinkTaskReminder, parseWib, fmtDue,
-  addNote, addExpense, addIncome, setSaldo, addOutsideMoney, fmtDateShort,
+  addNote, addExpense, addIncome, setSaldo, addOutsideMoney, fmtDateShort, mentionsAmount,
   sendTransfer, acceptTransfer, declineTransfer, handlePartnerIncome, answerDupMasuk,
   getMode, switchMode, takeCurhatExpiredNotice, getHist, saveHist, clearHist, loadCurhatContext, buildCurhatSystem, stripTags,
 } = require("./_lib");
@@ -438,8 +438,9 @@ async function handleCommand(u, cmd, arg, say, ensureCb) {
 }
 
 // ---------- Tag dari Gemini ----------
-async function processTags(u, reply, userText = "") {
+async function processTags(u, reply, userText = "", hasImage = false) {
   const remindOk = REMIND_INTENT.test(userText);
+  const amountOk = hasImage || mentionsAmount(userText); // struk/foto boleh tanpa angka di teks
   const notes = [];
 
   // Tugas/checklist (boleh dengan jam -> otomatis jadi pengingat terhubung)
@@ -476,14 +477,14 @@ async function processTags(u, reply, userText = "") {
   if (savedFacts) await redis("LTRIM", key(u, "facts"), -40, -1);
 
   // Pengeluaran
-  for (const m of reply.matchAll(/\[\[BELI:\s*([^|\]]+?)\s*\|\s*([^|\]]+?)\s*\|\s*([^\]]*?)\s*\]\]/g)) {
+  for (const m of amountOk ? [...reply.matchAll(/\[\[BELI:\s*([^|\]]+?)\s*\|\s*([^|\]]+?)\s*\|\s*([^\]]*?)\s*\]\]/g)] : []) {
     const amt = Number(String(m[1]).replace(/[^\d]/g, ""));
     const e = await addExpense(u, amt, m[2].trim(), m[3].trim());
     if (e) notes.push("💰 Dicatat: " + rupiah(e.amt) + " (" + e.cat + ")" + (e.note ? " - " + e.note : ""));
   }
 
   // Pemasukan
-  for (const m of reply.matchAll(/\[\[MASUK:\s*([^|\]]+?)\s*\|\s*([^|\]]+?)\s*\|\s*([^\]]*?)\s*\]\]/g)) {
+  for (const m of amountOk ? [...reply.matchAll(/\[\[MASUK:\s*([^|\]]+?)\s*\|\s*([^|\]]+?)\s*\|\s*([^\]]*?)\s*\]\]/g)] : []) {
     const amt = Number(String(m[1]).replace(/[^\d]/g, ""));
     const e = await addIncome(u, amt, m[2].trim(), m[3].trim());
     if (e) notes.push("💵 Pemasukan dicatat: " + rupiah(e.amt) + " (" + e.cat + ")" + (e.note ? " - " + e.note : ""));
@@ -760,7 +761,7 @@ module.exports = async (req, res) => {
 
     const found = await geminiSearch(u, buildSystem(mode, ctx), contents);
     const raw = found.text;
-    const { clean, notes } = await processTags(u, raw, text);
+    const { clean, notes } = await processTags(u, raw, text, !!image);
     const reply = clean || (notes.length ? "" : "(tidak ada jawaban)");
 
     hist.push({ role: "model", parts: [{ text: [reply, ...notes].filter(Boolean).join("\n\n") || "(dicatat)" }], ts: Date.now() }); // sertakan hasil tag: tanda bahwa permintaan sudah selesai

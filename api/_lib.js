@@ -1422,6 +1422,13 @@ async function unlinkPartner(u) {
   return linkStatus(u);
 }
 
+// Pesan pengguna menyebut nominal uang? Gemini kadang mengulang tag BELI/MASUK dari riwayat obrolan
+// (mis. saat pengguna cuma bilang "boros banget" atau kirim emoji), jadi pengeluaran tercatat dobel.
+// Tag BELI/MASUK hanya diproses kalau pesan itu sendiri menyebut angka.
+function mentionsAmount(text) {
+  return /\d|\b(seribu|ribu|rb|juta|jt|setengah|sejuta|goceng|ceban|gopek|cepek)\b/i.test(String(text || ""));
+}
+
 // Keterangan kiriman dari Gemini sering cuma mengulang kalimat pengguna ("kirim ke risma").
 // Itu dibuang: sudah tercantum otomatis ("kirim ke <nama>" di pengirim, "dari <nama>" di penerima),
 // dan kalau dibiarkan jadi dobel di pengirim dan menyesatkan di sisi penerima. Yang disimpan hanya info tambahan (mis. "uang jajan").
@@ -1582,5 +1589,5 @@ module.exports = {
   getMode, setMode, switchMode, takeCurhatExpiredNotice, CURHAT_TTL,
   getHist, saveHist, hasHist, clearHist,
   getReminders, addReminder, deleteReminderById, deleteReminderNumber, DELETE_INTENT,
-  getLink, linkStatus, makeLinkCode, useLinkCode, unlinkPartner, incomingTransfers, sendTransfer, acceptTransfer, declineTransfer, handlePartnerIncome, answerDupMasuk, partnerContext,
+  mentionsAmount, getLink, linkStatus, makeLinkCode, useLinkCode, unlinkPartner, incomingTransfers, sendTransfer, acceptTransfer, declineTransfer, handlePartnerIncome, answerDupMasuk, partnerContext,
 };

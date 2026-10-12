@@ -7,7 +7,7 @@ const {
   getMode, takeCurhatExpiredNotice, getHist, saveHist, getProfile, gemini, loadCurhatContext, buildCurhatSystem, stripTags,
   getTasks, addTask, getNotes, addNote, getExpenses, addExpense,
   getReminders, addReminder, getBot, sendTelegram, cfgOn, quotaStatus, setSaldo, addOutsideMoney, moneyContext, parseWib, addIncome, getIncomes, moneySummary,
-  partnerContext, incomingTransfers, sendTransfer, handlePartnerIncome, answerDupMasuk,
+  mentionsAmount, partnerContext, incomingTransfers, sendTransfer, handlePartnerIncome, answerDupMasuk,
 } = require("./_lib");
 
 const REPEAT_LABEL = { harian: "tiap hari", mingguan: "tiap minggu", bulanan: "tiap bulan" };
@@ -98,13 +98,14 @@ async function processTags(u, reply, userText = "") {
     const n = await addNote(u, m[1]);
     if (n) added.push("🗒️ Dicatat: " + n.text);
   }
-  for (const m of reply.matchAll(/\[\[BELI:\s*([^|\]]+?)\s*\|\s*([^|\]]+?)\s*\|\s*([^\]]*?)\s*\]\]/g)) {
+  const amountOk = mentionsAmount(userText);
+  for (const m of amountOk ? [...reply.matchAll(/\[\[BELI:\s*([^|\]]+?)\s*\|\s*([^|\]]+?)\s*\|\s*([^\]]*?)\s*\]\]/g)] : []) {
     const amt = Number(String(m[1]).replace(/[^\d]/g, ""));
     const e = await addExpense(u, amt, m[2].trim(), m[3].trim());
     if (e) added.push("💰 Dicatat: " + rupiah(e.amt) + " (" + e.cat + ")" + (e.note ? " - " + e.note : ""));
   }
 
-  for (const m of reply.matchAll(/\[\[MASUK:\s*([^|\]]+?)\s*\|\s*([^|\]]+?)\s*\|\s*([^\]]*?)\s*\]\]/g)) {
+  for (const m of amountOk ? [...reply.matchAll(/\[\[MASUK:\s*([^|\]]+?)\s*\|\s*([^|\]]+?)\s*\|\s*([^\]]*?)\s*\]\]/g)] : []) {
     const amt = Number(String(m[1]).replace(/[^\d]/g, ""));
     const e = await addIncome(u, amt, m[2].trim(), m[3].trim());
     if (e) added.push("💵 Pemasukan dicatat: " + rupiah(e.amt) + " (" + e.cat + ")" + (e.note ? " - " + e.note : ""));
