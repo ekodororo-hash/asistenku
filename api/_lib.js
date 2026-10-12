@@ -252,7 +252,7 @@ async function checkGeminiKey(k) {
 
 async function addGeminiKey(u, value) {
   const k = String(value || "").trim();
-  if (!/^[\w-]{20,100}$/.test(k)) throw new Error("Format API key tidak valid.");
+  if (!/^[\w.\-]{20,200}$/.test(k)) throw new Error("Format API key tidak valid."); // key baru memakai titik (AQ.xxx), key lama AIza...
   const list = await loadKeyRecords(u);
   if (list.length >= MAX_KEYS) throw new Error(`Maksimal ${MAX_KEYS} API key.`);
   if (list.some((x) => decrypt(x.enc) === k)) throw new Error("API key ini sudah ada.");
