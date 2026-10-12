@@ -66,6 +66,13 @@
 </main>
 
 <script>
+function modelTag(m) {
+  const n = String(m || "").toLowerCase();
+  if (/image|tts|veo|imagen|embed|live|audio/.test(n) || /pro/.test(n)) return " (berbayar)";
+  if (/gemini-1\.|gemini-2\.0/.test(n)) return " (lawas)";
+  if (/flash/.test(n)) return " (gratis)";
+  return "";
+}
 const $ = (id) => document.getElementById(id);
 
 async function op(name, extra) {
@@ -141,7 +148,7 @@ function render() {
     const meta = document.createElement("div");
     meta.className = "hmeta";
     const time = d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
-    meta.textContent = (h.n && h.k !== "server" ? "•••• " + h.k + " · " : "") + (SRC[h.src] || h.src) + (h.m ? " · " + h.m : "") + " · " + (d.toDateString() === today ? "" : "kemarin ") + time + " · " + ago(h.ts);
+    meta.textContent = (h.n && h.k !== "server" ? "•••• " + h.k + " · " : "") + (SRC[h.src] || h.src) + (h.m ? " · " + h.m + modelTag(h.m) : "") + " · " + (d.toDateString() === today ? "" : "kemarin ") + time + " · " + ago(h.ts);
 
     row.append(top, meta);
     if (h.err) { const e = document.createElement("div"); e.className = "herr"; e.textContent = h.err; row.appendChild(e); }
