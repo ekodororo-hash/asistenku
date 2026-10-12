@@ -71,11 +71,12 @@ Tag khusus (taruh di baris terakhir balasan; pengguna tidak melihatnya):
 - Kamu punya akses pencarian Google. Untuk hal yang terkini atau bisa berubah (jadwal pertandingan, skor, harga, berita, cuaca, hasil, tanggal rilis), cari dulu lalu jawab; jangan bilang kamu tidak bisa browsing. Jawab ringkas dan sebut waktu/tanggal datanya kalau penting. Hasil pencarian tidak perlu dicatat kecuali pengguna minta.
 - Pertanyaan info (kurs, jadwal, harga, berita, dll) dijawab SEKARANG dalam balasan yang sama. Jangan bilang "sebentar aku cek" lalu membuat pengingat atau tugas; REMIND hanya kalau pengguna jelas minta diingatkan.
 - Buat tag HANYA untuk permintaan di pesan pengguna yang TERBARU. Permintaan di pesan-pesan sebelumnya sudah diproses; jangan mengulang tagnya. Baris berawalan ⏰ ✅ 🗒️ 💰 💵 🗑️ di akhir balasanmu sebelumnya ditulis otomatis oleh sistem setelah tag berhasil diproses; itu tandanya permintaan tersebut SUDAH SELESAI. Jangan menulis baris seperti itu sendiri.
+- Kalau pengguna mengirim foto struk/nota/bukti bayar: baca nama toko dan total bayar, catat dengan SATU tag [[BELI: ...]] untuk totalnya, lalu sebutkan hasil bacaanmu singkat (toko, total). Kalau angkanya tidak terbaca jelas, tanyakan dulu dan jangan buat tag. Foto lain (bukan struk) cukup ditanggapi biasa tanpa tag.
 - Satu tag per hal, boleh lebih dari satu. Jangan membuat tag kalau pengguna tidak memintanya.
 - Data ini juga dipakai lewat bot Telegram pengguna (tugas, catatan, uang, pengingat, riwayat obrolan sama persis).`;
 }
 
-async function processTags(u, reply, userText = "") {
+async function processTags(u, reply, userText = "", hasImage = false) {
   const remindOk = REMIND_INTENT.test(userText);
   const added = [];
 
@@ -99,7 +100,7 @@ async function processTags(u, reply, userText = "") {
     const n = await addNote(u, m[1]);
     if (n) added.push("🗒️ Dicatat: " + n.text);
   }
-  const amountOk = mentionsAmount(userText);
+  const amountOk = hasImage || mentionsAmount(userText); // foto struk boleh tanpa angka di teks
   for (const m of amountOk ? [...reply.matchAll(/\[\[BELI:\s*([^|\]]+?)\s*\|\s*([^|\]]+?)\s*\|\s*([^\]]*?)\s*\]\]/g)] : []) {
     const amt = Number(String(m[1]).replace(/[^\d]/g, ""));
     const e = await addExpense(u, amt, m[2].trim(), m[3].trim());
@@ -196,6 +197,32 @@ function makeStreamer(emit) {
   };
 }
 
+// ---- Lampiran dari web: foto (sudah dikecilkan klien) dan suara (WAV 16 kHz) ----
+const MAX_B64 = 3500000; // batas body fungsi Vercel ~4,5 MB
+const IMG_MIME = new Set(["image/jpeg", "image/png", "image/webp"]);
+const AUD_MIME = new Set(["audio/wav", "audio/mpeg", "audio/mp3", "audio/ogg", "audio/aac", "audio/flac"]);
+function pickMedia(m, allowed) {
+  if (!m || typeof m !== "object") return null;
+  const mime = String(m.mime || "").toLowerCase().split(";")[0].trim();
+  const data = String(m.data || "").replace(/\s+/g, "");
+  if (!data) return null;
+  if (!allowed.has(mime)) { const e = new Error("Format lampiran tidak didukung."); e.status = 400; throw e; }
+  if (data.length > MAX_B64 || !/^[A-Za-z0-9+/]+={0,2}$/.test(data)) { const e = new Error("Lampiran terlalu besar atau rusak. Coba yang lebih kecil."); e.status = 413; throw e; }
+  return { mime, data };
+}
+// Pasang foto (kalau ada) pada giliran user terakhir
+function withImage(contents, image, text) {
+  if (!image) return contents;
+  contents[contents.length - 1] = {
+    role: "user",
+    parts: [
+      { inlineData: { mimeType: image.mime, data: image.data } },
+      { text: text || "Ini fotoku. Tolong lihat dan tanggapi." },
+    ],
+  };
+  return contents;
+}
+
 module.exports = async (req, res) => {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Gunakan metode POST" });
@@ -203,26 +230,47 @@ module.exports = async (req, res) => {
   const u = await requireUser(req, res);
   if (!u) return;
 
-  const text = String((req.body || {}).text || "").trim().slice(0, 4000);
-  if (!text) return res.status(400).json({ error: "Pesan kosong" });
+  let text = String((req.body || {}).text || "").trim().slice(0, 4000);
+  let image = null, audio = null, voice = false;
+  try {
+    image = pickMedia((req.body || {}).image, IMG_MIME);
+    audio = pickMedia((req.body || {}).audio, AUD_MIME);
+  } catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
+  if (!text && !image && !audio) return res.status(400).json({ error: "Pesan kosong" });
 
   const wantStream = !!(req.body || {}).stream;
   const out = makeOut(res);
   const onText = wantStream ? makeStreamer(out.emit) : undefined;
   const finish = (payload) => {
+    if (voice) payload = { ...payload, transcript: text };
     if (!wantStream) return res.status(200).json(payload);
     out.emit({ t: "done", ...payload });
     return res.end();
   };
 
   try {
+    // Pesan suara: ditranskrip dulu, hasilnya diperlakukan seperti teks yang diketik
+    if (audio) {
+      const t = await gemini(u, "Kamu hanya menulis transkrip.", [{
+        role: "user",
+        parts: [
+          { inlineData: { mimeType: audio.mime, data: audio.data } },
+          { text: "Tulis transkrip pesan suara ini apa adanya, dalam bahasa yang diucapkan. Balas hanya dengan transkripnya." },
+        ],
+      }], "web");
+      text = String(t || "").trim().slice(0, 4000);
+      voice = true;
+      if (!text) return finish({ reply: "Maaf, suaranya kurang jelas. Coba rekam ulang?", added: [] });
+      if (wantStream) out.emit({ t: "transcript", text });
+    }
+    const histText = image ? `[Foto] ${text}`.trim() : text;
     const mode = await getMode(u);
 
     // ---- Mode curhat: riwayat sendiri, tanpa tag, tanpa pencarian, tanpa salinan ke Telegram ----
     if (mode === "curhat") {
       const [hist, ctx] = await Promise.all([getHist(u, "curhat"), loadCurhatContext(u)]);
-      const userTurn = { role: "user", parts: [{ text }], ts: Date.now() };
-      const raw = await gemini(u, buildCurhatSystem(ctx), trimHist([...hist, userTurn]), "web", onText);
+      const userTurn = { role: "user", parts: [{ text: histText }], ts: Date.now() };
+      const raw = await gemini(u, buildCurhatSystem(ctx), withImage(trimHist([...hist, userTurn]), image, text), "web", onText);
       const reply = stripTags(raw) || "(tidak ada jawaban)";
       await saveHist(u, [...hist, userTurn, { role: "model", parts: [{ text: reply }], ts: Date.now() }], "curhat");
       return finish({ reply, added: [], mode: "curhat" });
@@ -245,7 +293,7 @@ module.exports = async (req, res) => {
       : "(kosong)";
 
     // Jawaban "ya / tidak" untuk pertanyaan "mau tambah lagi sebagai pemasukan terpisah?"
-    const dupReply = await answerDupMasuk(u, text);
+    const dupReply = image ? null : await answerDupMasuk(u, text);
     if (dupReply) {
       const t = Date.now();
       await saveHist(u, [...hist, { role: "user", parts: [{ text }], ts: t }, { role: "model", parts: [{ text: dupReply }], ts: t }], "asisten");
@@ -259,12 +307,12 @@ module.exports = async (req, res) => {
 
     const system = buildSystem(mode, { profile, taskList, noteList, moneyText: await moneyContext(u), remindText, botLinked: !!(bot && bot.chatId), partnerText: await partnerContext(u).catch(() => "") });
 
-    const userTurn = { role: "user", parts: [{ text }], ts: Date.now() };
-    const contents = trimHist([...hist, userTurn]);
+    const userTurn = { role: "user", parts: [{ text: histText }], ts: Date.now() };
+    const contents = withImage(trimHist([...hist, userTurn]), image, text);
 
     const found = await geminiSearch(u, system, contents, "web", onText);
     const raw = found.text;
-    const { clean, added } = await processTags(u, raw, text);
+    const { clean, added } = await processTags(u, raw, text, !!image);
     const reply = clean || (added.length ? "" : "(tidak ada jawaban)");
     const shown = [expiredNotice, reply, sourceLine(found.sources, found.searchError)].filter(Boolean).join("\n\n"); // sumber hanya ditampilkan, tidak masuk riwayat
 
@@ -274,7 +322,7 @@ module.exports = async (req, res) => {
 
     // Salin ke Telegram supaya obrolan di web juga terlihat di chat Telegram (matikan: /salin off)
     if (bot && bot.chatId && (await cfgOn(u, "mirror").catch(() => true))) {
-      const body = "💻 Dari web: " + text + "\n\n" + [shown, ...added].filter(Boolean).join("\n\n");
+      const body = "💻 Dari web: " + (voice ? "🎙️ " + text : image ? "📷 " + text : text).trim() + "\n\n" + [shown, ...added].filter(Boolean).join("\n\n");
       try { await sendTelegram(u, String(bot.chatId), body); } catch {}
     }
 

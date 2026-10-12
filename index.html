@@ -27,9 +27,14 @@
   #app { width:100%; height:100%; display:flex; flex-direction:column; background:var(--bg); min-height:0; }
   /* layar lebar: panel tetap penuh, isi chat dipersempit dan ditaruh di tengah */
   @media (min-width:761px) {
-    #app #chat, #app .chips, #app #form, #app .wxbar {
+    #app #chat {
       padding-left:max(16px, calc((100% - 720px) / 2));
       padding-right:max(16px, calc((100% - 720px) / 2));
+    }
+    /* elemen tanpa scrollbar: sisakan lebar scrollbar chat (--sbw) di kanan supaya sejajar dengan gelembung */
+    #app .chips, #app #form, #app .wxbar, #app .attachprev, #app .recbar {
+      padding-left:max(16px, calc((100% - 720px) / 2));
+      padding-right:calc(max(16px, calc((100% - 720px) / 2)) + var(--sbw, 0px));
     }
     #app .msg { max-width:80%; }
     #app .curhatnote { padding-left:max(16px, calc((100% - 720px) / 2)); padding-right:max(16px, calc((100% - 720px) / 2)); }
@@ -65,6 +70,16 @@
   .dots i:nth-child(3) { animation-delay:.3s; }
   @keyframes dotbounce { 0%,60%,100% { transform:translateY(0); opacity:.4; } 30% { transform:translateY(-5px); opacity:1; } }
   .msg.streaming > .dots::after { content:none; }
+  /* lampiran foto & rekam suara */
+  .iconbtn { flex:none; padding:0 12px; font-size:18px; line-height:1; }
+  .iconbtn:disabled { opacity:.5; }
+  .attachprev, .recbar { display:flex; align-items:center; gap:10px; padding:8px 16px; background:var(--card); border-top:1px solid var(--line); font-size:13px; color:var(--muted); }
+  .attachprev[hidden], .recbar[hidden] { display:none; }
+  .attachprev img { height:48px; width:48px; object-fit:cover; border-radius:8px; border:1px solid var(--line); }
+  .attachprev span, .recbar span { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .recbar { font-size:14px; color:var(--ink); }
+  .recbar .rdot { width:10px; height:10px; border-radius:50%; background:#d33; animation:blink 1s steps(2,start) infinite; flex:none; }
+  .msg img.thumb { display:block; max-width:100%; max-height:220px; border-radius:10px; margin-bottom:6px; }
   .msg.streaming > div:first-child::after { content:"▍"; margin-left:2px; opacity:.55; animation:blink 1s steps(2,start) infinite; }
   @keyframes blink { to { visibility:hidden; } }
   /* satu baris cuaca di bawah header; ketuk untuk membuka detail di panel Info */
@@ -273,8 +288,22 @@
       <button data-q="Bantu tulis pesan WhatsApp yang sopan untuk ">Tulis pesan</button>
       <button data-q="Beri aku 3 ide makan malam hemat dan cepat.">Ide makan malam</button>
     </div>
+    <div id="attachPrev" class="attachprev" hidden>
+      <img id="prevImg" alt="">
+      <span>Foto siap dikirim. Tambah keterangan kalau perlu.</span>
+      <button type="button" id="prevX" title="Hapus foto" aria-label="Hapus foto">✕</button>
+    </div>
+    <div id="recBar" class="recbar" hidden>
+      <i class="rdot"></i>
+      <span id="recTime">Merekam 0:00</span>
+      <button type="button" id="recCancel">Batal</button>
+      <button type="button" id="recSend" class="primary">Kirim</button>
+    </div>
     <form id="form">
+      <button type="button" id="attachBtn" class="iconbtn" title="Kirim foto / struk" aria-label="Kirim foto atau struk">📎</button>
+      <input type="file" id="fileIn" accept="image/*" hidden>
       <textarea id="input" rows="1" placeholder="Tulis pesan..."></textarea>
+      <button type="button" id="micBtn" class="iconbtn" title="Rekam suara" aria-label="Rekam suara">🎙️</button>
       <button class="primary" id="sendBtn">Kirim</button>
     </form>
   </section>
@@ -859,11 +888,11 @@ function showQuota(q) {
 /* ---------- Kirim pesan ---------- */
 // Kirim ke /api/chat dengan streaming: teks muncul sedikit demi sedikit di gelembung `bubble`.
 // Hasil akhirnya (data terbaru) sama dengan respons JSON biasa.
-async function chatStream(text, bubble) {
+async function chatStream(text, bubble, extra, onTranscript) {
   const r = await fetch("/api/chat", {
     method: "POST", credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, stream: true }),
+    body: JSON.stringify({ text, stream: true, ...(extra || {}) }),
   });
   if (r.status === 401) {
     showGate(wasLoggedIn ? "Sesi habis. Silakan masuk lagi." : "");
@@ -903,6 +932,7 @@ async function chatStream(text, bubble) {
     let ev; try { ev = JSON.parse(line.slice(5)); } catch { return; }
     if (ev.t === "delta") { acc += ev.text; kick(); }
     else if (ev.t === "final") final = ev.text; // teks akhir (tanpa tag, plus catatan sistem): dipasang setelah efek ketik selesai
+    else if (ev.t === "transcript") { if (onTranscript) onTranscript(ev.text); }
     else if (ev.t === "done") done = ev;
     else if (ev.t === "error") throw new Error(ev.error || "Gagal");
   };
@@ -936,13 +966,28 @@ async function chatStream(text, bubble) {
   throw new Error("Koneksi terputus sebelum jawaban selesai. Muat ulang untuk melihat hasilnya.");
 }
 
-async function send(text) {
-  text = text.trim();
-  if (!text || busy) return;
-  busy = true; $("sendBtn").disabled = true;
+async function send(text, media) {
+  text = (text || "").trim();
+  media = media || {};
+  const image = media.audio ? null : (media.image || attach);
+  const audio = media.audio || null;
+  if ((!text && !image && !audio) || busy) return;
+  busy = true; setBusyUI(true);
   const sentAt = Date.now();
-  messages.push({ role: "user", text, ts: sentAt });
-  addBubble("user", text, "", sentAt);
+  const um = { role: "user", text: audio ? "🎙️ Pesan suara" : image ? ("[Foto] " + text).trim() : text, ts: sentAt };
+  messages.push(um);
+  const ub = addBubble("user", audio ? "🎙️ Pesan suara..." : (text || (image ? "📷 Foto" : "")), "", sentAt);
+  if (image) {
+    const im = new Image();
+    im.className = "thumb"; im.alt = "Foto"; im.src = image.url;
+    ub.insertBefore(im, ub.firstChild);
+  }
+  const extra = {};
+  if (image) extra.image = { mime: image.mime, data: image.data };
+  if (audio) extra.audio = { mime: audio.mime, data: audio.data };
+  clearAttach();
+  let heard = false;
+  const onTr = (t) => { heard = true; um.text = "🎙️ " + t; setBubble(ub, um.text, sentAt); };
   $("input").value = "";
   autoGrow();
   const wait = addBubble("bot", "");
@@ -953,7 +998,8 @@ async function send(text) {
   wait.appendChild(dots);
   $("chat").scrollTop = $("chat").scrollHeight;
   try {
-    const d = await chatStream(text, wait);
+    const d = await chatStream(text, wait, extra, onTr);
+    if (audio && !heard) { if (d.transcript) onTr(d.transcript); else setBubble(ub, "🎙️ (suara kurang jelas)", sentAt); }
     const shown = [d.reply, ...(d.added || [])].filter(Boolean).join("\n\n") || "(tidak ada jawaban)";
     const gotAt = Date.now();
     setBubble(wait, shown, gotAt);
@@ -969,10 +1015,148 @@ async function send(text) {
     wait.classList.add("err");
     messages.pop();
   } finally {
-    busy = false; $("sendBtn").disabled = false;
+    busy = false; setBusyUI(false);
     $("chat").scrollTop = $("chat").scrollHeight;
   }
 }
+
+/* ---------- Lampiran: foto/struk & suara ---------- */
+let attach = null; // { mime, data, url } foto yang menunggu dikirim
+function setBusyUI(b) { ["sendBtn", "attachBtn", "micBtn"].forEach((id) => { $(id).disabled = b; }); }
+function notice(msg) { addBubble("bot", msg, "note"); }
+
+function loadImg(file) {
+  return new Promise((ok, no) => {
+    const url = URL.createObjectURL(file), im = new Image();
+    im.onload = () => { URL.revokeObjectURL(url); ok(im); };
+    im.onerror = () => { URL.revokeObjectURL(url); no(new Error("img")); };
+    im.src = url;
+  });
+}
+// Kecilkan ke JPEG (sisi terpanjang 1600 px) supaya muat batas kiriman dan hemat kuota
+async function prepImage(file) {
+  let src;
+  try { src = window.createImageBitmap ? await createImageBitmap(file, { imageOrientation: "from-image" }) : await loadImg(file); }
+  catch { src = await loadImg(file); }
+  const k = Math.min(1, 1600 / Math.max(src.width, src.height));
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(src.width * k)); c.height = Math.max(1, Math.round(src.height * k));
+  const g = c.getContext("2d");
+  g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height);
+  g.drawImage(src, 0, 0, c.width, c.height);
+  const url = c.toDataURL("image/jpeg", 0.8);
+  return { mime: "image/jpeg", data: url.split(",")[1], url };
+}
+async function setAttach(file) {
+  if (!file) return;
+  if (!/^image\//.test(file.type)) { notice("Yang bisa dikirim baru foto."); return; }
+  try {
+    attach = await prepImage(file);
+    $("prevImg").src = attach.url;
+    $("attachPrev").hidden = false;
+    $("input").placeholder = "Keterangan foto (boleh kosong)...";
+    $("input").focus();
+  } catch { notice("Foto tidak bisa dibaca. Coba foto lain (JPG atau PNG)."); }
+}
+function clearAttach() {
+  attach = null;
+  $("attachPrev").hidden = true;
+  $("fileIn").value = "";
+  $("input").placeholder = "Tulis pesan...";
+}
+$("attachBtn").onclick = () => { if (!busy && !rec) $("fileIn").click(); };
+$("fileIn").onchange = (e) => setAttach(e.target.files && e.target.files[0]);
+$("prevX").onclick = clearAttach;
+$("input").addEventListener("paste", (e) => {
+  const f = [...((e.clipboardData && e.clipboardData.items) || [])].find((i) => i.kind === "file" && /^image\//.test(i.type));
+  if (f) { e.preventDefault(); setAttach(f.getAsFile()); }
+});
+
+// Rekam suara: MediaRecorder lalu diubah ke WAV 16 kHz mono (format yang pasti dibaca Gemini)
+const REC_MAX_MS = 60000;
+let rec = null;
+const blobToB64 = (blob) => new Promise((ok, no) => {
+  const fr = new FileReader();
+  fr.onload = () => ok(String(fr.result).split(",")[1]);
+  fr.onerror = () => no(fr.error);
+  fr.readAsDataURL(blob);
+});
+async function blobToWav(arrayBuf) {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  const ctx = new AC();
+  let ab;
+  try { ab = await new Promise((ok, no) => ctx.decodeAudioData(arrayBuf, ok, no)); } finally { if (ctx.close) ctx.close(); }
+  const R = 16000;
+  const off = new OAC(1, Math.max(1, Math.ceil(ab.duration * R)), R);
+  const node = off.createBufferSource();
+  node.buffer = ab; node.connect(off.destination); node.start();
+  const pcmF = (await off.startRendering()).getChannelData(0);
+  const out = new DataView(new ArrayBuffer(44 + pcmF.length * 2));
+  const w = (o, t) => { for (let i = 0; i < t.length; i++) out.setUint8(o + i, t.charCodeAt(i)); };
+  w(0, "RIFF"); out.setUint32(4, 36 + pcmF.length * 2, true); w(8, "WAVEfmt ");
+  out.setUint32(16, 16, true); out.setUint16(20, 1, true); out.setUint16(22, 1, true);
+  out.setUint32(24, R, true); out.setUint32(28, R * 2, true); out.setUint16(32, 2, true); out.setUint16(34, 16, true);
+  w(36, "data"); out.setUint32(40, pcmF.length * 2, true);
+  for (let i = 0; i < pcmF.length; i++) out.setInt16(44 + i * 2, Math.round(Math.max(-1, Math.min(1, pcmF[i])) * 32767), true);
+  return new Blob([out], { type: "audio/wav" });
+}
+const fmtDur = (ms) => { const t = Math.floor(ms / 1000); return Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0"); };
+
+async function startRec() {
+  if (busy || rec) return;
+  if (!navigator.mediaDevices || !window.MediaRecorder) { notice("Browser ini belum mendukung rekam suara."); return; }
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  catch { notice("Izin mikrofon ditolak. Aktifkan lewat pengaturan situs di browser."); return; }
+  const mr = new MediaRecorder(stream), chunks = [];
+  mr.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+  const r = { mr, chunks, stream, t0: Date.now(), cancel: false, iv: 0 };
+  mr.onstop = () => onRecStop(r);
+  rec = r;
+  mr.start();
+  $("recBar").hidden = false;
+  $("micBtn").disabled = true;
+  r.iv = setInterval(() => {
+    const ms = Date.now() - r.t0;
+    $("recTime").textContent = "Merekam " + fmtDur(ms) + " (maks 1 menit)";
+    if (ms >= REC_MAX_MS) stopRec(false);
+  }, 250);
+  $("recTime").textContent = "Merekam 0:00 (maks 1 menit)";
+}
+function stopRec(cancel) {
+  if (!rec) return;
+  rec.cancel = !!cancel;
+  clearInterval(rec.iv);
+  if (rec.mr.state !== "inactive") rec.mr.stop();
+}
+async function onRecStop(r) {
+  clearInterval(r.iv);
+  r.stream.getTracks().forEach((t) => t.stop());
+  rec = null;
+  $("recBar").hidden = true;
+  $("micBtn").disabled = busy;
+  if (r.cancel) return;
+  if (Date.now() - r.t0 < 700) { notice("Rekamannya terlalu singkat."); return; }
+  try {
+    const blob = new Blob(r.chunks, { type: r.mr.mimeType || "audio/webm" });
+    const buf = await blob.arrayBuffer();
+    const wav = await blobToWav(buf);
+    send("", { audio: { mime: "audio/wav", data: await blobToB64(wav) } });
+  } catch { notice("Rekaman gagal diproses. Coba rekam lagi."); }
+}
+$("micBtn").onclick = startRec;
+$("recCancel").onclick = () => stopRec(true);
+$("recSend").onclick = () => stopRec(false);
+
+/* ---------- Sejajarkan dengan lebar scrollbar chat ---------- */
+(function () {
+  const chat = $("chat"), app = $("app");
+  const sync = () => app.style.setProperty("--sbw", Math.max(0, chat.offsetWidth - chat.clientWidth) + "px");
+  if (window.ResizeObserver) new ResizeObserver(sync).observe(chat);
+  window.addEventListener("resize", sync);
+  sync();
+})();
 
 /* ---------- Event ---------- */
 $("form").onsubmit = (e) => { e.preventDefault(); send($("input").value); };
