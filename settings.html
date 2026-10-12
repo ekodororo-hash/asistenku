@@ -68,6 +68,14 @@
   details.guide b { color:var(--ink); }
   details.guide a { color:var(--accent); }
   hr { border:none; border-top:1px solid var(--line); margin:16px 0 4px; }
+  .combo { position:relative; scroll-margin-top:76px; }
+  .combo-list { position:absolute; left:0; right:0; top:100%; margin-top:4px; max-height:320px; overflow-y:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; background:var(--card); border:1px solid var(--line); border-radius:12px; box-shadow:0 10px 28px #0003; z-index:20; padding:4px; }
+  .combo-list[hidden] { display:none; }
+  .combo-list .opt { padding:10px 12px; border-radius:8px; cursor:pointer; line-height:1.35; }
+  .combo-list .opt + .opt { border-top:1px solid var(--line); }
+  .combo-list .opt:hover, .combo-list .opt:active { background:var(--bg); }
+  .combo-list .opt b { display:block; font-size:15px; font-weight:600; word-break:break-all; }
+  .combo-list .opt small { display:block; margin-top:2px; font-size:12px; color:var(--muted); }
 </style>
 </head>
 <body>
@@ -119,9 +127,8 @@
     <hr>
     <label for="mdlMain">Model Gemini</label>
     <p class="hint" style="margin:0 0 8px">Kosongkan untuk memakai bawaan server (<span id="mdlDefault"></span>). Model cadangan dipakai otomatis kalau model utama kena limit di semua key atau tidak ditemukan. Klik kolom untuk memilih dari daftar; model gambar/suara disembunyikan tapi tetap bisa diketik.</p>
-    <input id="mdlMain" list="mdlList" placeholder="Model utama" autocomplete="off" autocapitalize="off" spellcheck="false">
-    <input id="mdlFb" list="mdlList" placeholder="Model cadangan (opsional)" autocomplete="off" autocapitalize="off" spellcheck="false" style="margin-top:8px">
-    <datalist id="mdlList"></datalist>
+    <div class="combo"><input id="mdlMain" placeholder="Model utama" autocomplete="off" autocapitalize="off" spellcheck="false" role="combobox" aria-autocomplete="list"><div class="combo-list" role="listbox" hidden></div></div>
+    <div class="combo" style="margin-top:8px"><input id="mdlFb" placeholder="Model cadangan (opsional)" autocomplete="off" autocapitalize="off" spellcheck="false" role="combobox" aria-autocomplete="list"><div class="combo-list" role="listbox" hidden></div></div>
     <p class="hint" id="mdlQuota" style="margin:8px 0 0;white-space:pre-line"></p>
     <p class="hint" style="margin:6px 0 0">Saran: utama Flash-Lite, cadangan Flash. Angka kuota dari AI Studio (Okt 2026), bisa berubah atau berbeda per project.</p>
     <div class="actions"><button class="primary" id="mdlSuggest" type="button">Isi saran model</button><button class="primary" id="mdlSave">Simpan model</button></div>
@@ -294,27 +301,66 @@ function modelSort(a, b) {
   return b.localeCompare(a);
 }
 let modelNames = [];
-async function loadModelList() {
-  if (modelsLoaded) return;
+let modelsP = null;
+function loadModelList() {
+  if (modelsP) return modelsP;
   modelsLoaded = true;
-  try {
-    const list = await op("listModels");
-    modelNames = list.filter((m) => modelInfo(m).tier !== "khusus")
-      .sort(modelSort);
-    $("mdlList").innerHTML = "";
-    modelNames.forEach((m) => {
-      const o = document.createElement("option");
-      o.value = m;
-      const t = modelInfo(m).label;
-      if (t) o.label = t;
-      $("mdlList").appendChild(o);
-    });
-  } catch (e) { modelsLoaded = false; say("mdlMsg", e.message, "err"); }
+  modelsP = (async () => {
+    try {
+      const list = await op("listModels");
+      modelNames = list.filter((m) => modelInfo(m).tier !== "khusus").sort(modelSort);
+    } catch (e) { modelsLoaded = false; modelsP = null; say("mdlMsg", e.message, "err"); }
+  })();
+  return modelsP;
 }
-$("mdlMain").addEventListener("focus", loadModelList);
-$("mdlFb").addEventListener("focus", loadModelList);
-$("mdlMain").addEventListener("input", updateQuota);
-$("mdlFb").addEventListener("input", updateQuota);
+// Daftar model buatan sendiri (bukan <datalist> bawaan browser): selebar kolom, teks turun ke bawah,
+// dan di HP tingginya menyesuaikan sisa layar di atas keyboard.
+function setupCombo(input) {
+  const list = input.parentNode.querySelector(".combo-list");
+  let typed = false;
+  const close = () => { list.hidden = true; };
+  function fit() {
+    const vv = window.visualViewport;
+    const bottom = vv ? vv.offsetTop + vv.height : window.innerHeight;
+    const space = bottom - input.getBoundingClientRect().bottom - 16;
+    list.style.maxHeight = Math.max(140, Math.min(320, space)) + "px";
+  }
+  function render() {
+    const q = typed ? input.value.trim().toLowerCase() : "";
+    const items = modelNames.filter((m) => !q || m.toLowerCase().includes(q));
+    list.innerHTML = "";
+    items.forEach((m) => {
+      const o = document.createElement("div");
+      o.className = "opt"; o.setAttribute("role", "option");
+      const n = document.createElement("b"); n.textContent = m; o.appendChild(n);
+      const t = modelInfo(m).label;
+      if (t) { const s = document.createElement("small"); s.textContent = t; o.appendChild(s); }
+      o.addEventListener("click", () => { input.value = m; close(); updateQuota(); });
+      list.appendChild(o);
+    });
+    list.hidden = !items.length;
+    if (items.length) { fit(); list.scrollTop = 0; }
+  }
+  async function open() {
+    typed = false;
+    await loadModelList();
+    if (document.activeElement !== input) return;
+    render();
+    // HP: gulirkan kolom ke atas layar supaya daftar punya ruang di atas keyboard
+    if (window.matchMedia("(pointer:coarse)").matches) {
+      setTimeout(() => { input.parentNode.scrollIntoView({ block: "start", behavior: "smooth" }); setTimeout(() => { if (!list.hidden) fit(); }, 350); }, 250);
+    }
+  }
+  input.addEventListener("focus", open);
+  input.addEventListener("click", () => { if (list.hidden) open(); });
+  input.addEventListener("input", () => { typed = true; render(); updateQuota(); });
+  input.addEventListener("blur", () => setTimeout(close, 150));
+  input.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+  list.addEventListener("mousedown", (e) => e.preventDefault()); // jangan lepas fokus sebelum item terpilih
+  if (window.visualViewport) window.visualViewport.addEventListener("resize", () => { if (!list.hidden) fit(); });
+}
+setupCombo($("mdlMain"));
+setupCombo($("mdlFb"));
 $("mdlSuggest").onclick = async () => {
   say("mdlMsg", "Memuat daftar model...");
   await loadModelList();
