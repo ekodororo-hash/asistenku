@@ -53,6 +53,14 @@
   .msg { font-size:13px; min-height:18px; margin:8px 0 0; }
   .msg.err { color:var(--err); }
   .msg.ok { color:var(--ok); }
+
+  /* skeleton loading */
+  .sk { position:relative; overflow:hidden; border-radius:10px; background:var(--line); }
+  .sk::after { content:""; position:absolute; inset:0; transform:translateX(-100%); background:linear-gradient(90deg, transparent, rgba(255,255,255,.55), transparent); animation:sk-shimmer 1.3s infinite; }
+  @media (prefers-color-scheme: dark) { .sk::after { background:linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent); } }
+  @keyframes sk-shimmer { to { transform:translateX(100%); } }
+  @media (prefers-reduced-motion: reduce) { .sk::after { animation:none; } }
+  .sk-stack { display:flex; flex-direction:column; gap:10px; }
 </style>
 </head>
 <body>
@@ -66,7 +74,7 @@
     <h2>API key Gemini <small id="count"></small></h2>
     <p class="hint">Dicatat setiap kali API key dipakai (web, Telegram, pesan otomatis, atau tombol Test). Dihapus otomatis setelah 1 hari, maksimal 50 entri. Isi pesan tidak disimpan.</p>
     <div class="chips" id="chips"></div>
-    <div id="list"></div>
+    <div id="list"><div class="sk-stack"><div class="sk" style="height:56px"></div><div class="sk" style="height:56px"></div><div class="sk" style="height:56px"></div><div class="sk" style="height:56px"></div></div></div>
     <div class="actions">
       <button id="refresh">Segarkan</button>
       <button id="clear" class="danger">Hapus riwayat</button>
@@ -170,7 +178,7 @@ function render() {
 async function load(msg) {
   say(msg || "");
   try { const r = await op("keyHistory"); history = r.history || []; render(); }
-  catch (e) { if (e.message !== "Belum login") say("Gagal memuat: " + e.message, "err"); }
+  catch (e) { if ($("list").querySelector(".sk")) $("list").innerHTML = ""; if (e.message !== "Belum login") say("Gagal memuat: " + e.message, "err"); }
 }
 $("refresh").onclick = () => load();
 $("clear").onclick = async () => {

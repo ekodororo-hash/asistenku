@@ -88,9 +88,20 @@
   .combo-list .opt b { display:block; font-size:15px; font-weight:600; word-break:break-all; }
   .combo-list .opt .rec { display:inline-block; margin-left:6px; padding:1px 7px; border-radius:999px; font-size:11px; font-weight:600; color:var(--accent); border:1px solid var(--accent); vertical-align:1px; word-break:normal; }
   .combo-list .opt small { display:block; margin-top:2px; font-size:12px; color:var(--muted); }
+
+  /* skeleton loading */
+  .sk { position:relative; overflow:hidden; border-radius:10px; background:var(--line); }
+  .sk::after { content:""; position:absolute; inset:0; transform:translateX(-100%); background:linear-gradient(90deg, transparent, rgba(255,255,255,.55), transparent); animation:sk-shimmer 1.3s infinite; }
+  @media (prefers-color-scheme: dark) { .sk::after { background:linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent); } }
+  @keyframes sk-shimmer { to { transform:translateX(100%); } }
+  @media (prefers-reduced-motion: reduce) { .sk::after { animation:none; } }
+  .sk-stack { display:flex; flex-direction:column; gap:10px; }
+  body.loading #pName, body.loading #pAssistant, body.loading #pNotes { color:transparent; background:var(--line); border-color:transparent; animation:sk-pulse 1.3s ease-in-out infinite; pointer-events:none; }
+  @keyframes sk-pulse { 50% { opacity:.55; } }
+  @media (prefers-reduced-motion: reduce) { body.loading #pName, body.loading #pAssistant, body.loading #pNotes { animation:none; } }
 </style>
 </head>
-<body>
+<body class="loading">
 <header>
   <a href="/" class="btn" aria-label="Kembali">← Kembali</a>
   <h1>Pengaturan</h1>
@@ -129,7 +140,7 @@
         <li>Jangan bagikan key ke siapa pun, termasuk lewat screenshot.</li>
       </ul>
     </details>
-    <div id="keyList"></div>
+    <div id="keyList"><div class="sk-stack"><div class="sk" style="height:52px"></div><div class="sk" style="height:52px"></div></div></div>
     <div class="row" id="keyAddRow" style="margin-top:8px">
       <input id="keyName" autocomplete="off" maxlength="40" placeholder="Nama key (opsional), mis. Gmail utama">
       <input id="keyInput" type="password" autocomplete="off" placeholder="Tempel API key Gemini">
@@ -158,13 +169,13 @@
 
   <section id="secBot">
     <h2>Bot Telegram</h2>
-    <div id="botBox"></div>
+    <div id="botBox"><div class="sk-stack"><div class="sk" style="height:16px;width:80%"></div><div class="sk" style="height:40px"></div></div></div>
     <p class="msg" id="botMsg"></p>
   </section>
 
   <section id="secLink">
     <h2>Hubungkan</h2>
-    <div id="linkBox"></div>
+    <div id="linkBox"><div class="sk-stack"><div class="sk" style="height:16px;width:70%"></div><div class="sk" style="height:40px"></div></div></div>
     <p class="msg" id="linkMsg"></p>
   </section>
 
@@ -631,7 +642,7 @@ async function load() {
   linkState = d.link || { linked: false };
   renderKeys(); renderHistLink(); renderBot(); renderLink();
 }
-load().catch((e) => { if (e.message !== "Belum login") say("profileMsg", "Gagal memuat: " + e.message, "err"); });
+load().then(() => document.body.classList.remove("loading")).catch((e) => { document.body.classList.remove("loading"); ["keyList","botBox","linkBox"].forEach((id) => { if ($(id).querySelector(".sk")) $(id).innerHTML = ""; }); if (e.message !== "Belum login") say("profileMsg", "Gagal memuat: " + e.message, "err"); });
 api("/api/auth").then((d) => { $("who").textContent = "Masuk sebagai " + d.user.username; }).catch(() => {});
 </script>
 </body>
