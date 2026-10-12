@@ -164,8 +164,14 @@ function renderBot() {
   box.innerHTML = "";
   const p = (html) => { const e = document.createElement("p"); e.className = "hint"; e.innerHTML = html; box.appendChild(e); return e; };
   const btn = (txt, fn, cls) => { const b = document.createElement("button"); b.textContent = txt; if (cls) b.className = cls; b.onclick = fn; return b; };
+  const label = () => (botState.name ? botState.name + " " : "") + "(@" + botState.username + ")";
   if (!botState.installed) {
-    p("Buat bot di <b>@BotFather</b>, lalu tempel token-nya di sini. Webhook dipasang otomatis." + (botState.legacy ? " Saat ini kamu masih memakai bot bawaan server." : ""));
+    if (botState.legacy && botState.username) {
+      p("Bot bawaan server: <b>" + label() + "</b> &nbsp;<span class=\"status " + (botState.linked ? "on\">✅ terhubung" : "wait\">⏳ belum terhubung") + "</span>");
+      p("Ingin pakai bot sendiri? Tempel token baru dari @BotFather di bawah. Bot bawaan akan diganti.");
+    } else {
+      p("Buat bot di <b>@BotFather</b>, lalu tempel token-nya di sini. Webhook dipasang otomatis.");
+    }
     const row = document.createElement("div");
     row.className = "row";
     const inp = document.createElement("input");
@@ -175,7 +181,7 @@ function renderBot() {
     row.append(inp, go); box.appendChild(row);
     return;
   }
-  p("Bot: <b>@" + botState.username + "</b> &nbsp;<span class=\"status " + (botState.linked ? "on\">✅ terhubung" : "wait\">⏳ belum terhubung") + "</span>");
+  p("Bot: <b>" + label() + "</b> &nbsp;<span class=\"status " + (botState.linked ? "on\">✅ terhubung" : "wait\">⏳ belum terhubung") + "</span>");
   if (!botState.linked) {
     const a = document.createElement("a");
     a.className = "btn primary"; a.href = botState.linkUrl; a.target = "_blank"; a.rel = "noopener"; a.textContent = "Hubungkan Telegram";

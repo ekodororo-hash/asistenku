@@ -124,7 +124,7 @@ async function setupBot(u, tokenIn, baseUrl) {
   });
   if (!wh.ok) throw new Error("Gagal mendaftarkan webhook: " + (wh.description || "tidak diketahui"));
 
-  await saveBot(u, { tokenEnc: encrypt(token), username: me.result.username, secret, linkCode, chatId: null });
+  await saveBot(u, { tokenEnc: encrypt(token), username: me.result.username, name: me.result.first_name || "", secret, linkCode, chatId: null });
   await redis("SET", "bottoken:" + h, u);
   await redis("SADD", "bots", u);
   return botStatus(u);
@@ -159,12 +159,17 @@ async function botStatus(u) {
   const raw = await redis("GET", key(u, "bot"));
   if (!raw) {
     const legacy = await getBot(u);
-    return { installed: false, legacy: !!legacy };
+    if (!legacy) return { installed: false, legacy: false };
+    // Bot bawaan server (env): tampilkan nama dan status dari Telegram
+    let me = {};
+    try { me = (await tg(legacy.token, "getMe")).result || {}; } catch {}
+    return { installed: false, legacy: true, username: me.username || "", name: me.first_name || "", linked: !!legacy.chatId };
   }
   const b = JSON.parse(raw);
   return {
     installed: true,
     username: b.username,
+    name: b.name || "",
     linked: !!b.chatId,
     linkUrl: b.chatId ? null : `https://t.me/${b.username}?start=${b.linkCode}`,
   };
