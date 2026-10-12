@@ -81,7 +81,7 @@ Buka web di HP, lalu: Android (Chrome) menu ⋮ > Instal aplikasi / Tambahkan ke
 
 ## Hubungkan (kiriman uang antar pasangan)
 
-Dua akun bisa saling terhubung (Pengaturan > Hubungkan) khusus untuk kiriman uang, supaya "kasih istri 5jt" di akun suami dan "dapet 5jt dari suami" di akun istri tidak tercatat dobel. Tugas, catatan, pengeluaran harian, dan obrolan tetap terpisah.
+Dua akun (pasangan atau teman) bisa saling terhubung (Pengaturan > Hubungkan) khusus untuk kiriman uang, supaya "kasih istri 5jt" di akun suami dan "dapet 5jt dari suami" di akun istri tidak tercatat dobel. Tugas, catatan, pengeluaran harian, dan obrolan tetap terpisah.
 
 - **Cara menghubungkan:** satu pihak menekan **Buat kode** (6 karakter, sekali pakai, berlaku 10 menit), pihak lain memasukkannya di kolom **Punya kode?** lalu menekan **Hubungkan**. Salah satu bisa menekan **Putuskan** kapan saja. Satu akun hanya bisa terhubung ke satu pasangan.
 - **Kirim:** pesan seperti "kasih istri 5jt" dicatat sebagai pengeluaran pengirim (kategori `transfer`). Penerima mendapat kabar di Telegram dengan tombol **Catat / Tidak** (kalau belum memasang bot: kartu konfirmasi di tab Uang di web, dan di Pengaturan > Hubungkan). Pemasukan baru masuk ke akun penerima setelah dia mengonfirmasi, jadi nominal yang salah ketik tidak langsung mengubah datanya.

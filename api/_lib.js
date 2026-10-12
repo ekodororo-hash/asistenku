@@ -1142,9 +1142,12 @@ async function moneyContext(u) {
   if (saldo) {
     const [e2, i2] = await Promise.all([expensesSince(u, saldo.ts), incomesSince(u, saldo.ts)]);
     const spent = e2.reduce((s, e) => s + e.amt, 0), got = i2.reduce((s, e) => s + e.amt, 0);
+    const list = (arr) => arr.length ? arr.slice(-15).map((e) => (e.note || e.cat) + " " + rupiah(e.amt)).join("; ") : "tidak ada";
     out += `\nSaldo yang diberitahu pengguna: ${rupiah(saldo.amt)} (dicatat ${fmtWib(saldo.ts)}). ` +
-      `Sejak itu pemasukan tercatat ${rupiah(got)} dan pengeluaran tercatat ${rupiah(spent)}. Perkiraan sisa uang: ${rupiah(saldo.amt + got - spent)} ` +
-      `(kalau pengguna menyebut saldo terbaru, catat ulang dengan tag SALDO).`;
+      `Sejak itu ada ${i2.length} pemasukan, total ${rupiah(got)} (${list(i2)}), dan ${e2.length} pengeluaran, total ${rupiah(spent)} (${list(e2)}). ` +
+      `PERKIRAAN SISA UANG: ${rupiah(saldo.amt + got - spent)}. Kalau ditanya sisa uang, pakai angka PERKIRAAN SISA UANG ini persis, jangan hitung ulang, ` +
+      `dan kalau menjelaskan rinciannya sebutkan SEMUA pemasukan di atas (termasuk kiriman dari pasangan), bukan hanya satu. ` +
+      `(Kalau pengguna menyebut saldo terbaru, catat ulang dengan tag SALDO.)`;
   } else {
     out += "\nSaldo awal pengguna BELUM diketahui. Jangan menebak sisa uang; kalau ditanya sisa uang, minta pengguna menyebut uangnya sekarang, lalu catat dengan tag SALDO.";
   }
@@ -1292,7 +1295,15 @@ const XFER_WINDOW = 3 * DAY; // kiriman dianggap sama kalau nominalnya sama dan 
 const XFER_MAX_PENDING = 20;
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
-async function usernameOf(u) { return (await redis("GET", "uid:" + u)) || "pasangan"; }
+// Nama yang ditampilkan ke pasangan: nama di Profil kalau diisi, kalau tidak baru username
+async function usernameOf(u) {
+  try {
+    const p = await getProfile(u);
+    const n = String((p && p.name) || "").trim();
+    if (n) return n;
+  } catch {}
+  return (await redis("GET", "uid:" + u)) || "pasangan";
+}
 async function getLink(u) {
   const raw = await redis("GET", key(u, "link"));
   try { return raw ? JSON.parse(raw) : null; } catch { return null; }
@@ -1371,6 +1382,7 @@ async function useLinkCode(u, input) {
   const ts = Date.now();
   await redis("SET", key(u, "link"), JSON.stringify({ pid: o, ts }));
   await redis("SET", key(o, "link"), JSON.stringify({ pid: u, ts }));
+  await redis("DEL", key(u, "unlinked"), key(o, "unlinked"));
   await notifyUser(o, "🔗 " + (await usernameOf(u)) + " sekarang terhubung denganmu. Kiriman uang antar kalian akan saling dikabari.");
   return linkStatus(u);
 }
@@ -1381,6 +1393,11 @@ async function unlinkPartner(u) {
     await redis("DEL", key(u, "link"), key(u, "dupmasuk"));
     const back = await getLink(l.pid);
     if (back && back.pid === u) await redis("DEL", key(l.pid, "link"), key(l.pid, "dupmasuk"));
+    // Catat bekas hubungan supaya asisten tahu sudah putus (riwayat obrolan masih menyebut "terhubung")
+    const [meName, otherName] = [await usernameOf(u), await usernameOf(l.pid)];
+    const stamp = (name) => JSON.stringify({ name, ts: Date.now() });
+    await redis("SET", key(u, "unlinked"), stamp(otherName), "EX", String(30 * DAY / 1000));
+    await redis("SET", key(l.pid, "unlinked"), stamp(meName), "EX", String(30 * DAY / 1000));
     await notifyUser(l.pid, "🔌 " + (await usernameOf(u)) + " memutus hubungan akun. Kiriman uang tidak lagi saling dikabari.");
   }
   return linkStatus(u);
@@ -1495,10 +1512,15 @@ async function answerDupMasuk(u, text) {
 async function partnerContext(u) {
   const l = await getLink(u);
   if (!l) {
-    return "Pasangan: belum ada akun pasangan yang terhubung. Kalau pengguna mencatat uang ke/dari pasangan, catat seperti biasa (BELI / MASUK). Boleh sebut SEKALI dan singkat bahwa di Pengaturan > Hubungkan, akun pasangan bisa dihubungkan supaya kiriman uang tidak tercatat dobel; jangan diulang kalau sudah pernah kamu sebut di obrolan.";
+    let was = null;
+    try { was = JSON.parse(await redis("GET", key(u, "unlinked"))); } catch {}
+    if (was && was.name) {
+      return "Pasangan: hubungan akun dengan " + was.name + " SUDAH DIPUTUS pada " + fmtWib(was.ts) + ", jadi sekarang tidak ada akun yang terhubung. Abaikan riwayat obrolan yang menyebut kalian terhubung atau kiriman \"sudah dikabari\". Kalau pengguna mengirim uang ke / menerima uang dari " + was.name + " atau pasangan/teman, catat seperti biasa (BELI / MASUK) dan katakan singkat di balasanmu bahwa hubungannya sudah putus, sehingga " + was.name + " TIDAK dikabari dan tidak ada pencocokan otomatis. Tawarkan untuk menghubungkan lagi lewat Pengaturan > Hubungkan (ulangi tawaran ini hanya sekali).";
+    }
+    return "Pasangan: belum ada akun pasangan yang terhubung. Kalau pengguna mencatat uang ke/dari pasangan, catat seperti biasa (BELI / MASUK). Boleh sebut SEKALI dan singkat bahwa di Pengaturan > Hubungkan, akun pasangan atau teman bisa dihubungkan supaya kiriman uang tidak tercatat dobel; jangan diulang kalau sudah pernah kamu sebut di obrolan.";
   }
   const name = await usernameOf(l.pid);
-  return `Pasangan terhubung: @${name}. Kalau pengguna menyebut suami/istri/pasangan/ayah/bunda atau nama itu, yang dimaksud dia.
+  return `Akun terhubung (pasangan atau teman): ${name}. Kalau pengguna menyebut suami/istri/pasangan/teman/ayah/bunda atau nama itu, yang dimaksud dia.
 - Pengguna MENGIRIM uang ke pasangan (mis. "kasih istri 5jt", "transfer ke suami 200rb"): [[KIRIM: 5000000 | keterangan singkat]]
   Sistem mencatatnya sebagai pengeluaran pengguna dan mengabari pasangan untuk konfirmasi. Jangan buat BELI untuk ini.
 - Pengguna MENERIMA uang dari pasangan (mis. "dapet 5jt dari suami", "istri transfer 1jt"): [[PASANGAN_MASUK: 5000000 | keterangan singkat]]

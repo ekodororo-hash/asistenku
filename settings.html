@@ -523,14 +523,14 @@ function renderLink() {
   const btn = (txt, fn, cls) => { const b = document.createElement("button"); b.textContent = txt; if (cls) b.className = cls; b.onclick = () => fn(b); return b; };
 
   if (linkState.linked) {
-    p("Terhubung dengan <b>@" + escH(linkState.partner) + "</b> sejak " + new Date(linkState.since).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" }) +
+    p("Terhubung dengan <b>" + escH(linkState.partner) + "</b> sejak " + new Date(linkState.since).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" }) +
       ".<br>Kiriman uang antar kalian saling dikabari. Tugas, catatan, pengeluaran, dan obrolan tetap terpisah.");
     (linkState.incoming || []).forEach((x) => {
       const it = document.createElement("div");
       it.className = "item";
       const main = document.createElement("div");
       main.className = "kmain";
-      main.innerHTML = "💸 <b>@" + escH(x.from) + "</b> mengirim <b>" + rp(x.amt) + "</b>" + (x.note ? " (" + escH(x.note) + ")" : "") + "<span class=\"ksub\">Catat sebagai pemasukanmu?</span>";
+      main.innerHTML = "💸 <b>" + escH(x.from) + "</b> mengirim <b>" + rp(x.amt) + "</b>" + (x.note ? " (" + escH(x.note) + ")" : "") + "<span class=\"ksub\">Catat sebagai pemasukanmu?</span>";
       const bt = document.createElement("div");
       bt.className = "kbtns";
       bt.append(btn("Catat", (b) => linkOp("acceptXfer", { id: x.id }, b), "primary"), btn("Tidak", (b) => linkOp("declineXfer", { id: x.id }, b)));
@@ -539,12 +539,12 @@ function renderLink() {
     });
     const row = document.createElement("div");
     row.className = "actions";
-    row.appendChild(btn("Putuskan", (b) => { if (confirm("Putuskan hubungan dengan @" + linkState.partner + "? Kiriman uang tidak lagi saling dikabari.")) linkOp("unlinkPartner", {}, b); }, "danger"));
+    row.appendChild(btn("Putuskan", (b) => { if (confirm("Putuskan hubungan dengan " + linkState.partner + "? Kiriman uang tidak lagi saling dikabari.")) linkOp("unlinkPartner", {}, b); }, "danger"));
     box.appendChild(row);
     return;
   }
 
-  p("Hubungkan akunmu dengan akun pasangan supaya kiriman uang (mis. <i>kasih istri 5jt</i>) tidak tercatat dobel. Yang dibagi hanya kabar kiriman uang; tugas, catatan, dan pengeluaran tetap terpisah. Kalian harus sama-sama setuju, dan bisa diputus kapan saja.");
+  p("Hubungkan akunmu dengan akun pasangan atau teman supaya kiriman uang (mis. <i>kasih istri 5jt</i>) tidak tercatat dobel. Yang dibagi hanya kabar kiriman uang; tugas, catatan, dan pengeluaran tetap terpisah. Kalian harus sama-sama setuju, dan bisa diputus kapan saja.");
 
   if (linkState.code) {
     const deadline = Date.now() + linkState.codeTtl * 1000;
@@ -555,7 +555,7 @@ function renderLink() {
     const left = p("");
     const tick = () => {
       const s = Math.max(0, Math.round((deadline - Date.now()) / 1000));
-      left.innerHTML = "Berikan kode ini ke pasanganmu, lalu dia memasukkannya di kolom <b>Punya kode?</b> di akunnya. Berlaku " + Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0") + ", sekali pakai.";
+      left.innerHTML = "Berikan kode ini ke pasangan atau temanmu, lalu dia memasukkannya di kolom <b>Punya kode?</b> di akunnya. Berlaku " + Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0") + ", sekali pakai.";
       if (s <= 0) { clearInterval(linkTimer); load(); }
     };
     tick();
@@ -579,7 +579,7 @@ function renderLink() {
   const row = document.createElement("div");
   row.className = "row";
   const inp = document.createElement("input");
-  inp.placeholder = "Kode 6 karakter dari pasangan"; inp.autocomplete = "off"; inp.autocapitalize = "characters"; inp.maxLength = 12;
+  inp.placeholder = "Kode 6 karakter dari pasangan atau teman"; inp.autocomplete = "off"; inp.autocapitalize = "characters"; inp.maxLength = 12;
   const go = btn("Hubungkan", (b) => linkOp("useLinkCode", { code: inp.value }, b), "primary");
   inp.addEventListener("keydown", (e) => { if (e.key === "Enter") go.click(); });
   row.append(inp, go);
