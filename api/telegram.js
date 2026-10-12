@@ -30,7 +30,6 @@ const START_TEXT =
   "/cuaca  /lokasi kota  /berita topik\n" +
   "/memori  /lupakan  /atur\n\n" +
   `Otomatis: ringkasan pagi, check-in malam, dan rekap pengeluaran mingguan. Atur di /atur.\n` +
-  "Tanya info terkini (jadwal bola, harga, berita, dll) juga bisa, aku cari otomatis di Google.\n" +
   "Aku mengingat hal-hal penting tentangmu supaya ngobrolnya nyambung. Lihat dengan /memori, hapus dengan /lupakan.\n\n" +
   "Tugas, catatan, uang, dan obrolan di sini sama persis dengan yang ada di web. Pesan yang kamu tulis di web juga disalin ke sini (matikan dengan /salin off).";
 
