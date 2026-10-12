@@ -75,6 +75,7 @@
   .combo-list .opt + .opt { border-top:1px solid var(--line); }
   .combo-list .opt:hover, .combo-list .opt:active { background:var(--bg); }
   .combo-list .opt b { display:block; font-size:15px; font-weight:600; word-break:break-all; }
+  .combo-list .opt .rec { display:inline-block; margin-left:6px; padding:1px 7px; border-radius:999px; font-size:11px; font-weight:600; color:var(--accent); border:1px solid var(--accent); vertical-align:1px; word-break:normal; }
   .combo-list .opt small { display:block; margin-top:2px; font-size:12px; color:var(--muted); }
 </style>
 </head>
@@ -126,14 +127,22 @@
     <p class="msg" id="keyMsg"></p>
     <hr>
     <label for="mdlMain">Model Gemini</label>
-    <p class="hint" style="margin:0 0 8px">Kosongkan untuk memakai bawaan server (<span id="mdlDefault"></span>). Model cadangan dipakai otomatis kalau model utama kena limit di semua key atau tidak ditemukan. Klik kolom untuk memilih dari daftar; model gambar/suara disembunyikan tapi tetap bisa diketik.</p>
+    <p class="hint" style="margin:0 0 8px">Kosongkan untuk memakai bawaan server (<span id="mdlDefault"></span>). Ketuk kolom untuk memilih dari daftar.</p>
+    <details class="guide" style="margin:0 0 10px">
+      <summary>ⓘ Cara kerja model cadangan</summary>
+      <ul>
+        <li>Model cadangan dipakai otomatis kalau model utama kena limit di semua key, atau tidak ditemukan.</li>
+        <li>Saran: utama Flash-Lite, cadangan Flash.</li>
+        <li>Model gambar/suara disembunyikan dari daftar, tapi tetap bisa diketik manual.</li>
+        <li>Angka kuota dari AI Studio (Okt 2026), bisa berubah atau berbeda per project.</li>
+      </ul>
+    </details>
     <div class="combo"><input id="mdlMain" placeholder="Model utama" autocomplete="off" autocapitalize="off" spellcheck="false" role="combobox" aria-autocomplete="list"><div class="combo-list" role="listbox" hidden></div></div>
     <div class="combo" style="margin-top:8px"><input id="mdlFb" placeholder="Model cadangan (opsional)" autocomplete="off" autocapitalize="off" spellcheck="false" role="combobox" aria-autocomplete="list"><div class="combo-list" role="listbox" hidden></div></div>
     <p class="hint" id="mdlQuota" style="margin:8px 0 0;white-space:pre-line"></p>
-    <p class="hint" style="margin:6px 0 0">Saran: utama Flash-Lite, cadangan Flash. Angka kuota dari AI Studio (Okt 2026), bisa berubah atau berbeda per project.</p>
-    <div class="actions"><button class="primary" id="mdlSuggest" type="button">Isi saran model</button><button class="primary" id="mdlSave">Simpan model</button></div>
+    <div class="actions"><button id="mdlSuggest" type="button">Isi saran model</button><button class="primary" id="mdlSave">Simpan model</button></div>
     <p class="msg" id="mdlMsg"></p>
-    <a class="btn primary" id="histLink" href="/riwayat.html" style="margin-top:12px;width:100%">Lihat riwayat pemakaian →</a>
+    <a class="btn" id="histLink" href="/riwayat.html" style="margin-top:12px;width:100%">Lihat riwayat pemakaian →</a>
   </section>
 
   <section id="secBot">
@@ -302,6 +311,15 @@ function modelSort(a, b) {
 }
 let modelNames = [];
 let modelsP = null;
+// Saran model: utama = gratis paling longgar (bukan Gemma), cadangan = jenis berbeda dari utama
+function pickSuggest() {
+  const cand = modelNames.filter((m) => { const i = modelInfo(m); return i.tier === "gratis" && i.kind !== "gemma"; });
+  const main = cand[0] || "";
+  if (!main) return { main: "", fb: "" };
+  const kind = modelInfo(main).kind;
+  const fb = cand.find((m) => modelInfo(m).kind !== kind) || cand.find((m) => m !== main) || "";
+  return { main, fb };
+}
 function loadModelList() {
   if (modelsP) return modelsP;
   modelsLoaded = true;
@@ -315,6 +333,7 @@ function loadModelList() {
 }
 // Daftar model buatan sendiri (bukan <datalist> bawaan browser): selebar kolom, teks turun ke bawah,
 // dan di HP tingginya menyesuaikan sisa layar di atas keyboard.
+function recOf(m) { const g = pickSuggest(); return m === g.main ? "Disarankan · utama" : (m === g.fb ? "Disarankan · cadangan" : ""); }
 function setupCombo(input) {
   const list = input.parentNode.querySelector(".combo-list");
   let typed = false;
@@ -332,7 +351,10 @@ function setupCombo(input) {
     items.forEach((m) => {
       const o = document.createElement("div");
       o.className = "opt"; o.setAttribute("role", "option");
-      const n = document.createElement("b"); n.textContent = m; o.appendChild(n);
+      const n = document.createElement("b"); n.textContent = m;
+      const rec = recOf(m);
+      if (rec) { const r = document.createElement("span"); r.className = "rec"; r.textContent = rec; n.appendChild(r); }
+      o.appendChild(n);
       const t = modelInfo(m).label;
       if (t) { const s = document.createElement("small"); s.textContent = t; o.appendChild(s); }
       o.addEventListener("click", () => { input.value = m; close(); updateQuota(); });
@@ -364,11 +386,8 @@ setupCombo($("mdlFb"));
 $("mdlSuggest").onclick = async () => {
   say("mdlMsg", "Memuat daftar model...");
   await loadModelList();
-  const cand = modelNames.filter((m) => { const i = modelInfo(m); return i.tier === "gratis" && i.kind !== "gemma"; });
-  const main = cand[0];
+  const { main, fb } = pickSuggest();
   if (!main) { say("mdlMsg", "Belum ada model Flash di daftar. Pastikan API key sudah ditambahkan.", "err"); return; }
-  const kind = modelInfo(main).kind;
-  const fb = cand.find((m) => modelInfo(m).kind !== kind) || cand.find((m) => m !== main) || "";
   $("mdlMain").value = main; $("mdlFb").value = fb;
   updateQuota();
   say("mdlMsg", "Terisi dengan saran. Klik Simpan model untuk menerapkan.", "ok");
