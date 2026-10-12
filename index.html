@@ -45,12 +45,9 @@
   #form { display:flex; gap:8px; padding:12px 16px; background:var(--card); border-top:1px solid var(--line); }
   textarea { flex:1; resize:none; font:inherit; padding:10px 12px; border-radius:12px; border:1px solid var(--line); background:var(--bg); color:var(--ink); max-height:120px; }
 
-  aside { order:-1; width:330px; background:var(--card); border-right:1px solid var(--line); padding:14px; overflow-y:auto; scrollbar-width:thin; scrollbar-color:var(--line) transparent; }
-  aside::-webkit-scrollbar { width:6px; }
-  aside::-webkit-scrollbar-track { background:transparent; }
-  aside::-webkit-scrollbar-thumb { background:var(--line); border-radius:10px; }
-  aside::-webkit-scrollbar-thumb:hover { background:var(--muted); }
+  aside { order:-1; width:330px; background:var(--card); border-right:1px solid var(--line); padding:14px; overflow-y:auto; scrollbar-width:none; -ms-overflow-style:none; -webkit-overflow-scrolling:touch; }
   aside h2 { font-size:15px; margin:0 0 10px; }
+  aside::-webkit-scrollbar, .hours::-webkit-scrollbar, .cats::-webkit-scrollbar { display:none; width:0; height:0; }
   .tabs { display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:6px; margin-bottom:14px; }
   .tabs button { min-width:0; padding:8px 1px; font-size:11px; line-height:1.2; border-radius:12px; white-space:nowrap; }
   @media (max-width:380px) { .tabs { gap:5px; } .tabs button { font-size:10.5px; } }
@@ -73,16 +70,10 @@
   .wx-temp { font-size:30px; font-weight:600; line-height:1.1; }
   .wx-place { font-size:13px; color:var(--muted); }
   .wx-meta { margin-top:8px; color:var(--muted); font-size:13px; line-height:1.5; }
-  .hours { display:flex; gap:6px; overflow-x:auto; margin-top:10px; padding-bottom:2px; scrollbar-width:thin; scrollbar-color:var(--line) transparent; }
-  .hours::-webkit-scrollbar { height:6px; }
-  .hours::-webkit-scrollbar-track { background:transparent; }
-  .hours::-webkit-scrollbar-thumb { background:var(--line); border-radius:10px; }
+  .hours { display:flex; gap:6px; overflow-x:auto; margin-top:10px; padding-bottom:2px; scrollbar-width:none; -ms-overflow-style:none; -webkit-overflow-scrolling:touch; }
   .hours div { flex:0 0 auto; text-align:center; font-size:12px; padding:6px 8px; border:1px solid var(--line); border-radius:10px; min-width:52px; }
   .hours b { display:block; font-size:16px; font-weight:400; margin:2px 0; }
-  .cats { display:flex; gap:8px; overflow-x:auto; margin-bottom:10px; padding-bottom:2px; scrollbar-width:thin; scrollbar-color:var(--line) transparent; }
-  .cats::-webkit-scrollbar { height:6px; }
-  .cats::-webkit-scrollbar-track { background:transparent; }
-  .cats::-webkit-scrollbar-thumb { background:var(--line); border-radius:10px; }
+  .cats { display:flex; gap:8px; overflow-x:auto; margin-bottom:10px; padding-bottom:2px; scrollbar-width:none; -ms-overflow-style:none; -webkit-overflow-scrolling:touch; }
   .cats button { white-space:nowrap; font-size:13px; padding:6px 12px; flex:none; }
   .cats button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
   .news a { display:flex; gap:10px; align-items:flex-start; padding:10px 0; border-bottom:1px solid var(--line); color:var(--ink); text-decoration:none; }
@@ -98,9 +89,18 @@
   body.ready #app { visibility:visible; }
   #pinGate { position:fixed; inset:0; background:var(--bg); z-index:50; display:flex; align-items:center; justify-content:center; padding:20px; }
   #pinGate.hide { display:none; }
-  #pinGate .box { width:min(320px,90vw); text-align:center; }
-  #pinGate input { width:100%; text-align:center; font-size:22px; letter-spacing:6px; padding:12px; border-radius:12px; border:1px solid var(--line); background:var(--card); color:var(--ink); margin:14px 0; }
-  #pinGate p.err { color:#d33; font-size:13px; min-height:18px; margin:0 0 4px; }
+  #pinGate .box { width:min(360px,100%); text-align:left; }
+  #pinGate h2 { font-size:24px; line-height:1.2; text-align:center; }
+  #pinGate .muted { text-align:center; }
+  #pinGate form { display:flex; flex-direction:column; gap:10px; margin-top:18px; }
+  #pinGate .pw { margin:0 !important; }
+  #pinGate input { display:block; width:100%; text-align:left; font-size:16px; letter-spacing:0; padding:13px 14px; border-radius:12px; border:1px solid var(--line); background:var(--card); color:var(--ink); margin:0 !important; font-family:inherit; }
+  #pinGate input:focus { outline:2px solid var(--accent); outline-offset:-1px; border-color:var(--accent); }
+  #pinGate p.err { color:#d33; font-size:13px; min-height:0; margin:0; text-align:center; }
+  #pinGate p.err:empty { display:none; }
+  #pinGate button.primary { width:100%; padding:13px; font-size:16px; font-weight:600; border-radius:12px; margin-top:4px; }
+  #pinGate .switch { margin:18px 0 0; font-size:14px; text-align:center; }
+  #pinGate .switch a { color:var(--accent); text-decoration:none; font-weight:600; }
 
   dialog { border:1px solid var(--line); border-radius:16px; background:var(--card); color:var(--ink); width:min(92vw,420px); }
   dialog label { display:block; margin:10px 0 4px; font-size:13px; color:var(--muted); }
@@ -139,13 +139,13 @@
     <h2 style="margin:0 0 6px" id="authTitle">🔒 Masuk</h2>
     <p class="muted" style="margin:0 0 4px" id="authSub">Masuk ke asistenmu.</p>
     <form id="authForm">
-      <input id="authUser" type="text" autocomplete="username" autocapitalize="none" placeholder="Username" style="font-size:16px;letter-spacing:0;margin:14px 0 0">
-      <input id="authPass" type="password" autocomplete="current-password" placeholder="Password" style="font-size:16px;letter-spacing:0;margin:8px 0 0">
-      <input id="authInvite" type="password" autocomplete="off" placeholder="Kode undangan" style="font-size:16px;letter-spacing:0;margin:8px 0 0">
-      <p class="err" id="pinErr" style="margin-top:10px"></p>
-      <button class="primary" type="submit" id="authBtn" style="width:100%">Masuk</button>
+      <input id="authUser" type="text" autocomplete="username" autocapitalize="none" placeholder="Username">
+      <input id="authPass" type="password" autocomplete="current-password" placeholder="Password">
+      <input id="authInvite" type="password" autocomplete="off" placeholder="Kode undangan">
+      <p class="err" id="pinErr"></p>
+      <button class="primary" type="submit" id="authBtn">Masuk</button>
     </form>
-    <p class="muted" style="margin:14px 0 0;font-size:13px"><a href="#" id="authSwitch">Belum punya akun? Daftar</a></p>
+    <p class="switch"><a href="#" id="authSwitch">Belum punya akun? Daftar</a></p>
   </div>
 </div>
 <div id="app">
