@@ -521,7 +521,8 @@ async function geminiRaw(u, body, src) {
   }
   if (codes.length && codes.every((x) => x === 429)) {
     const e = new Error("Semua API key sedang kena limit" + (models.length > 1 ? " (model cadangan juga)" : "") +
-      ". Coba lagi sebentar lagi. Kalau terus begini, kuota harian mungkin habis (reset sekitar pukul 14.00 WIB); tambah key dari project lain atau ganti model di Pengaturan.");
+      ". Coba lagi sebentar lagi. Kalau terus begini, kuota harian mungkin habis (reset sekitar pukul 14.00 WIB); tambah key dari project lain atau ganti model di Pengaturan." +
+      (lastErr && lastErr.message ? " [Pesan Google: " + String(lastErr.message).replace(/\s+/g, " ").slice(0, 200) + "]" : ""));
     e.status = 429;
     throw e;
   }
@@ -542,14 +543,25 @@ async function geminiSearch(u, system, contents, src = "telegram") {
   const body = { contents, tools: [{ google_search: {} }] };
   if (system) body.systemInstruction = { parts: [{ text: system }] };
   let data, searchError = "";
-  try {
-    data = await geminiRaw(u, body, src);
-  } catch (e) {
-    searchError = String(e.message || "gagal").replace(/\s+/g, " ").slice(0, 220);
+  const NOSEARCH = "\n\n[CATATAN SISTEM: pencarian Google sedang TIDAK tersedia (kena limit/gagal). Untuk info terkini, bilang jujur bahwa pencarian lagi bermasalah dan jawaban dari pengetahuanmu mungkin tidak terbaru. JANGAN membuat pengingat atau tugas untuk \"mengecek nanti\".]";
+  // Setelah pencarian gagal, berhenti mencoba 30 menit supaya tidak boros waktu/kuota di tiap pesan
+  const off = await redis("GET", key(u, "searchoff")).catch(() => null);
+  if (off) {
     delete body.tools;
-    body.systemInstruction = { parts: [{ text: (system || "") +
-      "\n\n[CATATAN SISTEM: pencarian Google sedang GAGAL untuk pesan ini. Jawab langsung dari pengetahuanmu dan bilang jujur kalau datanya mungkin tidak terbaru. JANGAN membuat pengingat atau tugas untuk \"mengecek nanti\".]" }] };
+    body.systemInstruction = { parts: [{ text: (system || "") + NOSEARCH }] };
     data = await geminiRaw(u, body, src);
+  } else {
+    try {
+      data = await geminiRaw(u, body, src);
+    } catch (e) {
+      const full = String(e.message || "gagal").replace(/\s+/g, " ");
+      const g = full.match(/\[Pesan Google: (.*)\]/); // tampilkan pesan asli Google kalau ada
+      searchError = (g ? g[1] : full).slice(0, 200);
+      await redis("SET", key(u, "searchoff"), "1", "EX", "1800").catch(() => {});
+      delete body.tools;
+      body.systemInstruction = { parts: [{ text: (system || "") + NOSEARCH }] };
+      data = await geminiRaw(u, body, src);
+    }
   }
   const cand = data.candidates?.[0] || {};
   const text = (cand.content?.parts || []).map((p) => p.text || "").join("");
@@ -565,7 +577,7 @@ async function geminiSearch(u, system, contents, src = "telegram") {
 // Mencegah AI membuat pengingat sendiri (mis. "cek kurs") untuk pertanyaan biasa.
 const REMIND_INTENT = /ingat|remind|alarm|bangun|jangan lupa|pengingat|notif|kabari|kasih tau|kasih tahu|tiap|setiap|\bjam\b|\d{1,2}[:.]\d{2}|menit lagi|detik lagi|besok|lusa|nanti|minggu depan|bulan depan/i;
 const sourceLine = (sources, searchError) =>
-  searchError ? "⚠️ Pencarian Google gagal, jawaban ini tanpa pencarian.\nAlasan: " + searchError
+  searchError ? "⚠️ Pencarian Google lagi gagal, jadi jawaban ini tanpa pencarian. Dicoba lagi otomatis 30 menit lagi.\nAlasan: " + searchError
   : sources && sources.length ? "🔎 Sumber: " + sources.join(", ") : "";
 
 // Riwayat harus diawali giliran "user" dan selang-seling
