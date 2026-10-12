@@ -192,6 +192,10 @@
         <input id="taskInput" placeholder="Tambah tugas...">
         <button id="taskAddBtn">+</button>
       </div>
+      <div class="addrow">
+        <input id="taskWhen" type="datetime-local" title="Jam pengingat (opsional, WIB)" aria-label="Jam pengingat (opsional, WIB)">
+      </div>
+      <p class="muted" style="margin:-2px 0 8px">Isi jam (WIB) kalau tugas mau diingatkan lewat Telegram. Kosongkan kalau tidak.</p>
       <div id="tasks"></div>
     </div>
 
@@ -373,10 +377,17 @@ function renderTasks() {
     const cb = document.createElement("input");
     cb.type = "checkbox"; cb.checked = t.done;
     cb.onchange = async () => {
-      try { await api("/api/state", { method: "POST", body: JSON.stringify({ op: "toggleTask", id: t.id }) }); t.done = cb.checked; renderTasks(); }
+      try { await api("/api/state", { method: "POST", body: JSON.stringify({ op: "toggleTask", id: t.id }) }); t.done = cb.checked; renderTasks(); refreshFromServer(); }
       catch (e) { cb.checked = !cb.checked; alert(e.message); }
     };
     const sp = document.createElement("span"); sp.textContent = t.text;
+    if (t.due) {
+      const w = document.createElement("small");
+      w.className = "muted";
+      w.style.display = "block";
+      w.textContent = "⏰ " + new Date(t.due).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) + " WIB";
+      sp.appendChild(w);
+    }
     const del = document.createElement("button"); del.textContent = "x";
     del.onclick = async () => {
       try { await api("/api/state", { method: "POST", body: JSON.stringify({ op: "deleteTask", id: t.id }) }); tasks = tasks.filter((x) => x.id !== t.id); renderTasks(); }
@@ -387,11 +398,13 @@ function renderTasks() {
   });
 }
 
-async function addTask(text) {
+async function addTask(text, when) {
   text = String(text).trim();
   if (!text) return;
+  const ts = when ? Date.parse(when + ":00+07:00") : null; // isi jam dianggap WIB
+  if (when && (!Number.isFinite(ts) || ts <= Date.now())) { alert("Jam pengingat sudah lewat atau tidak valid."); return; }
   try {
-    const { result } = await api("/api/state", { method: "POST", body: JSON.stringify({ op: "addTask", text }) });
+    const { result } = await api("/api/state", { method: "POST", body: JSON.stringify({ op: "addTask", text, ts }) });
     if (result) { tasks.push(result); renderTasks(); }
   } catch (e) { alert(e.message); }
 }
@@ -692,7 +705,7 @@ document.querySelectorAll(".tabs button").forEach((b) => { b.onclick = () => sho
 
 const onEnter = (id, fn) => $(id).addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); fn(); } });
 
-const doAddTask = () => { addTask($("taskInput").value); $("taskInput").value = ""; };
+const doAddTask = () => { addTask($("taskInput").value, $("taskWhen").value); $("taskInput").value = ""; $("taskWhen").value = ""; };
 $("taskAddBtn").onclick = doAddTask; onEnter("taskInput", doAddTask);
 
 $("remAddBtn").onclick = doAddRem; onEnter("remText", doAddRem);

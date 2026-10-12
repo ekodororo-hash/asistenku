@@ -49,7 +49,7 @@ module.exports = async (req, res) => {
     try {
       let result;
       switch (op) {
-        case "addTask": result = await addTask(u, p.text); break;
+        case "addTask": result = await addTask(u, p.text, p.ts); break;
         case "toggleTask": result = await toggleTask(u, p.id); break;
         case "deleteTask": result = await deleteTask(u, p.id); break;
         case "addReminder": result = await addReminder(u, p.text, p.ts, p.repeat); if (!result) throw new Error("Waktu pengingat tidak valid atau sudah lewat."); break;

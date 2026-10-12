@@ -2,7 +2,7 @@
 // Tugasnya: kirim pengingat yang jatuh tempo, ringkasan pagi, check-in malam, dan rekap mingguan.
 const {
   DAY, HOURS, redis, key, getBot, botUsers, sendTelegram, gemini: geminiBase, appendModelToHist,
-  fmtWib, fmtTime, wib, startOfDayWib, nextRepeat,
+  fmtWib, fmtTime, fmtDue, wib, startOfDayWib, nextRepeat, getTasks,
   cfgOn, getWeather, recapText, loadContext, buildSystem,
 } = require("./_lib");
 
@@ -23,6 +23,7 @@ async function runReminders(u, chatId) {
   const now = Date.now();
   const rows = await redis("ZRANGEBYSCORE", key(u, "reminders"), "-inf", now, "WITHSCORES");
   let sent = 0;
+  let tasks = null; // dimuat sekali kalau ada pengingat tugas
   for (let i = 0; i < (rows || []).length; i += 2) {
     const member = rows[i];
     const score = Number(rows[i + 1]);
@@ -33,8 +34,18 @@ async function runReminders(u, chatId) {
     let item;
     try { item = JSON.parse(member); } catch { continue; }
 
-    const label = item.repeat ? ` (${REPEAT_LABEL[item.repeat]})` : "";
-    const ok = await sendTelegram(u, chatId, `⏰ Pengingat${label}: ${item.text}`);
+    // Pengingat milik tugas: lewati kalau tugasnya sudah selesai/dihapus; sertakan nomor tugas untuk /tugasdone
+    let msg;
+    if (item.tid) {
+      if (!tasks) tasks = await getTasks(u);
+      const idx = tasks.findIndex((t) => t.id === item.tid);
+      if (idx < 0 || tasks[idx].done) continue;
+      msg = `⏰ Waktunya: ${item.text}\nSelesai? Ketik /tugasdone ${idx + 1}`;
+    } else {
+      const label = item.repeat ? ` (${REPEAT_LABEL[item.repeat]})` : "";
+      msg = `⏰ Pengingat${label}: ${item.text}`;
+    }
+    const ok = await sendTelegram(u, chatId, msg);
     if (!ok) {
       await redis("ZADD", key(u, "reminders"), Date.now() + 5 * 60 * 1000, member); // coba lagi 5 menit
       continue;
@@ -66,10 +77,16 @@ async function morning(u, chatId) {
   let weather = "";
   try { weather = await getWeather(u); } catch {}
 
+  // Daftar tetap (tidak bergantung Gemini): tugas belum selesai tanpa jam, atau jamnya sudah lewat
+  const open = (ctx.tasks || []).map((t, i) => ({ ...t, n: i + 1 })).filter((t) => !t.done && (!t.due || t.due < dayStart));
+  const taskBlock = open.length
+    ? "\n\n📝 Tugas belum selesai:\n" + open.slice(0, 15).map((t) => `${t.n}. ${t.text}${t.due ? " (terlewat, " + fmtDue(t.due) + ")" : ""}`).join("\n")
+    : "";
+
   const fallback =
     `☀️ Selamat pagi!\n${fmtWib(Date.now())}\n\n` +
     (weather ? `⛅ ${weather}\n\n` : "") +
-    `Pengingat hari ini:\n${todayLines}`;
+    `Pengingat hari ini:\n${todayLines}` + taskBlock;
 
   let text = fallback;
   try {
@@ -80,13 +97,13 @@ async function morning(u, chatId) {
           parts: [{
             text:
               `[Pesan otomatis sistem] Tulis ringkasan pagi untuk pengguna, maksimal 6 baris, hangat dan ringkas. ` +
-              `Sebut namanya jika kamu tahu. Beri satu saran kecil sesuai cuaca bila relevan.\n\n` +
+              `Sebut namanya jika kamu tahu. Beri satu saran kecil sesuai cuaca bila relevan. Daftar tugas yang belum selesai akan ditempel otomatis di bawah pesanmu, jadi jangan menyebutkannya satu-satu.\n\n` +
               `Tanggal: ${fmtWib(Date.now())}\nCuaca: ${weather || "(tidak tersedia)"}\nPengingat hari ini:\n${todayLines}`,
           }],
         },
       ])
     );
-    if (out) text = out;
+    if (out) text = out + taskBlock;
   } catch {}
 
   const ok = await sendTelegram(u, chatId, text);

@@ -3,7 +3,7 @@ const {
   HOURS, BTN, redis, key, getBot, saveBot, sendTelegram, downloadTelegramFile, gemini, trimHist,
   fmtWib, wib, rupiah, cfgOn, getLocation, setLocation, getWeather, getNews,
   recapText, deleteExpenseNumber, loadContext, buildSystem,
-  getTasks, addTask, toggleTask, deleteTask,
+  getTasks, addTask, toggleTask, deleteTask, unlinkTaskReminder, parseWib, fmtDue,
   addNote, addExpense, setSaldo,
 } = require("./_lib");
 const { getOwnerId, safeEq } = require("./_auth");
@@ -109,6 +109,7 @@ async function handleCommand(u, cmd, arg, say) {
       await redis("ZREM", key(u, "reminders"), rows[n - 1]);
       let it = {};
       try { it = JSON.parse(rows[n - 1]); } catch {}
+      if (it.tid) await unlinkTaskReminder(u, it.tid);
       await say(`Pengingat dihapus: ${it.text || "?"}`);
       return;
     }
@@ -116,8 +117,8 @@ async function handleCommand(u, cmd, arg, say) {
     case "/tugas": {
       const tasks = await getTasks(u);
       if (!tasks.length) { await say("Belum ada tugas. Tulis: tambah tugas <isi>, atau pakai web."); return; }
-      const lines = tasks.map((t, i) => `${i + 1}. ${t.done ? "[selesai]" : "[belum]"} ${t.text}`);
-      await say("Tugas (sama dengan di web):\n\n" + lines.join("\n") + "\n\nTandai selesai: /tugasdone N\nHapus: /hapustugas N");
+      const lines = tasks.map((t, i) => `${i + 1}. ${t.done ? "[selesai]" : "[belum]"} ${t.text}${t.due ? " ⏰ " + fmtDue(t.due) : ""}`);
+      await say("Tugas (sama dengan di web):\n\n" + lines.join("\n") + "\n\nTandai selesai: /tugasdone N (pengingatnya ikut batal)\nHapus: /hapustugas N");
       return;
     }
 
@@ -268,15 +269,18 @@ async function handleCommand(u, cmd, arg, say) {
 async function processTags(u, reply) {
   const notes = [];
 
-  // Tugas/checklist
-  for (const m of reply.matchAll(/\[\[TASK:\s*([^\]]+?)\s*\]\]/g)) {
-    const t = await addTask(u, m[1]);
-    if (t) notes.push("✅ Tugas ditambahkan: " + t.text);
+  // Tugas/checklist (boleh dengan jam -> otomatis jadi pengingat terhubung)
+  for (const m of reply.matchAll(/\[\[TASK:\s*([^\]|]+?)\s*(?:\|\s*([^\]|]+?)\s*)?\]\]/g)) {
+    const when = m[2] ? parseWib(m[2]) : null;
+    const t = await addTask(u, m[1], when);
+    if (!t) continue;
+    notes.push("✅ Tugas ditambahkan: " + t.text + (t.due ? "\n⏰ Diingatkan " + fmtWib(t.due) : ""));
+    if (m[2] && !t.due) notes.push("(Jamnya tidak valid atau sudah lewat, jadi tugas dibuat tanpa pengingat.)");
   }
 
   // Pengingat (boleh berulang)
   for (const m of reply.matchAll(/\[\[REMIND:\s*([^|\]]+?)\s*\|\s*([^|\]]+?)\s*(?:\|\s*(harian|mingguan|bulanan)\s*)?\]\]/gi)) {
-    const ts = Date.parse(m[1]);
+    const ts = parseWib(m[1]);
     const label = m[2].trim();
     const repeat = m[3] ? m[3].toLowerCase() : null;
     if (isNaN(ts) || ts <= Date.now()) {

@@ -594,6 +594,16 @@ function nextRepeat(ts, rule) {
   }
   return null;
 }
+// Waktu dari Gemini/web: kalau tidak ada offset zona, anggap WIB (server Vercel berjalan di UTC)
+function parseWib(str) {
+  let t = String(str || "").trim();
+  if (!t) return NaN;
+  if (!/(Z|[+-]\d{2}:?\d{2})$/i.test(t)) t += "+07:00";
+  return Date.parse(t);
+}
+function fmtDue(ts) {
+  return new Date(ts).toLocaleString("id-ID", { timeZone: TZ, weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) + " WIB";
+}
 const rupiah = (n) => "Rp" + Math.round(n).toLocaleString("id-ID");
 
 // ---------- Tugas (dipakai bareng web & Telegram) ----------
@@ -604,10 +614,16 @@ async function getTasks(u) {
 async function saveTasks(u, tasks) {
   await redis("SET", key(u, "tasks"), JSON.stringify(tasks.slice(-200)));
 }
-async function addTask(u, text) {
+// Tugas boleh punya jam (ts). Kalau ada, dibuat pengingat yang terhubung (reminder.tid = task.id, task.rid = reminder.id).
+async function addTask(u, text, ts) {
   const tasks = await getTasks(u);
   const item = { id: uid(), text: String(text).trim().slice(0, 300), done: false };
   if (!item.text) return null;
+  const when = Number(ts);
+  if (ts && Number.isFinite(when) && when > Date.now()) {
+    const r = await addReminder(u, item.text, when, null, item.id);
+    if (r) { item.due = when; item.rid = r.id; }
+  }
   tasks.push(item);
   await saveTasks(u, tasks);
   return item;
@@ -617,15 +633,28 @@ async function toggleTask(u, id) {
   const t = tasks.find((x) => x.id === id);
   if (!t) return null;
   t.done = !t.done;
+  if (t.done) {
+    if (t.rid) { await deleteReminderById(u, t.rid, false); t.rid = null; } // selesai: pengingat dibatalkan
+  } else if (t.due && t.due > Date.now()) {
+    const r = await addReminder(u, t.text, t.due, null, t.id);             // dibuka lagi & jamnya belum lewat
+    t.rid = r ? r.id : null;
+  }
   await saveTasks(u, tasks);
   return t;
 }
 async function deleteTask(u, id) {
   const tasks = await getTasks(u);
-  const next = tasks.filter((x) => x.id !== id);
-  if (next.length === tasks.length) return false;
-  await saveTasks(u, next);
+  const t = tasks.find((x) => x.id === id);
+  if (!t) return false;
+  if (t.rid) await deleteReminderById(u, t.rid, false);
+  await saveTasks(u, tasks.filter((x) => x.id !== id));
   return true;
+}
+// Pengingat tugas dihapus langsung (bukan lewat tugas): lepas tautan di tugasnya
+async function unlinkTaskReminder(u, tid) {
+  const tasks = await getTasks(u);
+  const t = tasks.find((x) => x.id === tid);
+  if (t && (t.rid || t.due)) { delete t.rid; delete t.due; await saveTasks(u, tasks); }
 }
 
 // ---------- Catatan (dipakai bareng web & Telegram) ----------
@@ -681,26 +710,28 @@ async function getReminders(u) {
     let it = {};
     try { it = JSON.parse(rows[i]); } catch {}
     const ts = Number(rows[i + 1]);
-    out.push({ id: it.id || "t" + ts, text: it.text || "?", ts, repeat: it.repeat || null });
+    out.push({ id: it.id || "t" + ts, text: it.text || "?", ts, repeat: it.repeat || null, tid: it.tid || null });
   }
   return out;
 }
-async function addReminder(u, text, ts, repeat) {
+async function addReminder(u, text, ts, repeat, tid) {
   const t = String(text || "").trim().slice(0, 200);
   const when = Number(ts);
   if (!t || !Number.isFinite(when) || when <= Date.now()) return null;
   const item = { id: uid(), text: t };
   if (REPEATS.includes(repeat)) item.repeat = repeat;
+  if (tid) item.tid = tid;
   await redis("ZADD", key(u, "reminders"), when, JSON.stringify(item));
   return { id: item.id, text: item.text, ts: when, repeat: item.repeat || null };
 }
-async function deleteReminderById(u, id) {
+async function deleteReminderById(u, id, unlink = true) {
   const rows = await redis("ZRANGE", key(u, "reminders"), 0, -1, "WITHSCORES");
   for (let i = 0; i < (rows || []).length; i += 2) {
     let it = {};
     try { it = JSON.parse(rows[i]); } catch {}
     if ((it.id || "t" + Number(rows[i + 1])) === id) {
       await redis("ZREM", key(u, "reminders"), rows[i]);
+      if (unlink && it.tid) await unlinkTaskReminder(u, it.tid);
       return true;
     }
   }
@@ -956,7 +987,9 @@ Tag khusus (ditaruh di baris terakhir balasan; pengguna tidak melihatnya):
 - Pengeluaran yang sudah terjadi (mis. "makan siang 25rb", "beli bensin 50 ribu", atau foto struk/nota): [[BELI: 25000 | makan | makan siang]]
   Jumlah rupiah angka bulat tanpa titik ("25rb" = 25000, "1,5jt" = 1500000). Kategori satu kata: makan, transport, belanja, tagihan, hiburan, kesehatan, lainnya. Untuk struk cukup satu tag berisi total.
 - Saldo/uang yang dimiliki pengguna sekarang (mis. \"uangku sekarang 500rb\", \"saldo 1,2jt\"): [[SALDO: 500000]]. Angka bulat tanpa titik. Sisa uang dihitung dari saldo dikurangi pengeluaran yang tercatat setelahnya.
-- Tugas/checklist (hal yang perlu dikerjakan, BUKAN pengingat berwaktu): [[TASK: isi tugas singkat]]
+- Tugas/checklist (pekerjaan yang perlu dikerjakan): [[TASK: isi tugas singkat]]
+  Kalau pengguna menyebut jam/hari untuk tugas itu (mis. "nyuci piring besok jam 7"), tambahkan waktu: [[TASK: nyuci piring | 2026-10-13T07:00:00+07:00]]. Tugas berjam otomatis jadi pengingat yang bunyi tepat waktu dan dibatalkan kalau tugasnya dicentang selesai. Jangan buat TASK dan REMIND sekaligus untuk hal yang sama.
+  Pakai REMIND hanya untuk pengingat murni yang bukan tugas (minum obat, rapat, tagihan) atau yang berulang.
 - Fakta jangka panjang tentang pengguna (nama, orang penting, kebiasaan, preferensi, hal besar yang sedang dihadapi): [[INGAT: fakta singkat]]. Jangan simpan detail yang sangat sensitif kecuali pengguna memintanya.
 - Catatan jika pengguna minta mencatat sesuatu: [[CATAT: isi catatan]]
 - Satu tag per hal. Jangan membuat tag kalau tidak perlu. Jika pengguna mengirim foto, lihat isinya dan tanggapi sesuai konteks.
@@ -964,7 +997,7 @@ Tag khusus (ditaruh di baris terakhir balasan; pengguna tidak melihatnya):
 
 function buildSystem(mode, ctx) {
   const tasks = (ctx.tasks || []).length
-    ? ctx.tasks.slice(-40).map((t, i) => `${i + 1}. ${t.done ? "[selesai]" : "[belum]"} ${t.text}`).join("\n")
+    ? ctx.tasks.slice(-40).map((t, i) => `${i + 1}. ${t.done ? "[selesai]" : "[belum]"} ${t.text}${t.due ? " (jam " + fmtWib(t.due) + ")" : ""}`).join("\n")
     : "(kosong)";
   const notes = (ctx.notes || []).length ? ctx.notes.slice(-20).map((n) => "- " + n.text).join("\n") : "(kosong)";
   const persona = mode === "curhat" ? PERSONA.curhat : PERSONA.asisten;
@@ -1005,7 +1038,7 @@ module.exports = {
   fmtWib, fmtTime, fmtDateShort, wib, startOfDayWib, nextRepeat, rupiah,
   cfgOn, getLocation, setLocation, getWeather, getNews,
   recapText, deleteExpenseNumber, loadContext, buildSystem,
-  getTasks, addTask, toggleTask, deleteTask,
+  getTasks, addTask, toggleTask, deleteTask, unlinkTaskReminder, parseWib, fmtDue,
   getNotes, addNote, deleteNoteById,
   getExpenses, addExpense, deleteExpenseById, getSaldo, setSaldo, moneyContext,
   getProfile, saveProfile,

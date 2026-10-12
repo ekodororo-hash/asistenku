@@ -6,7 +6,7 @@ const {
   trimHist, geminiRaw, fmtWib, rupiah,
   getMode, getHist, saveHist, getProfile,
   getTasks, addTask, getNotes, addNote, getExpenses, addExpense,
-  getReminders, addReminder, getBot, sendTelegram, cfgOn, quotaStatus, setSaldo, moneyContext,
+  getReminders, addReminder, getBot, sendTelegram, cfgOn, quotaStatus, setSaldo, moneyContext, parseWib,
 } = require("./_lib");
 
 const REPEAT_LABEL = { harian: "tiap hari", mingguan: "tiap minggu", bulanan: "tiap bulan" };
@@ -55,7 +55,9 @@ Tag khusus (taruh di baris terakhir balasan; pengguna tidak melihatnya):
 - Pengingat: [[REMIND: 2026-10-12T08:00:00+07:00 | isi pengingat singkat]]
   Waktu format ISO 8601 dengan +07:00, dihitung dari waktu sekarang (ubah "besok", "lusa", "2 jam lagi" jadi waktu pasti). Jika jam tidak disebut, tanyakan dulu dan jangan buat tag.
   Pengingat berulang: tambahkan bagian ketiga harian / mingguan / bulanan, contoh [[REMIND: 2026-10-13T09:00:00+07:00 | rapat tim | mingguan]]. Waktu = kemunculan pertama.
-- Tugas/checklist (hal yang perlu dikerjakan, BUKAN pengingat berwaktu): [[TASK: isi tugas singkat]]
+- Tugas/checklist (pekerjaan yang perlu dikerjakan): [[TASK: isi tugas singkat]]
+  Kalau pengguna menyebut jam/hari untuk tugas itu (mis. "nyuci piring besok jam 7"), tambahkan waktu: [[TASK: nyuci piring | 2026-10-13T07:00:00+07:00]]. Tugas berjam otomatis jadi pengingat yang bunyi tepat waktu dan dibatalkan kalau tugasnya dicentang selesai. Jangan buat TASK dan REMIND sekaligus untuk hal yang sama.
+  Pakai REMIND hanya untuk pengingat murni yang bukan tugas (minum obat, rapat, tagihan) atau yang berulang.
 - Catatan jika pengguna minta mencatat sesuatu: [[CATAT: isi catatan]]
 - Pengeluaran yang sudah terjadi (mis. "makan siang 25rb", "beli bensin 50 ribu"): [[BELI: 25000 | makan | makan siang]]
   Jumlah rupiah angka bulat tanpa titik ("25rb" = 25000, "1,5jt" = 1500000). Kategori satu kata: makan, transport, belanja, tagihan, hiburan, kesehatan, lainnya.
@@ -67,14 +69,17 @@ Tag khusus (taruh di baris terakhir balasan; pengguna tidak melihatnya):
 async function processTags(u, reply) {
   const added = [];
 
-  for (const m of reply.matchAll(/\[\[TASK:\s*([^\]]+?)\s*\]\]/g)) {
-    const t = await addTask(u, m[1]);
-    if (t) added.push("✅ Tugas ditambahkan: " + t.text);
+  for (const m of reply.matchAll(/\[\[TASK:\s*([^\]|]+?)\s*(?:\|\s*([^\]|]+?)\s*)?\]\]/g)) {
+    const when = m[2] ? parseWib(m[2]) : null;
+    const t = await addTask(u, m[1], when);
+    if (!t) continue;
+    added.push("✅ Tugas ditambahkan: " + t.text + (t.due ? "\n⏰ Diingatkan " + fmtWib(t.due) : ""));
+    if (m[2] && !t.due) added.push("(Jamnya tidak valid atau sudah lewat, jadi tugas dibuat tanpa pengingat.)");
   }
   for (const m of reply.matchAll(/\[\[REMIND:\s*([^|\]]+?)\s*\|\s*([^|\]]+?)\s*(?:\|\s*(harian|mingguan|bulanan)\s*)?\]\]/gi)) {
     const label = m[2].trim();
     const repeat = m[3] ? m[3].toLowerCase() : null;
-    const r = await addReminder(u, label, Date.parse(m[1]), repeat);
+    const r = await addReminder(u, label, parseWib(m[1]), repeat);
     added.push(r
       ? "⏰ Pengingat diset: " + label + (repeat ? " (" + REPEAT_LABEL[repeat] + ")" : "") + "\n" + fmtWib(r.ts)
       : 'Gagal mengatur pengingat "' + label + '" (waktu tidak valid atau sudah lewat).');
@@ -127,7 +132,7 @@ module.exports = async (req, res) => {
       : "(belum ada)";
 
     const taskList = tasks.length
-      ? tasks.slice(-40).map((t, i) => `${i + 1}. ${t.done ? "[selesai]" : "[belum]"} ${t.text}`).join("\n")
+      ? tasks.slice(-40).map((t, i) => `${i + 1}. ${t.done ? "[selesai]" : "[belum]"} ${t.text}${t.due ? " (jam " + fmtWib(t.due) + ")" : ""}`).join("\n")
       : "(kosong)";
     const noteList = notes.length
       ? notes.slice(-20).map((n) => "- " + n.text).join("\n")
