@@ -100,7 +100,7 @@
         <li>Kuota gratis per key terbatas. Tambah key dari akun Google lain (maks. 5) supaya tidak cepat habis.</li>
         <li>Error <b>429</b> artinya kuota sedang penuh. Tunggu sebentar, asisten otomatis pindah ke key berikutnya.</li>
         <li>Batas Google berlaku <b>per project</b>, bukan per key. Dua key dari project yang sama berbagi kuota yang sama, jadi buat key di project atau akun Google yang berbeda.</li>
-        <li>Hitungan "× hari ini" mengikuti hari kuota Google: reset tengah malam waktu Pasifik, sekitar pukul 14.00 WIB.</li>
+        <li>Hitungan "× hari ini" mengikuti hari kuota Google: reset tengah malam waktu Pasifik, sekitar pukul 14.00 WIB. Angka "dari ±N" di sebelahnya adalah batas gratis model utama; hitungannya perkiraan karena mencakup semua model, termasuk cadangan.</li>
         <li>Jangan bagikan key ke siapa pun, termasuk lewat screenshot.</li>
       </ul>
     </details>
@@ -113,11 +113,12 @@
     <p class="msg" id="keyMsg"></p>
     <hr>
     <label for="mdlMain">Model Gemini</label>
-    <p class="hint" style="margin:0 0 8px">Kosongkan untuk memakai bawaan server (<span id="mdlDefault"></span>). Model cadangan dipakai otomatis kalau model utama kena limit di semua key atau tidak ditemukan. Klik kolom untuk memilih dari daftar (model Flash yang gratis ada di atas; model khusus gambar/suara disembunyikan, tapi tetap bisa diketik manual). Saran: utama Flash-Lite (kuota harian jauh lebih besar), cadangan Flash. Kuota gratis dihitung terpisah per model. Angka kuota diambil dari halaman Rate limits AI Studio (Okt 2026), jadi bisa berubah atau berbeda per project.</p>
+    <p class="hint" style="margin:0 0 8px">Kosongkan untuk memakai bawaan server (<span id="mdlDefault"></span>). Model cadangan dipakai otomatis kalau model utama kena limit di semua key atau tidak ditemukan. Klik kolom untuk memilih dari daftar; model gambar/suara disembunyikan tapi tetap bisa diketik.</p>
     <input id="mdlMain" list="mdlList" placeholder="Model utama" autocomplete="off" autocapitalize="off" spellcheck="false">
     <input id="mdlFb" list="mdlList" placeholder="Model cadangan (opsional)" autocomplete="off" autocapitalize="off" spellcheck="false" style="margin-top:8px">
     <datalist id="mdlList"></datalist>
     <p class="hint" id="mdlQuota" style="margin:8px 0 0;white-space:pre-line"></p>
+    <p class="hint" style="margin:6px 0 0">Saran: utama Flash-Lite, cadangan Flash. Angka kuota dari AI Studio (Okt 2026), bisa berubah atau berbeda per project.</p>
     <div class="actions"><button id="mdlSuggest" type="button">Isi saran model</button><button id="mdlSave">Simpan model</button></div>
     <p class="msg" id="mdlMsg"></p>
     <a class="btn" id="histLink" href="/riwayat.html" style="margin-top:12px;width:100%">Lihat riwayat pemakaian →</a>
@@ -205,7 +206,7 @@ function renderKeys() {
     const sub = document.createElement("span");
     sub.className = "ksub";
     sub.textContent = (k.name ? "•••• " + k.last4 + " · " : "") + (k.lastUsed ? "Terakhir digunakan " + ago(k.lastUsed) : "Belum pernah digunakan") +
-      (k.today ? " · " + k.today + "× hari ini" : "") +
+      (k.today ? " · " + k.today + "× hari ini" + (quotaPerDay() ? " dari ±" + fmtN(quotaPerDay()) : "") : "") +
       ((k.status === "invalid" || k.status === "error") && k.error ? " · " + k.error : "") +
       (k.status === "invalid" ? " · dilewati sementara" : "");
     main.appendChild(sub);
@@ -241,9 +242,12 @@ function renderKeys() {
 
 /* ---------- Model Gemini ---------- */
 let modelsLoaded = false;
+let savedModel = "";
+function quotaPerDay() { return modelInfo(savedModel).rpd || 0; }
 function renderModel(c) {
   $("mdlMain").value = c.model || ""; $("mdlFb").value = c.fallback || "";
   $("mdlDefault").textContent = c.default || "gemini-flash-latest";
+  savedModel = c.model || c.default || "gemini-flash-latest";
   updateQuota();
 }
 // Klasifikasi + kuota harian dari nama model. API Google tidak memberi info ini; angka dari halaman
@@ -316,7 +320,7 @@ $("mdlSave").onclick = async () => {
   if (warn.length && !confirm(warn.map(([x, i]) => `• ${x}: ${i.label}`).join("\n") +
     "\n\nKalau API key kamu masih tier gratis atau model sudah dimatikan, chat akan gagal. Tetap simpan?")) return;
   $("mdlSave").disabled = true; say("mdlMsg", "Memeriksa model...");
-  try { renderModel(await op("saveModel", { model: $("mdlMain").value, fallback: $("mdlFb").value })); say("mdlMsg", "Model disimpan.", "ok"); }
+  try { renderModel(await op("saveModel", { model: $("mdlMain").value, fallback: $("mdlFb").value })); renderKeys(); say("mdlMsg", "Model disimpan.", "ok"); }
   catch (e) { say("mdlMsg", e.message, "err"); }
   $("mdlSave").disabled = false;
 };
