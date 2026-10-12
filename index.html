@@ -68,14 +68,21 @@
   aside { order:-1; width:330px; background:var(--card); border-right:1px solid var(--line); padding:14px; overflow-y:auto; scrollbar-width:none; -ms-overflow-style:none; -webkit-overflow-scrolling:touch; }
   aside h2 { font-size:15px; margin:0 0 10px; }
   aside::-webkit-scrollbar, .hours::-webkit-scrollbar, .cats::-webkit-scrollbar { display:none; width:0; height:0; }
-  /* desktop: tampilkan scrollbar tipis (HP tetap tersembunyi) */
+  /* desktop: scrollbar tipis transparan (HP tetap tersembunyi) */
   @media (min-width:761px) and (hover:hover) {
-    aside, aside .hours, aside .cats { scrollbar-width:thin; scrollbar-color:var(--muted) transparent; -ms-overflow-style:auto; }
-    aside::-webkit-scrollbar { display:block; width:8px; }
-    .hours::-webkit-scrollbar, .cats::-webkit-scrollbar { display:block; height:8px; width:auto; }
-    aside::-webkit-scrollbar-thumb, .hours::-webkit-scrollbar-thumb, .cats::-webkit-scrollbar-thumb { background:var(--muted); border-radius:8px; }
-    aside::-webkit-scrollbar-track, .hours::-webkit-scrollbar-track, .cats::-webkit-scrollbar-track { background:transparent; }
+    aside, aside .hours, aside .cats { scrollbar-width:auto; -ms-overflow-style:auto; }
+    aside::-webkit-scrollbar { display:block; width:10px; }
+    aside .hours::-webkit-scrollbar, aside .cats::-webkit-scrollbar { display:block; height:10px; width:auto; }
+    aside::-webkit-scrollbar-track, aside .hours::-webkit-scrollbar-track, aside .cats::-webkit-scrollbar-track { background:transparent; }
+    aside::-webkit-scrollbar-button, aside .hours::-webkit-scrollbar-button, aside .cats::-webkit-scrollbar-button { display:none; width:0; height:0; }
+    aside::-webkit-scrollbar-thumb, aside .hours::-webkit-scrollbar-thumb, aside .cats::-webkit-scrollbar-thumb { background:rgba(128,134,150,.4); border-radius:10px; border:2px solid transparent; background-clip:padding-box; }
+    aside::-webkit-scrollbar-thumb:hover, aside .hours::-webkit-scrollbar-thumb:hover, aside .cats::-webkit-scrollbar-thumb:hover { background:rgba(128,134,150,.7); background-clip:padding-box; }
     aside .hours, aside .cats { padding-bottom:8px; }
+  }
+  @media (min-width:761px) and (hover:hover) {
+    @supports not selector(::-webkit-scrollbar) {
+      aside, aside .hours, aside .cats { scrollbar-width:thin; scrollbar-color:rgba(128,134,150,.5) transparent; }
+    }
   }
   .tabs { display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:6px; margin-bottom:14px; }
   .tabs button { min-width:0; padding:8px 1px; font-size:11px; line-height:1.2; border-radius:12px; white-space:nowrap; }
