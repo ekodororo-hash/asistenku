@@ -960,29 +960,39 @@ async function recapText(u, interactive = false) {
   const week = all.filter((e) => e.ts >= weekStart);
   const month = all.filter((e) => e.ts >= monthStart);
   const incMonth = (await incomesSince(u, monthStart)).filter((e) => e.ts >= monthStart);
-  const incTotal = incMonth.reduce((s, e) => s + e.amt, 0);
   if (!month.length && !incMonth.length) {
     return { text: "💰 Uang\n\nBelum ada pemasukan atau pengeluaran tercatat bulan ini.\n\nCara mencatat, ketik:\n  makan siang 25rb\n  bensin 50rb\n  gajian 3jt", weekCount: 0, monthCount: 0 };
   }
+  const sg = (n) => (n < 0 ? "-" : "") + rupiah(Math.abs(n));
+  const incTotal = incMonth.reduce((t, e) => t + e.amt, 0);
   const bw = breakdown(week), bm = breakdown(month);
-  const net = incTotal - bm.total;
-  const incLines = incMonth.length
-    ? `Pemasukan bulan ini: ${rupiah(incTotal)} (${incMonth.length} transaksi)\nSelisih (masuk - keluar): ${net < 0 ? "-" : ""}${rupiah(Math.abs(net))}\n(Lihat atau hapus pemasukan: /masuk)\n\n`
-    : "";
-  if (!month.length) {
-    return { text: `💰 Uang\n\n${incLines}Belum ada pengeluaran tercatat bulan ini.`, weekCount: 0, monthCount: 0 };
+  const remaining = (await moneySummary(u)).remaining;
+
+  const parts = [];
+  parts.push("💰 Uang bulan ini");
+  parts.push(
+    `💵 Pemasukan: ${rupiah(incTotal)} (${incMonth.length})\n` +
+    `💸 Pengeluaran: ${rupiah(bm.total)} (${month.length})\n` +
+    `⚖️ Selisih: ${sg(incTotal - bm.total)}` +
+    (remaining != null ? `\n👛 Sisa uang: ${sg(remaining)}` : "")
+  );
+  if (month.length) {
+    parts.push("📊 Pengeluaran per kategori\n" + bm.lines.map((l) => l.replace(/^\s*-\s*/, "• ")).join("\n"));
+    if (week.length) parts.push(`📅 Minggu ini: ${rupiah(bw.total)} (${week.length} transaksi)`);
+    const base = Math.max(0, month.length - 8); // nomor = urutan di bulan ini, dipakai /hapusbeli N
+    const last = month.slice(-8).map((e, i) => `${base + i + 1}. ${fmtDateShort(e.ts)} · ${e.note || e.cat} · ${rupiah(e.amt)}`);
+    parts.push("🧾 Pengeluaran terakhir\n" + last.join("\n"));
   }
-  const base = Math.max(0, month.length - 8); // nomor = urutan di bulan ini, dipakai /hapusbeli N
-  const last = month.slice(-8).map((e, i) => `  ${base + i + 1}. ${fmtDateShort(e.ts)}: ${e.note || e.cat}, ${rupiah(e.amt)} (${e.cat})`);
-  const text =
-    `💰 Uang\n\n` + incLines +
-    `Pengeluaran minggu ini: ${rupiah(bw.total)} (${week.length} transaksi)\n${bw.lines.join("\n") || "  -"}\n\n` +
-    `Pengeluaran bulan ini: ${rupiah(bm.total)} (${month.length} transaksi)\n${bm.lines.join("\n") || "  -"}\n\n` +
-    (last.length ? `Pengeluaran terakhir:\n${last.join("\n")}\n\n` : "") +
-    (interactive
-      ? "Ada yang salah catat? Balas dengan nomornya saja (contoh: 2) untuk menghapus entri itu. Batal: /batal"
-      : "Salah catat? Ketik /rekap, lalu balas dengan nomor entri yang mau dihapus.");
-  return { text, weekCount: week.length, monthCount: month.length };
+  if (incMonth.length) {
+    const lastIn = incMonth.slice(-3).map((e) => `• ${fmtDateShort(e.ts)} · ${e.note || e.cat} · ${rupiah(e.amt)}`);
+    parts.push("💵 Pemasukan terakhir\n" + lastIn.join("\n"));
+  }
+  const hint = [];
+  if (month.length) hint.push(interactive ? "Hapus pengeluaran: balas nomornya (contoh: 2)." : "Hapus pengeluaran: ketik /rekap, lalu balas nomornya.");
+  if (incMonth.length) hint.push("Lihat atau hapus pemasukan: /masuk.");
+  if (interactive && month.length) hint.push("Batal: /batal");
+  if (hint.length) parts.push(hint.join("\n"));
+  return { text: parts.join("\n\n"), weekCount: week.length, monthCount: month.length };
 }
 
 // Hapus pengeluaran bulan ini berdasarkan nomor di daftar /rekap (n kosong = yang terakhir)
