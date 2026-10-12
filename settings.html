@@ -243,13 +243,25 @@ function renderModel(c) {
   $("mdlMain").value = c.model || ""; $("mdlFb").value = c.fallback || "";
   $("mdlDefault").textContent = c.default || "gemini-flash-latest";
 }
+function modelTag(m) {
+  if (/image|tts|veo|imagen/i.test(m)) return "berbayar";
+  if (/pro/i.test(m)) return "berbayar";
+  if (/flash/i.test(m)) return "gratis (ada batas kuota)";
+  return "";
+}
 async function loadModelList() {
   if (modelsLoaded) return;
   modelsLoaded = true;
   try {
     const list = await op("listModels");
     $("mdlList").innerHTML = "";
-    list.forEach((m) => { const o = document.createElement("option"); o.value = m; $("mdlList").appendChild(o); });
+    list.forEach((m) => {
+      const o = document.createElement("option");
+      o.value = m;
+      const t = modelTag(m);
+      if (t) o.label = t;
+      $("mdlList").appendChild(o);
+    });
   } catch (e) { modelsLoaded = false; say("mdlMsg", e.message, "err"); }
 }
 $("mdlMain").addEventListener("focus", loadModelList);
