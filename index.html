@@ -27,7 +27,6 @@
   header h1 { font-size:17px; margin:0; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .hbtns { display:flex; gap:6px; align-items:center; flex:none; }
   a.btn { display:inline-flex; align-items:center; justify-content:center; font:inherit; border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:10px; padding:8px 12px; text-decoration:none; line-height:1.2; }
-  .icon { width:40px; padding:8px 0; text-align:center; }
   button { font:inherit; cursor:pointer; border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:10px; padding:8px 12px; touch-action:manipulation; }
   button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
   main { flex:1; display:flex; min-height:0; }
@@ -88,6 +87,8 @@
   .side-head { display:flex; align-items:center; justify-content:space-between; }
   #tasksToggle, #closeSide, #backdrop { display:none; }
 
+  #app { visibility:hidden; }
+  body.ready #app { visibility:visible; }
   #pinGate { position:fixed; inset:0; background:var(--bg); z-index:50; display:flex; align-items:center; justify-content:center; padding:20px; }
   #pinGate.hide { display:none; }
   #pinGate .box { width:min(320px,90vw); text-align:center; }
@@ -102,7 +103,7 @@
     header { padding:10px 12px; padding-top:max(10px, env(safe-area-inset-top)); gap:6px; }
     header h1 { font-size:16px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     header button, header a.btn { padding:8px 10px; font-size:13px; min-height:40px; }
-    header .icon { padding:8px 0; }
+    header .lbl { display:none; }
     #chat { padding:12px; gap:8px; }
     .msg { max-width:92%; font-size:15px; }
     .chips { padding:0 12px 8px; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
@@ -126,7 +127,7 @@
 </style>
 </head>
 <body data-mode="asisten">
-<div id="pinGate">
+<div id="pinGate" class="hide">
   <div class="box">
     <h2 style="margin:0 0 6px" id="authTitle">🔒 Masuk</h2>
     <p class="muted" style="margin:0 0 4px" id="authSub">Masuk ke asistenmu.</p>
@@ -146,8 +147,8 @@
   <h1 id="title">Asisten Pribadi</h1>
   <div class="hbtns">
     <button id="modeBtn" title="Ganti mode">💬 Curhat</button>
-    <button id="clearBtn" class="icon" title="Hapus riwayat obrolan" aria-label="Reset obrolan">🧹</button>
-    <a href="/settings.html" class="btn icon" title="Pengaturan" aria-label="Pengaturan">⚙️</a>
+    <button id="clearBtn" title="Hapus riwayat obrolan">Reset</button>
+    <a href="/settings.html" class="btn" title="Pengaturan" aria-label="Pengaturan">⚙️<span class="lbl">&nbsp;Pengaturan</span></a>
   </div>
 </header>
 
@@ -240,11 +241,12 @@ const rupiah = (n) => "Rp" + Math.round(n).toLocaleString("id-ID");
 const fmtDate = (ts) => new Date(ts).toLocaleDateString("id-ID", { day: "numeric", month: "short" });
 
 /* ---------- PIN & API (data tersinkron dengan Telegram, disimpan di server) ---------- */
+let wasLoggedIn = false;
 async function api(path, opts = {}) {
   const headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
   const r = await fetch(path, Object.assign({}, opts, { headers, credentials: "same-origin" }));
   if (r.status === 401) {
-    showGate("Sesi habis. Silakan masuk lagi.");
+    showGate(wasLoggedIn ? "Sesi habis. Silakan masuk lagi." : "");
     throw new Error("Belum login");
   }
   const d = await r.json().catch(() => ({}));
@@ -270,7 +272,7 @@ function showGate(err) {
   $("authInvite").value = "";
   $("authUser").focus();
 }
-function hideGate() { $("pinGate").classList.add("hide"); }
+function hideGate() { $("pinGate").classList.add("hide"); document.body.classList.add("ready"); }
 
 /* ---------- State (dimuat dari server, bukan localStorage lagi) ---------- */
 let messages = [];
@@ -663,6 +665,7 @@ async function loadState() {
 async function boot() {
   try {
     await loadState();
+    wasLoggedIn = true;
     hideGate();
     renderTitle(); renderMode(); renderChat();
     renderTasks(); renderNotes(); renderMoney();
