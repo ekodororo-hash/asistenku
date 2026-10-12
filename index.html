@@ -652,14 +652,15 @@ function renderChat() {
     const m = messages[i];
     if (m.role !== "user" || !String(m.text).startsWith("[Foto]")) continue;
     const k = pool.map((t) => t.text).lastIndexOf(m.text);
-    if (k >= 0) { thumbFor.set(i, pool[k].url); pool.splice(k, 1); }
+    if (k >= 0) { thumbFor.set(i, pool[k]); pool.splice(k, 1); }
   }
   messages.forEach((m, i) => {
     const b = addBubble(m.role, m.text, "", m.ts);
-    const url = thumbFor.get(i);
-    if (url) {
+    const ph = thumbFor.get(i);
+    if (ph) {
       const im = new Image();
-      im.className = "thumb"; im.alt = "Foto"; im.src = url;
+      im.className = "thumb"; im.alt = "Foto"; im.src = ph.url;
+      if (ph.id) im.dataset.fid = ph.id;
       b.insertBefore(im, b.firstChild);
     }
   });
@@ -1141,7 +1142,31 @@ async function chatStream(text, bubble, extra, onTranscript) {
 }
 
 // Simpan thumbnail (maks 640 px) di browser supaya foto tidak hilang saat chat dimuat ulang
+// Foto penuh (hasil kecilkan 1600 px) disimpan di IndexedDB karena localStorage terlalu kecil
+const photoDB = () => new Promise((ok, no) => {
+  const r = indexedDB.open("asistenku", 1);
+  r.onupgradeneeded = () => r.result.createObjectStore("photos");
+  r.onsuccess = () => ok(r.result);
+  r.onerror = () => no(r.error);
+});
+async function photoOp(mode, fn) {
+  try {
+    const db = await photoDB();
+    const out = await new Promise((ok, no) => {
+      const tx = db.transaction("photos", mode), req = fn(tx.objectStore("photos"));
+      tx.oncomplete = () => ok(req && req.result); tx.onerror = () => no(tx.error);
+    });
+    db.close();
+    return out;
+  } catch { return null; }
+}
+const photoPut = (id, url) => photoOp("readwrite", (st) => st.put(url, id));
+const photoGet = (id) => photoOp("readonly", (st) => st.get(id));
+const photoDel = (id) => photoOp("readwrite", (st) => st.delete(id));
+
 function rememberThumb(text, dataUrl) {
+  const id = String(Date.now()) + Math.random().toString(36).slice(2, 6);
+  photoPut(id, dataUrl);
   const im = new Image();
   im.onload = () => {
     const k = Math.min(1, 640 / Math.max(im.width, im.height));
@@ -1149,7 +1174,8 @@ function rememberThumb(text, dataUrl) {
     c.width = Math.max(1, Math.round(im.width * k)); c.height = Math.max(1, Math.round(im.height * k));
     c.getContext("2d").drawImage(im, 0, 0, c.width, c.height);
     const list = load("photoThumbs", []);
-    list.push({ text, url: c.toDataURL("image/jpeg", 0.7) });
+    list.push({ id, text, url: c.toDataURL("image/jpeg", 0.7) });
+    list.slice(0, -20).forEach((t) => { if (t.id) photoDel(t.id); }); // buang foto penuh yang sudah tergeser
     save("photoThumbs", list.slice(-20));
   };
   im.src = dataUrl;
@@ -1402,8 +1428,12 @@ function closeLightbox() { $("lightbox").hidden = true; $("lightbox").querySelec
 $("chat").addEventListener("click", (e) => {
   const im = e.target.closest && e.target.closest("img.thumb");
   if (!im) return;
-  $("lightbox").querySelector("img").src = im.src;
+  const big = $("lightbox").querySelector("img");
+  big.src = im.src; // langsung tampil (thumbnail), lalu diganti foto penuh kalau ada
   $("lightbox").hidden = false;
+  if (im.dataset.fid) {
+    photoGet(im.dataset.fid).then((full) => { if (full && !$("lightbox").hidden && big.src === im.src) big.src = full; });
+  }
 });
 $("lightbox").onclick = closeLightbox;
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("lightbox").hidden) closeLightbox(); });
