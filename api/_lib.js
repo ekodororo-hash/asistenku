@@ -539,7 +539,16 @@ async function gemini(u, system, contents, src = "telegram") {
 
 // Obrolan dengan pencarian Google: Gemini sendiri yang memutuskan kapan perlu mencari.
 // Kalau pencarian gagal/tidak didukung model, diulang tanpa pencarian supaya obrolan tetap jalan.
+// Pencarian MATI secara bawaan (paket gratis Google tidak menyediakan pencarian untuk model Gemini 3).
+// Nyalakan dengan env GEMINI_SEARCH=on kalau API key-nya sudah berbilling.
 async function geminiSearch(u, system, contents, src = "telegram") {
+  if (process.env.GEMINI_SEARCH !== "on") {
+    const sys = (system || "").replace(
+      /- Kamu punya akses pencarian Google\.[^\n]*\n- Pertanyaan info[^\n]*\n/,
+      "- Kamu TIDAK punya akses internet/pencarian. Untuk info terkini (jadwal pertandingan, skor, kurs, harga, berita, cuaca), bilang jujur kamu tidak bisa mengeceknya dan sarankan pengguna cek di Google atau aplikasi terkait. Jangan mengarang angka, dan jangan membuat pengingat atau tugas untuk \"mengecek nanti\".\n"
+    );
+    return { text: await gemini(u, sys, contents, src), sources: [], searchError: "" };
+  }
   const body = { contents, tools: [{ google_search: {} }] };
   if (system) body.systemInstruction = { parts: [{ text: system }] };
   let data, searchError = "";
