@@ -11,6 +11,24 @@ const HOURS = {
   recap: Number(process.env.RECAP_HOUR || 20),
 };
 
+// ---------- Umum ----------
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+// Cek PIN web (header x-web-pin). Dipakai api/chat.js dan api/state.js supaya
+// data pribadi (tugas/catatan/uang/obrolan) tidak bisa diakses sembarang orang.
+function requirePin(req, res) {
+  const pin = process.env.WEB_PIN;
+  if (!pin) {
+    res.status(500).json({ error: "WEB_PIN belum diisi di Vercel. Tambahkan dulu lalu redeploy." });
+    return false;
+  }
+  if (req.headers["x-web-pin"] === pin) return true;
+  res.status(401).json({ error: "PIN salah." });
+  return false;
+}
+
 // ---------- Redis (Upstash REST) ----------
 async function redis(...cmd) {
   const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
@@ -150,6 +168,118 @@ function nextRepeat(ts, rule) {
   return null;
 }
 const rupiah = (n) => "Rp" + Math.round(n).toLocaleString("id-ID");
+
+// ---------- Tugas (dipakai bareng web & Telegram) ----------
+async function getTasks() {
+  const raw = await redis("GET", "tasks");
+  try { return raw ? JSON.parse(raw) : []; } catch { return []; }
+}
+async function saveTasks(tasks) {
+  await redis("SET", "tasks", JSON.stringify(tasks.slice(-200)));
+}
+async function addTask(text) {
+  const tasks = await getTasks();
+  const item = { id: uid(), text: String(text).trim().slice(0, 300), done: false };
+  if (!item.text) return null;
+  tasks.push(item);
+  await saveTasks(tasks);
+  return item;
+}
+async function toggleTask(id) {
+  const tasks = await getTasks();
+  const t = tasks.find((x) => x.id === id);
+  if (!t) return null;
+  t.done = !t.done;
+  await saveTasks(tasks);
+  return t;
+}
+async function deleteTask(id) {
+  const tasks = await getTasks();
+  const next = tasks.filter((x) => x.id !== id);
+  if (next.length === tasks.length) return false;
+  await saveTasks(next);
+  return true;
+}
+
+// ---------- Catatan (dipakai bareng web & Telegram) ----------
+async function getNotes() {
+  const rows = await redis("LRANGE", "notes", 0, -1);
+  return (rows || []).map((r) => { try { return JSON.parse(r); } catch { return null; } }).filter(Boolean);
+}
+async function addNote(text) {
+  const t = String(text).trim().slice(0, 1000);
+  if (!t) return null;
+  const item = { id: uid(), ts: Date.now(), text: t };
+  await redis("RPUSH", "notes", JSON.stringify(item));
+  await redis("LTRIM", "notes", -300, -1);
+  return item;
+}
+async function deleteNoteById(id) {
+  const all = await getNotes();
+  const next = all.filter((n) => n.id !== id);
+  if (next.length === all.length) return false;
+  await redis("DEL", "notes");
+  if (next.length) await redis("RPUSH", "notes", ...next.map((n) => JSON.stringify(n)));
+  return true;
+}
+
+// ---------- Pengeluaran (dipakai bareng web & Telegram) ----------
+async function addExpense(amt, cat, note) {
+  const n = Math.round(Number(amt));
+  if (!Number.isFinite(n) || n <= 0 || n > 1e10) return null;
+  const item = { id: uid(), ts: Date.now(), amt: n, cat: String(cat || "lainnya").toLowerCase().slice(0, 20), note: String(note || "").slice(0, 100) };
+  await redis("RPUSH", "exp:" + wib().monthKey, JSON.stringify(item));
+  return item;
+}
+async function getExpenses(monthKey) {
+  const rows = await redis("LRANGE", "exp:" + (monthKey || wib().monthKey), 0, -1);
+  return (rows || []).map((r) => { try { return JSON.parse(r); } catch { return null; } }).filter(Boolean);
+}
+async function deleteExpenseById(id, monthKey) {
+  const mk = monthKey || wib().monthKey;
+  const all = await getExpenses(mk);
+  const next = all.filter((e) => e.id !== id);
+  if (next.length === all.length) return false;
+  await redis("DEL", "exp:" + mk);
+  if (next.length) await redis("RPUSH", "exp:" + mk, ...next.map((e) => JSON.stringify(e)));
+  return true;
+}
+
+// ---------- Profil (web) ----------
+async function getProfile() {
+  const raw = await redis("GET", "profile");
+  try { if (raw) return JSON.parse(raw); } catch {}
+  return { name: "", assistantName: "Asisten", notes: "" };
+}
+async function saveProfile(p) {
+  const profile = {
+    name: String((p || {}).name || "").slice(0, 100),
+    assistantName: String((p || {}).assistantName || "Asisten").slice(0, 50),
+    notes: String((p || {}).notes || "").slice(0, 1000),
+  };
+  await redis("SET", "profile", JSON.stringify(profile));
+  return profile;
+}
+
+// ---------- Mode (dipakai bareng web & Telegram) ----------
+async function getMode() {
+  const m = await redis("GET", "mode");
+  return m === "curhat" ? "curhat" : "asisten";
+}
+async function setMode(m) {
+  const mode = m === "curhat" ? "curhat" : "asisten";
+  await redis("SET", "mode", mode);
+  return mode;
+}
+
+// ---------- Riwayat obrolan (dipakai bareng web & Telegram) ----------
+async function getHist() {
+  const raw = await redis("GET", "hist");
+  try { return raw ? JSON.parse(raw) : []; } catch { return []; }
+}
+async function saveHist(hist) {
+  await redis("SET", "hist", JSON.stringify(hist.slice(-60)));
+}
 
 // ---------- Pengaturan (on/off) ----------
 async function cfgOn(key) {
@@ -313,6 +443,7 @@ Tag khusus (ditaruh di baris terakhir balasan; pengguna tidak melihatnya):
   Pengingat berulang: tambahkan bagian ketiga harian / mingguan / bulanan, contoh [[REMIND: 2026-10-13T09:00:00+07:00 | rapat tim | mingguan]]. Waktu = kemunculan pertama.
 - Pengeluaran yang sudah terjadi (mis. "makan siang 25rb", "beli bensin 50 ribu", atau foto struk/nota): [[BELI: 25000 | makan | makan siang]]
   Jumlah rupiah angka bulat tanpa titik ("25rb" = 25000, "1,5jt" = 1500000). Kategori satu kata: makan, transport, belanja, tagihan, hiburan, kesehatan, lainnya. Untuk struk cukup satu tag berisi total.
+- Tugas/checklist (hal yang perlu dikerjakan, BUKAN pengingat berwaktu): [[TASK: isi tugas singkat]]
 - Fakta jangka panjang tentang pengguna (nama, orang penting, kebiasaan, preferensi, hal besar yang sedang dihadapi): [[INGAT: fakta singkat]]. Jangan simpan detail yang sangat sensitif kecuali pengguna memintanya.
 - Catatan jika pengguna minta mencatat sesuatu: [[CATAT: isi catatan]]
 - Satu tag per hal. Jangan membuat tag kalau tidak perlu. Jika pengguna mengirim foto, lihat isinya dan tanggapi sesuai konteks.
@@ -340,8 +471,15 @@ ${COMMON}`;
 
 module.exports = {
   TZ, DAY, HOUR, HOURS, BTN,
+  uid, requirePin,
   redis, sendTelegram, downloadTelegramFile, gemini, trimHist, appendModelToHist,
   fmtWib, fmtTime, fmtDateShort, wib, startOfDayWib, nextRepeat, rupiah,
   cfgOn, getLocation, setLocation, getWeather, getNews,
   recapText, loadContext, buildSystem,
+  getTasks, addTask, toggleTask, deleteTask,
+  getNotes, addNote, deleteNoteById,
+  getExpenses, addExpense, deleteExpenseById,
+  getProfile, saveProfile,
+  getMode, setMode,
+  getHist, saveHist,
 };

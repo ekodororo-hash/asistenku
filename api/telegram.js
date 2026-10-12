@@ -3,6 +3,8 @@ const {
   HOURS, BTN, redis, sendTelegram, downloadTelegramFile, gemini, trimHist,
   fmtWib, wib, rupiah, cfgOn, getLocation, setLocation, getWeather, getNews,
   recapText, loadContext, buildSystem,
+  getTasks, addTask, toggleTask, deleteTask,
+  addNote, addExpense,
 } = require("./_lib");
 
 const PLAN_PROMPT =
@@ -21,12 +23,14 @@ const START_TEXT =
   "- kirim foto struk, atau voice note\n\n" +
   "Perintah:\n" +
   "/pengingat  /hapus N\n" +
+  "/tugas  /tugasdone N  /hapustugas N\n" +
   "/rekap  /hapusbeli\n" +
   "/catatan  /cari kata  /hapuscatatan N\n" +
   "/cuaca  /lokasi kota  /berita topik\n" +
   "/memori  /lupakan  /atur\n\n" +
   `Otomatis: ringkasan pagi, check-in malam, dan rekap pengeluaran mingguan. Atur di /atur.\n` +
-  "Aku mengingat hal-hal penting tentangmu supaya ngobrolnya nyambung. Lihat dengan /memori, hapus dengan /lupakan.";
+  "Aku mengingat hal-hal penting tentangmu supaya ngobrolnya nyambung. Lihat dengan /memori, hapus dengan /lupakan.\n\n" +
+  "Tugas, catatan, uang, dan obrolan di sini sama persis dengan yang ada di web.";
 
 // ---------- Perintah ----------
 async function handleCommand(cmd, arg, say) {
@@ -94,6 +98,32 @@ async function handleCommand(cmd, arg, say) {
       let it = {};
       try { it = JSON.parse(rows[n - 1]); } catch {}
       await say(`Pengingat dihapus: ${it.text || "?"}`);
+      return;
+    }
+
+    case "/tugas": {
+      const tasks = await getTasks();
+      if (!tasks.length) { await say("Belum ada tugas. Tulis: tambah tugas <isi>, atau pakai web."); return; }
+      const lines = tasks.map((t, i) => `${i + 1}. ${t.done ? "[selesai]" : "[belum]"} ${t.text}`);
+      await say("Tugas (sama dengan di web):\n\n" + lines.join("\n") + "\n\nTandai selesai: /tugasdone N\nHapus: /hapustugas N");
+      return;
+    }
+
+    case "/tugasdone": {
+      const n = parseInt(arg, 10);
+      const tasks = await getTasks();
+      if (!n || n < 1 || n > tasks.length) { await say("Pakai: /tugasdone <nomor>. Lihat nomornya di /tugas."); return; }
+      const t = await toggleTask(tasks[n - 1].id);
+      await say(t ? `Tugas "${t.text}" ditandai ${t.done ? "selesai" : "belum selesai"}.` : "Gagal mengubah tugas.");
+      return;
+    }
+
+    case "/hapustugas": {
+      const n = parseInt(arg, 10);
+      const tasks = await getTasks();
+      if (!n || n < 1 || n > tasks.length) { await say("Pakai: /hapustugas <nomor>. Lihat nomornya di /tugas."); return; }
+      const ok = await deleteTask(tasks[n - 1].id);
+      await say(ok ? `Tugas dihapus: ${tasks[n - 1].text}` : "Gagal menghapus tugas.");
       return;
     }
 
@@ -217,6 +247,12 @@ async function handleCommand(cmd, arg, say) {
 async function processTags(reply) {
   const notes = [];
 
+  // Tugas/checklist
+  for (const m of reply.matchAll(/\[\[TASK:\s*([^\]]+?)\s*\]\]/g)) {
+    const t = await addTask(m[1]);
+    if (t) notes.push("✅ Tugas ditambahkan: " + t.text);
+  }
+
   // Pengingat (boleh berulang)
   for (const m of reply.matchAll(/\[\[REMIND:\s*([^|\]]+?)\s*\|\s*([^|\]]+?)\s*(?:\|\s*(harian|mingguan|bulanan)\s*)?\]\]/gi)) {
     const ts = Date.parse(m[1]);
@@ -243,22 +279,17 @@ async function processTags(reply) {
   // Pengeluaran
   for (const m of reply.matchAll(/\[\[BELI:\s*([^|\]]+?)\s*\|\s*([^|\]]+?)\s*\|\s*([^\]]*?)\s*\]\]/g)) {
     const amt = Number(String(m[1]).replace(/[^\d]/g, ""));
-    if (!Number.isFinite(amt) || amt <= 0 || amt > 1e10) continue;
-    const entry = { ts: Date.now(), amt, cat: m[2].trim().toLowerCase(), note: m[3].trim().slice(0, 100) };
-    await redis("RPUSH", "exp:" + wib().monthKey, JSON.stringify(entry));
-    notes.push("💰 Dicatat: " + rupiah(amt) + " (" + entry.cat + ")" + (entry.note ? " - " + entry.note : ""));
+    const e = await addExpense(amt, m[2].trim(), m[3].trim());
+    if (e) notes.push("💰 Dicatat: " + rupiah(e.amt) + " (" + e.cat + ")" + (e.note ? " - " + e.note : ""));
   }
 
   // Catatan
-  let savedNotes = false;
   for (const m of reply.matchAll(/\[\[CATAT:\s*([^\]]+?)\s*\]\]/g)) {
-    await redis("RPUSH", "notes", JSON.stringify({ ts: Date.now(), text: m[1].trim().slice(0, 1000) }));
-    savedNotes = true;
-    notes.push("🗒️ Dicatat: " + m[1].trim());
+    const n = await addNote(m[1]);
+    if (n) notes.push("🗒️ Dicatat: " + n.text);
   }
-  if (savedNotes) await redis("LTRIM", "notes", -300, -1);
 
-  const clean = reply.replace(/\[\[(REMIND|INGAT|BELI|CATAT):[\s\S]*?\]\]/g, "").trim();
+  const clean = reply.replace(/\[\[(TASK|REMIND|INGAT|BELI|CATAT):[\s\S]*?\]\]/g, "").trim();
   return { clean, notes };
 }
 
@@ -346,9 +377,8 @@ module.exports = async (req, res) => {
     // "catat: ..." disimpan langsung tanpa Gemini
     const cm = !image && text.match(/^catat(?:\s*:\s*|\s+)([\s\S]+)$/i);
     if (cm) {
-      await redis("RPUSH", "notes", JSON.stringify({ ts: Date.now(), text: cm[1].trim().slice(0, 1000) }));
-      await redis("LTRIM", "notes", -300, -1);
-      await say("🗒️ Dicatat: " + cm[1].trim());
+      const n = await addNote(cm[1]);
+      await say("🗒️ Dicatat: " + (n ? n.text : cm[1].trim()));
       return res.status(200).end();
     }
 

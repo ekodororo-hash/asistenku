@@ -85,6 +85,12 @@
   .side-head { display:flex; align-items:center; justify-content:space-between; }
   #tasksToggle, #closeSide, #backdrop { display:none; }
 
+  #pinGate { position:fixed; inset:0; background:var(--bg); z-index:50; display:flex; align-items:center; justify-content:center; padding:20px; }
+  #pinGate.hide { display:none; }
+  #pinGate .box { width:min(320px,90vw); text-align:center; }
+  #pinGate input { width:100%; text-align:center; font-size:22px; letter-spacing:6px; padding:12px; border-radius:12px; border:1px solid var(--line); background:var(--card); color:var(--ink); margin:14px 0; }
+  #pinGate p.err { color:#d33; font-size:13px; min-height:18px; margin:0 0 4px; }
+
   dialog { border:1px solid var(--line); border-radius:16px; background:var(--card); color:var(--ink); width:min(92vw,420px); }
   dialog label { display:block; margin:10px 0 4px; font-size:13px; color:var(--muted); }
   dialog input, dialog textarea { width:100%; border:1px solid var(--line); border-radius:10px; padding:8px; background:var(--bg); color:var(--ink); font:inherit; }
@@ -116,6 +122,17 @@
 </style>
 </head>
 <body data-mode="asisten">
+<div id="pinGate">
+  <div class="box">
+    <h2 style="margin:0 0 6px">🔒 Masuk</h2>
+    <p class="muted" style="margin:0 0 4px">Masukkan PIN untuk membuka asistenmu.</p>
+    <form id="pinForm">
+      <input id="pinInput" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN">
+      <p class="err" id="pinErr"></p>
+      <button class="primary" type="submit" style="width:100%">Buka</button>
+    </form>
+  </div>
+</div>
 <div id="app">
 <header>
   <button id="tasksToggle">☰ Panel</button>
@@ -225,19 +242,48 @@
 const $ = (id) => document.getElementById(id);
 const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
-const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const rupiah = (n) => "Rp" + Math.round(n).toLocaleString("id-ID");
 const fmtDate = (ts) => new Date(ts).toLocaleDateString("id-ID", { day: "numeric", month: "short" });
 
-let messages = load("messages", []);
-let tasks = load("tasks", []);
-let notes = load("notes", []);
-let expenses = load("expenses", []);
-let profile = load("profile", { name: "", assistantName: "Asisten", notes: "" });
-let mode = load("mode", "asisten");
-let city = load("city", "Jakarta");
+/* ---------- PIN & API (data tersinkron dengan Telegram, disimpan di server) ---------- */
+const PIN_KEY = "webpin";
+const getPin = () => localStorage.getItem(PIN_KEY) || "";
+const setPin = (v) => localStorage.setItem(PIN_KEY, v);
+const clearPin = () => localStorage.removeItem(PIN_KEY);
+
+async function api(path, opts = {}) {
+  const headers = Object.assign({ "Content-Type": "application/json", "x-web-pin": getPin() }, opts.headers || {});
+  const r = await fetch(path, Object.assign({}, opts, { headers }));
+  if (r.status === 401) {
+    clearPin();
+    showGate("PIN salah. Coba lagi.");
+    throw new Error("PIN tidak valid");
+  }
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || "Gagal memuat");
+  return d;
+}
+
+function showGate(err) {
+  $("pinGate").classList.remove("hide");
+  $("pinErr").textContent = err || "";
+  $("pinInput").value = "";
+  $("pinInput").focus();
+}
+function hideGate() { $("pinGate").classList.add("hide"); }
+
+/* ---------- State (dimuat dari server, bukan localStorage lagi) ---------- */
+let messages = [];
+let tasks = [];
+let notes = [];
+let expenses = [];
+let profile = { name: "", assistantName: "Asisten", notes: "" };
+let mode = "asisten";
 let busy = false;
 let infoLoaded = false;
+
+// Preferensi lokal per-perangkat (bukan data pribadi, tetap di localStorage)
+let city = load("city", "Jakarta");
 
 /* ---------- Chat ---------- */
 function renderTitle() { $("title").textContent = profile.assistantName || "Asisten Pribadi"; }
@@ -254,7 +300,7 @@ function addBubble(role, text, cls) {
 function renderChat() {
   $("chat").innerHTML = "";
   if (!messages.length) {
-    addBubble("bot", "Halo! Aku asistan pribadimu. Aku bisa bantu atur rencana, catat tugas dan catatan, mencatat pengeluaran, tulis pesan, atau jadi teman cerita.\n\nCoba: \"makan siang 25rb\", \"catat: ide konten minggu depan\", atau \"tambah tugas bayar listrik besok\".");
+    addBubble("bot", "Halo! Aku asistan pribadimu. Aku bisa bantu atur rencana, catat tugas dan catatan, mencatat pengeluaran, tulis pesan, atau jadi teman cerita.\n\nObrolan, tugas, catatan, dan uang di sini sama persis dengan bot Telegram-mu.\n\nCoba: \"makan siang 25rb\", \"catat: ide konten minggu depan\", atau \"tambah tugas bayar listrik besok\".");
   }
   messages.forEach((m) => addBubble(m.role, m.text));
 }
@@ -269,26 +315,33 @@ function renderTasks() {
   const box = $("tasks");
   box.innerHTML = "";
   if (!tasks.length) { box.innerHTML = '<p class="muted">Belum ada tugas.</p>'; return; }
-  tasks.forEach((t, i) => {
+  tasks.forEach((t) => {
     const row = document.createElement("div");
     row.className = "task" + (t.done ? " done" : "");
     const cb = document.createElement("input");
     cb.type = "checkbox"; cb.checked = t.done;
-    cb.onchange = () => { t.done = cb.checked; save("tasks", tasks); renderTasks(); };
+    cb.onchange = async () => {
+      try { await api("/api/state", { method: "POST", body: JSON.stringify({ op: "toggleTask", id: t.id }) }); t.done = cb.checked; renderTasks(); }
+      catch (e) { cb.checked = !cb.checked; alert(e.message); }
+    };
     const sp = document.createElement("span"); sp.textContent = t.text;
     const del = document.createElement("button"); del.textContent = "x";
-    del.onclick = () => { tasks.splice(i, 1); save("tasks", tasks); renderTasks(); };
+    del.onclick = async () => {
+      try { await api("/api/state", { method: "POST", body: JSON.stringify({ op: "deleteTask", id: t.id }) }); tasks = tasks.filter((x) => x.id !== t.id); renderTasks(); }
+      catch (e) { alert(e.message); }
+    };
     row.append(cb, sp, del);
     box.appendChild(row);
   });
 }
 
-function addTask(text) {
+async function addTask(text) {
   text = String(text).trim();
   if (!text) return;
-  tasks.push({ text: text.slice(0, 300), done: false });
-  save("tasks", tasks);
-  renderTasks();
+  try {
+    const { result } = await api("/api/state", { method: "POST", body: JSON.stringify({ op: "addTask", text }) });
+    if (result) { tasks.push(result); renderTasks(); }
+  } catch (e) { alert(e.message); }
 }
 
 /* ---------- Baris umum (catatan, pengeluaran) ---------- */
@@ -311,79 +364,53 @@ function makeRow(text, sub, onDel) {
 }
 
 /* ---------- Catatan ---------- */
-function addNote(text) {
+async function addNote(text) {
   text = String(text).trim();
   if (!text) return;
-  notes.push({ id: uid(), ts: Date.now(), text: text.slice(0, 1000) });
-  notes = notes.slice(-300);
-  save("notes", notes);
-  renderNotes();
+  try {
+    const { result } = await api("/api/state", { method: "POST", body: JSON.stringify({ op: "addNote", text }) });
+    if (result) { notes.unshift(result); renderNotes(); }
+  } catch (e) { alert(e.message); }
 }
 
 function renderNotes() {
   const q = $("noteSearch").value.trim().toLowerCase();
   const box = $("notes");
   box.innerHTML = "";
-  const list = notes.filter((n) => !q || n.text.toLowerCase().includes(q)).slice().reverse();
+  const list = notes.filter((n) => !q || n.text.toLowerCase().includes(q));
   if (!list.length) { box.innerHTML = '<p class="muted">' + (q ? "Tidak ada yang cocok." : "Belum ada catatan.") + "</p>"; return; }
   list.forEach((n) => {
-    box.appendChild(makeRow(n.text, fmtDate(n.ts), () => {
-      notes = notes.filter((x) => x.id !== n.id);
-      save("notes", notes);
-      renderNotes();
+    box.appendChild(makeRow(n.text, fmtDate(n.ts), async () => {
+      try { await api("/api/state", { method: "POST", body: JSON.stringify({ op: "deleteNote", id: n.id }) }); notes = notes.filter((x) => x.id !== n.id); renderNotes(); }
+      catch (e) { alert(e.message); }
     }));
   });
 }
 
 /* ---------- Pengeluaran ---------- */
-function monthExpenses() {
-  const d = new Date();
-  const start = new Date(d.getFullYear(), d.getMonth(), 1).getTime();
-  return expenses.filter((e) => e.ts >= start);
-}
-
-function addExpense(amt, cat, note) {
-  amt = Number(amt);
-  if (!Number.isFinite(amt) || amt <= 0 || amt > 1e10) return false;
-  expenses.push({ id: uid(), ts: Date.now(), amt, cat: String(cat || "lainnya").toLowerCase().slice(0, 20), note: String(note || "").slice(0, 100) });
-  expenses = expenses.slice(-500);
-  save("expenses", expenses);
-  renderMoney();
-  return true;
-}
-
 function renderMoney() {
-  const month = monthExpenses();
-  const total = month.reduce((s, e) => s + e.amt, 0);
+  const total = expenses.reduce((s, e) => s + e.amt, 0);
   const by = {};
-  month.forEach((e) => { by[e.cat] = (by[e.cat] || 0) + e.amt; });
+  expenses.forEach((e) => { by[e.cat] = (by[e.cat] || 0) + e.amt; });
   const lines = Object.entries(by).sort((a, b) => b[1] - a[1]).map(([c, v]) => c + ": " + rupiah(v));
-  $("recap").textContent = month.length
-    ? "Bulan ini: " + rupiah(total) + " (" + month.length + " transaksi)\n" + lines.join("\n")
+  $("recap").textContent = expenses.length
+    ? "Bulan ini: " + rupiah(total) + " (" + expenses.length + " transaksi)\n" + lines.join("\n")
     : "Belum ada pengeluaran bulan ini.";
   const box = $("exps");
   box.innerHTML = "";
-  expenses.slice(-15).reverse().forEach((e) => {
+  expenses.slice(0, 15).forEach((e) => {
     box.appendChild(makeRow(
       (e.note || e.cat) + " - " + rupiah(e.amt),
       fmtDate(e.ts) + " · " + e.cat,
-      () => { expenses = expenses.filter((x) => x.id !== e.id); save("expenses", expenses); renderMoney(); }
+      async () => {
+        try { await api("/api/state", { method: "POST", body: JSON.stringify({ op: "deleteExpense", id: e.id }) }); expenses = expenses.filter((x) => x.id !== e.id); renderMoney(); }
+        catch (err) { alert(err.message); }
+      }
     ));
   });
 }
 
-function moneySummary() {
-  const month = monthExpenses();
-  if (!month.length) return "";
-  const total = month.reduce((s, e) => s + e.amt, 0);
-  const by = {};
-  month.forEach((e) => { by[e.cat] = (by[e.cat] || 0) + e.amt; });
-  const cats = Object.entries(by).sort((a, b) => b[1] - a[1]).map(([c, v]) => c + " " + rupiah(v)).join(", ");
-  const last = month.slice(-5).map((e) => (e.note || e.cat) + " " + rupiah(e.amt)).join("; ");
-  return "Bulan ini total " + rupiah(total) + ". Per kategori: " + cats + ". Terakhir: " + last + ".";
-}
-
-/* ---------- Info: cuaca & berita ---------- */
+/* ---------- Info: cuaca & berita (lokal, tidak terkait sinkronisasi) ---------- */
 const el = (tag, cls, text) => {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
@@ -510,26 +537,6 @@ function toggleSide(open) {
 }
 
 /* ---------- Kirim pesan ---------- */
-function processTags(reply) {
-  const added = [];
-  for (const m of reply.matchAll(/\[\[TASK:\s*([^\]]+?)\s*\]\]/g)) {
-    addTask(m[1]);
-    added.push("✅ Tugas ditambahkan: " + m[1].trim());
-  }
-  for (const m of reply.matchAll(/\[\[CATAT:\s*([^\]]+?)\s*\]\]/g)) {
-    addNote(m[1]);
-    added.push("🗒️ Dicatat: " + m[1].trim());
-  }
-  for (const m of reply.matchAll(/\[\[BELI:\s*([^|\]]+?)\s*\|\s*([^|\]]+?)\s*\|\s*([^\]]*?)\s*\]\]/g)) {
-    const amt = Number(String(m[1]).replace(/[^\d]/g, ""));
-    if (addExpense(amt, m[2].trim(), m[3].trim())) {
-      added.push("💰 Dicatat: " + rupiah(amt) + " (" + m[2].trim().toLowerCase() + ")" + (m[3].trim() ? " - " + m[3].trim() : ""));
-    }
-  }
-  const clean = reply.replace(/\[\[(TASK|CATAT|BELI):[\s\S]*?\]\]/g, "").trim();
-  return { clean, added };
-}
-
 async function send(text) {
   text = text.trim();
   if (!text || busy) return;
@@ -540,24 +547,13 @@ async function send(text) {
   autoGrow();
   const wait = addBubble("bot", "...");
   try {
-    const r = await fetch("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        messages, profile, tasks, mode,
-        notes: notes.slice(-20).map((n) => n.text),
-        money: moneySummary(),
-        now: new Date().toLocaleString("id-ID", { dateStyle: "full", timeStyle: "short" }),
-      }),
-    });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.error || "Gagal");
-    const { clean, added } = processTags(data.reply);
-    const shown = [clean, ...added].filter(Boolean).join("\n\n") || "(tidak ada jawaban)";
+    const d = await api("/api/chat", { method: "POST", body: JSON.stringify({ text }) });
+    const shown = [d.reply, ...(d.added || [])].filter(Boolean).join("\n\n") || "(tidak ada jawaban)";
     wait.textContent = shown;
-    messages.push({ role: "model", text: clean || "(dicatat)" });
-    messages = messages.slice(-60);
-    save("messages", messages);
+    messages.push({ role: "model", text: d.reply || "(dicatat)" });
+    if (d.tasks) { tasks = d.tasks; renderTasks(); }
+    if (d.notes) { notes = d.notes; renderNotes(); }
+    if (d.expenses) { expenses = d.expenses; renderMoney(); }
   } catch (e) {
     wait.textContent = "Error: " + e.message;
     wait.classList.add("err");
@@ -591,10 +587,13 @@ const doAddNote = () => { addNote($("noteInput").value); $("noteInput").value = 
 $("noteAddBtn").onclick = doAddNote; onEnter("noteInput", doAddNote);
 $("noteSearch").addEventListener("input", renderNotes);
 
-const doAddExp = () => {
-  if (addExpense($("expAmt").value, $("expCat").value, $("expNote").value)) {
-    $("expAmt").value = ""; $("expNote").value = "";
-  }
+const doAddExp = async () => {
+  const amt = Number($("expAmt").value);
+  if (!Number.isFinite(amt) || amt <= 0) { alert("Jumlah tidak valid"); return; }
+  try {
+    const { result } = await api("/api/state", { method: "POST", body: JSON.stringify({ op: "addExpense", amt, cat: $("expCat").value, note: $("expNote").value }) });
+    if (result) { expenses.unshift(result); renderMoney(); $("expAmt").value = ""; $("expNote").value = ""; }
+  } catch (e) { alert(e.message); }
 };
 $("expAddBtn").onclick = doAddExp; onEnter("expNote", doAddExp);
 
@@ -616,11 +615,14 @@ $("tasksToggle").onclick = () => toggleSide(!$("side").classList.contains("open"
 $("closeSide").onclick = () => toggleSide(false);
 $("backdrop").onclick = () => toggleSide(false);
 
-$("modeBtn").onclick = () => {
-  mode = mode === "curhat" ? "asisten" : "curhat";
-  save("mode", mode);
-  renderMode();
-  addBubble("bot", mode === "curhat" ? "Mode curhat aktif. Cerita aja, aku dengerin." : "Kembali ke mode asisten.", "note");
+$("modeBtn").onclick = async () => {
+  const next = mode === "curhat" ? "asisten" : "curhat";
+  try {
+    await api("/api/state", { method: "POST", body: JSON.stringify({ op: "setMode", mode: next }) });
+    mode = next;
+    renderMode();
+    addBubble("bot", mode === "curhat" ? "Mode curhat aktif. Cerita aja, aku dengerin." : "Kembali ke mode asisten.", "note");
+  } catch (e) { alert(e.message); }
 };
 
 // kolom ketik otomatis membesar
@@ -639,21 +641,59 @@ if (window.visualViewport) {
   });
 }
 
-$("clearBtn").onclick = () => { if (confirm("Hapus semua riwayat chat?")) { messages = []; save("messages", messages); renderChat(); } };
+$("clearBtn").onclick = async () => {
+  if (!confirm("Hapus semua riwayat obrolan? Ini juga akan menghapus riwayat di bot Telegram, karena datanya sama.")) return;
+  try {
+    await api("/api/state", { method: "POST", body: JSON.stringify({ op: "resetHist" }) });
+    messages = []; renderChat();
+  } catch (e) { alert(e.message); }
+};
+
 $("settingsBtn").onclick = () => {
   $("pName").value = profile.name; $("pAssistant").value = profile.assistantName; $("pNotes").value = profile.notes;
   $("dlg").showModal();
 };
-$("profileForm").addEventListener("submit", (e) => {
+$("profileForm").addEventListener("submit", async (e) => {
   if (e.submitter && e.submitter.value === "save") {
-    profile = { name: $("pName").value.trim(), assistantName: $("pAssistant").value.trim() || "Asisten", notes: $("pNotes").value.trim() };
-    save("profile", profile); renderTitle();
+    const p = { name: $("pName").value.trim(), assistantName: $("pAssistant").value.trim() || "Asisten", notes: $("pNotes").value.trim() };
+    try {
+      const { result } = await api("/api/state", { method: "POST", body: JSON.stringify({ op: "saveProfile", profile: p }) });
+      profile = result; renderTitle();
+    } catch (err) { alert(err.message); }
   }
 });
 
-renderTitle(); renderMode(); renderChat();
-renderTasks(); renderNotes(); renderMoney();
-showTab(load("tab", "tasks"));
+/* ---------- Boot: cek PIN lalu muat semua data dari server ---------- */
+async function loadState() {
+  const d = await api("/api/state");
+  tasks = d.tasks || [];
+  notes = d.notes || [];
+  expenses = d.expenses || [];
+  profile = d.profile || profile;
+  mode = d.mode || "asisten";
+  messages = d.messages || [];
+}
+
+async function boot() {
+  try {
+    await loadState();
+    hideGate();
+    renderTitle(); renderMode(); renderChat();
+    renderTasks(); renderNotes(); renderMoney();
+    showTab(load("tab", "tasks"));
+  } catch (e) {
+    showGate(getPin() ? "Gagal memuat: " + e.message : "");
+  }
+}
+
+$("pinForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  setPin($("pinInput").value.trim());
+  $("pinErr").textContent = "Memuat...";
+  boot();
+});
+
+if (getPin()) boot(); else showGate();
 </script>
 </body>
 </html>
