@@ -1,0 +1,28 @@
+/* Override tema: dimuat SETELAH <style> tiap halaman. Diatur lewat atribut di <html> oleh theme.js. */
+
+/* Mode warna paksa (mode "auto" mengikuti sistem lewat CSS bawaan tiap halaman) */
+html[data-scheme="light"] { color-scheme: light; --bg:#f6f7fb; --outer:#e8eaf3; --card:#fff; --ink:#1d2433; --muted:#6b7385; --line:#e4e7ef; --info:#2563eb; }
+html[data-scheme="dark"]  { color-scheme: dark;  --bg:#0f1220; --outer:#080a14; --card:#181c2e; --ink:#e8eaf3; --muted:#9aa1b5; --line:#2a3050; --info:#60a5fa; }
+html[data-scheme="light"] .sk::after { background:linear-gradient(90deg, transparent, rgba(255,255,255,.55), transparent); }
+html[data-scheme="dark"]  .sk::after { background:linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent); }
+
+/* Wallpaper area chat (index) dan pratinjau (pengaturan) */
+#chatCol, .pvwrap { background-image:var(--wall, none); background-size:var(--wall-size, auto); background-position:center; background-repeat:repeat; }
+html[data-wall="foto"] #chatCol, html[data-wall="foto"] .pvwrap { background-repeat:no-repeat; }
+html[data-wall] #chat .msg.note { background:var(--card); border-style:solid; }
+html[data-wall] .chips button { box-shadow:0 1px 3px rgba(0,0,0,.12); }
+
+/* Gaya bubble */
+html[data-bubble="bulat"] :is(#chat .msg, .pvm) { border-radius:22px; box-shadow:0 1px 2px rgba(0,0,0,.10); }
+html[data-bubble="bulat"] :is(#chat .msg.user, .pvm.user) { border-bottom-right-radius:6px; }
+html[data-bubble="bulat"] :is(#chat .msg.bot, .pvm.bot) { border-color:transparent; border-bottom-left-radius:6px; }
+html[data-bubble="bulat"] #chat .msg.note { box-shadow:none; border-radius:16px; }
+
+html[data-bubble="kotak"] :is(#chat .msg, .pvm) { border-radius:6px; }
+html[data-bubble="kotak"] :is(#chat .msg.user, .pvm.user) { border-bottom-right-radius:6px; }
+html[data-bubble="kotak"] :is(#chat .msg.bot, .pvm.bot) { border-bottom-left-radius:6px; }
+
+html[data-bubble="gradien"] :is(#chat .msg.user, .pvm.user) { background-image:linear-gradient(135deg, var(--me), color-mix(in srgb, var(--me) 60%, #ec4899)); border-color:transparent; }
+html[data-bubble="gradien"] :is(#chat .msg, .pvm) { border-radius:18px; }
+html[data-bubble="gradien"] :is(#chat .msg.user, .pvm.user) { border-bottom-right-radius:4px; }
+html[data-bubble="gradien"] :is(#chat .msg.bot, .pvm.bot) { border-bottom-left-radius:4px; }

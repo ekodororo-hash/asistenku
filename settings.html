@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#4f46e5">
 <link rel="manifest" href="/manifest.json">
+<script src="/theme.js"></script>
 <link rel="icon" type="image/png" href="/icon-192.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta name="mobile-web-app-capable" content="yes">
@@ -89,6 +90,27 @@
   .combo-list .opt .rec { display:inline-block; margin-left:6px; padding:1px 7px; border-radius:999px; font-size:11px; font-weight:600; color:var(--accent); border:1px solid var(--accent); vertical-align:1px; word-break:normal; }
   .combo-list .opt small { display:block; margin-top:2px; font-size:12px; color:var(--muted); }
 
+  /* tampilan */
+  .pvwrap { border:1px solid var(--line); border-radius:14px; padding:14px; display:flex; flex-direction:column; gap:8px; background-color:var(--bg); margin-bottom:4px; }
+  .pvm { max-width:85%; padding:8px 12px; border-radius:16px; line-height:1.4; font-size:14px; }
+  .pvm.user { align-self:flex-end; background:var(--me, var(--accent)); color:#fff; border-bottom-right-radius:4px; }
+  .pvm.bot { align-self:flex-start; background:var(--card); border:1px solid var(--line); border-bottom-left-radius:4px; }
+  .opts { display:flex; flex-wrap:wrap; gap:8px; }
+  .opts button { padding:7px 12px; font-size:14px; }
+  .opts button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .swatches { display:flex; flex-wrap:wrap; gap:10px; }
+  .swatches button { width:34px; height:34px; padding:0; border-radius:50%; border:2px solid var(--card); box-shadow:0 0 0 1px var(--line); }
+  .swatches button.on { box-shadow:0 0 0 2px var(--ink); }
+  .walls { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:8px; }
+  .walls button { padding:0; border-radius:12px; overflow:hidden; display:flex; flex-direction:column; align-items:stretch; font-size:12px; }
+  .walls button .tile { height:46px; background-color:var(--bg); background-position:center; border-bottom:1px solid var(--line); }
+  .walls button span { padding:5px 2px; text-align:center; }
+  .walls button.on { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent); }
+  .walls button.on span { color:var(--accent); font-weight:600; }
+  #dimRow { display:none; align-items:center; gap:10px; margin-top:10px; font-size:13px; color:var(--muted); }
+  #dimRow input { width:auto; flex:1; padding:0; }
+  .lbl { display:block; margin:14px 0 6px; font-size:13px; color:var(--muted); }
+
   /* skeleton loading */
   .sk { position:relative; overflow:hidden; border-radius:10px; background:var(--line); }
   .sk::after { content:""; position:absolute; inset:0; transform:translateX(-100%); background:linear-gradient(90deg, transparent, rgba(255,255,255,.55), transparent); animation:sk-shimmer 1.3s infinite; }
@@ -100,6 +122,7 @@
   @keyframes sk-pulse { 50% { opacity:.55; } }
   @media (prefers-reduced-motion: reduce) { body.loading #pName, body.loading #pAssistant, body.loading #pNotes { animation:none; } }
 </style>
+<link rel="stylesheet" href="/theme.css">
 </head>
 <body class="loading">
 <header>
@@ -119,6 +142,28 @@
     <textarea id="pNotes" rows="4"></textarea>
     <div class="actions"><button class="primary" id="profileSave">Simpan profil</button></div>
     <p class="msg" id="profileMsg"></p>
+  </section>
+
+  <section id="secLook">
+    <h2>Tampilan</h2>
+    <p class="hint">Tema, warna, wallpaper, dan gaya bubble chat. Disimpan di perangkat ini saja.</p>
+    <div class="pvwrap" aria-hidden="true">
+      <div class="pvm bot">Halo! Mau dicatat apa hari ini?</div>
+      <div class="pvm user">makan siang 25rb</div>
+    </div>
+    <span class="lbl">Mode warna</span>
+    <div class="opts" id="lkScheme"></div>
+    <span class="lbl">Warna aksen</span>
+    <div class="swatches" id="lkAccent"></div>
+    <span class="lbl">Wallpaper chat</span>
+    <div class="walls" id="lkWall"></div>
+    <div id="dimRow"><span>Redupkan foto</span><input type="range" id="lkDim" min="0" max="70" step="5"></div>
+    <div class="actions" id="photoActs" style="margin-top:8px"></div>
+    <input type="file" id="lkFile" accept="image/*" hidden>
+    <span class="lbl">Gaya bubble</span>
+    <div class="opts" id="lkBubble"></div>
+    <div class="actions"><button id="lkReset">Kembalikan ke bawaan</button></div>
+    <p class="msg" id="lkMsg"></p>
   </section>
 
   <section id="secKeys">
@@ -631,6 +676,49 @@ $("logoutBtn").onclick = async () => {
 };
 
 /* ---------- Muat data ---------- */
+/* ---------- Tampilan ---------- */
+(function () {
+  const L = window.Look;
+  const SCHEMES = { auto: "Otomatis", light: "Terang", dark: "Gelap" };
+  const mk = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt) e.textContent = txt; return e; };
+  function render() {
+    const cur = L.get(), photo = L.photo();
+    const sc = $("lkScheme"); sc.innerHTML = "";
+    Object.keys(SCHEMES).forEach((k) => { const b = mk("button", k === cur.scheme ? "on" : "", SCHEMES[k]); b.onclick = () => { L.set({ scheme: k }); render(); }; sc.appendChild(b); });
+    const ac = $("lkAccent"); ac.innerHTML = "";
+    Object.keys(L.ACCENTS).forEach((k) => { const b = mk("button", k === cur.accent ? "on" : ""); b.style.background = L.ACCENTS[k].c; b.title = L.ACCENTS[k].name; b.setAttribute("aria-label", L.ACCENTS[k].name); b.onclick = () => { L.set({ accent: k }); render(); }; ac.appendChild(b); });
+    const wl = $("lkWall"); wl.innerHTML = "";
+    Object.keys(L.WALLS).forEach((k) => {
+      const b = mk("button", k === cur.wall ? "on" : ""), t = mk("div", "tile");
+      const w = k === "foto" ? { img: photo ? "url(" + photo + ")" : "none", size: "cover" } : L.WALLS[k];
+      t.style.backgroundImage = w.img; t.style.backgroundSize = w.size;
+      if (k === "foto" && !photo) t.textContent = "+", t.style.cssText += ";display:flex;align-items:center;justify-content:center;font-size:22px;color:var(--muted)";
+      b.append(t, mk("span", "", L.WALLS[k].name));
+      b.onclick = () => { if (k === "foto" && !photo) { $("lkFile").click(); return; } L.set({ wall: k }); render(); };
+      wl.appendChild(b);
+    });
+    $("dimRow").style.display = cur.wall === "foto" ? "flex" : "none";
+    $("lkDim").value = cur.dim;
+    const pa = $("photoActs"); pa.innerHTML = "";
+    if (photo) {
+      const a = mk("button", "", "Ganti foto"); a.onclick = () => $("lkFile").click();
+      const d = mk("button", "danger", "Hapus foto"); d.onclick = () => { L.clearPhoto(); say("lkMsg", ""); render(); };
+      pa.append(a, d);
+    }
+    const bb = $("lkBubble"); bb.innerHTML = "";
+    Object.keys(L.BUBBLES).forEach((k) => { const b = mk("button", k === cur.bubble ? "on" : "", L.BUBBLES[k]); b.onclick = () => { L.set({ bubble: k }); render(); }; bb.appendChild(b); });
+  }
+  $("lkDim").oninput = (e) => L.set({ dim: +e.target.value });
+  $("lkFile").onchange = async (e) => {
+    const f = e.target.files[0]; e.target.value = "";
+    if (!f) return;
+    try { await L.setPhoto(f); say("lkMsg", "Wallpaper foto dipasang.", "ok"); } catch (err) { say("lkMsg", err.message, "err"); }
+    render();
+  };
+  $("lkReset").onclick = () => { L.reset(); say("lkMsg", "Tampilan dikembalikan ke bawaan.", "ok"); render(); };
+  render();
+})();
+
 async function load() {
   const d = await api("/api/state");
   profile = d.profile || {};
