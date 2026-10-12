@@ -244,10 +244,13 @@ function renderKeys() {
     main.appendChild(badge(stLabel, stCls));
     const sub = document.createElement("span");
     sub.className = "ksub";
-    sub.textContent = (k.name ? "•••• " + k.last4 + " · " : "") + (k.lastUsed ? "Terakhir digunakan " + ago(k.lastUsed) : "Belum pernah digunakan") +
-      (k.today ? " · " + k.today + "× hari ini" + (quotaPerDay() ? " dari ±" + fmtN(quotaPerDay()) : "") : "") +
-      ((k.status === "invalid" || k.status === "error") && k.error ? " · " + k.error : "") +
-      (k.status === "invalid" ? " · dilewati sementara" : "");
+    const parts = [];
+    if (k.name) parts.push("•••• " + k.last4);
+    if (k.today) parts.push(k.today + "× hari ini" + (quotaPerDay() ? " dari ±" + fmtN(quotaPerDay()) : ""));
+    if ((k.status === "invalid" || k.status === "error") && k.error) parts.push(k.error);
+    if (k.status === "invalid") parts.push("dilewati sementara");
+    sub.textContent = parts.join(" · ");
+    if (!parts.length) sub.style.display = "none";
     main.appendChild(sub);
     row.appendChild(main);
     const btns = document.createElement("div");
@@ -544,7 +547,7 @@ function renderLink() {
     return;
   }
 
-  p("Hubungkan akunmu dengan akun pasangan atau teman supaya kiriman uang (mis. <i>kasih istri 5jt</i>) tidak tercatat dobel. Yang dibagi hanya kabar kiriman uang; tugas, catatan, dan pengeluaran tetap terpisah. Kalian harus sama-sama setuju, dan bisa diputus kapan saja.");
+  p("Hubungkan dengan akun pasangan atau teman supaya kiriman uang (mis. <i>kasih istri 5jt</i>) tidak tercatat dobel. Hanya kabar kiriman yang dibagi, harus disetujui kedua pihak, dan bisa diputus kapan saja.");
 
   if (linkState.code) {
     const deadline = Date.now() + linkState.codeTtl * 1000;
