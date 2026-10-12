@@ -267,9 +267,9 @@ function renderKeys() {
     const btns = document.createElement("div");
     btns.className = "kbtns";
     row.appendChild(btns);
-    const mk = (txt, title, fn, disabled) => {
+    const mk = (txt, title, fn, disabled, cls) => {
       const b = document.createElement("button");
-      b.textContent = txt; b.title = title; b.disabled = !!disabled; b.onclick = fn; btns.appendChild(b);
+      b.textContent = txt; b.title = title; b.disabled = !!disabled; b.onclick = fn; if (cls) b.className = cls; btns.appendChild(b);
     };
     mk("Test", "Test key ini", async () => {
       say("keyMsg", "Testing " + (k.name || "key …" + k.last4) + "...");
@@ -285,7 +285,7 @@ function renderKeys() {
       const v = prompt("Nama untuk key …" + k.last4 + " (kosongkan untuk menghapus nama):", k.name || "");
       if (v !== null) keyOp("renameKey", { id: k.id, name: v });
     });
-    mk("✕ Hapus", "Hapus", () => { if (confirm("Hapus key " + (k.name ? k.name + " (…" + k.last4 + ")" : "…" + k.last4) + "?")) keyOp("deleteKey", { id: k.id }); });
+    mk("✕ Hapus", "Hapus", () => { if (confirm("Hapus key " + (k.name ? k.name + " (…" + k.last4 + ")" : "…" + k.last4) + "?")) keyOp("deleteKey", { id: k.id }); }, false, "danger");
     box.appendChild(row);
   });
   $("keyCount").textContent = "(" + geminiKeys.length + "/" + maxKeys + ")";
