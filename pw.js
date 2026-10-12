@@ -76,22 +76,6 @@
     [101, "Sangat kuat", "#2a9d4b"],
   ];
 
-  const WORDS = ["kopi", "hujan", "senja", "melati", "pelangi", "bukit", "samudra", "rembulan", "angin", "cemara", "kenari", "lentera", "mawar", "bintang", "pasir", "embun", "garuda", "layang", "dermaga", "kelana", "sagu", "tembang", "fajar", "ombak"];
-  function rnd(n) {
-    const a = new Uint32Array(1);
-    crypto.getRandomValues(a);
-    return a[0] % n;
-  }
-  function example() {
-    const cap = (w) => w[0].toUpperCase() + w.slice(1);
-    const picks = [];
-    while (picks.length < 3) {
-      const w = WORDS[rnd(WORDS.length)];
-      if (!picks.includes(w)) picks.push(w);
-    }
-    return picks.map(cap).join("-") + (10 + rnd(90)) + "!@#$%&*?"[rnd(8)];
-  }
-
   function attach(input, opts) {
     opts = opts || {};
     const wrap = eye(input);
@@ -125,28 +109,11 @@
     update();
 
     if (opts.examples) {
+      // Hanya petunjuk statis (tanpa contoh password dan tanpa tombol)
       const ex = document.createElement("div");
       ex.className = "pw-ex";
-      ex.innerHTML =
-        "Pola yang mudah diingat: <b>3 kata + angka + simbol</b>. Contoh: <code></code>" +
-        '<div class="pw-btns"><button type="button" data-a="new">Contoh lain</button><button type="button" data-a="use">Pakai contoh ini</button></div>' +
-        '<div class="pw-note" style="margin-top:4px">Kalau memakai contoh, catat dulu password-nya sebelum menyimpan.</div>';
+      ex.innerHTML = "Pola yang mudah diingat: <b>3 kata + angka + simbol</b>.";
       box.appendChild(ex);
-      const code = ex.querySelector("code");
-      const gen = () => { code.textContent = example(); };
-      gen();
-      ex.addEventListener("click", (e) => {
-        const a = e.target.getAttribute && e.target.getAttribute("data-a");
-        if (a === "new") gen();
-        if (a === "use") {
-          input.value = code.textContent;
-          input.type = "text"; // tampilkan supaya bisa dicatat
-          const eb = wrap.querySelector(".pw-eye");
-          if (eb) { eb.innerHTML = EYE_OFF; eb.setAttribute("aria-label", "Sembunyikan password"); }
-          input.dispatchEvent(new Event("input"));
-          input.focus();
-        }
-      });
     }
     return box;
   }
