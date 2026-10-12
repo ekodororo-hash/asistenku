@@ -6,7 +6,7 @@ const {
   trimHist, geminiRaw, fmtWib, rupiah,
   getMode, getHist, saveHist, getProfile,
   getTasks, addTask, getNotes, addNote, getExpenses, addExpense,
-  getReminders, addReminder, getBot,
+  getReminders, addReminder, getBot, sendTelegram, cfgOn,
 } = require("./_lib");
 
 const REPEAT_LABEL = { harian: "tiap hari", mingguan: "tiap minggu", bulanan: "tiap bulan" };
@@ -139,6 +139,12 @@ module.exports = async (req, res) => {
 
     const newHist = [...hist, userTurn, { role: "model", parts: [{ text: reply || "(dicatat)" }], ts: Date.now() }];
     await saveHist(u, newHist);
+
+    // Salin ke Telegram supaya obrolan di web juga terlihat di chat Telegram (matikan: /salin off)
+    if (bot && bot.chatId && (await cfgOn(u, "mirror").catch(() => true))) {
+      const body = "💻 Dari web: " + text + "\n\n" + [reply, ...added].filter(Boolean).join("\n\n");
+      try { await sendTelegram(u, String(bot.chatId), body); } catch {}
+    }
 
     const [freshTasks, freshNotes, freshExpenses, freshReminders] = await Promise.all([getTasks(u), getNotes(u), getExpenses(u), getReminders(u)]);
     return res.status(200).json({

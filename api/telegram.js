@@ -12,7 +12,7 @@ const PLAN_PROMPT =
   "Bantu aku susun rencana hari ini berdasarkan pengingat dan hal yang kamu tahu tentang aku. Tanya aku kalau butuh info tambahan.";
 
 const REPEAT_LABEL = { harian: "tiap hari", mingguan: "tiap minggu", bulanan: "tiap bulan" };
-const TOGGLES = { "/pagi": "pagi", "/checkin": "checkin", "/rekapauto": "rekapauto" };
+const TOGGLES = { "/pagi": "pagi", "/checkin": "checkin", "/rekapauto": "rekapauto", "/salin": "mirror" };
 
 const START_TEXT =
   "Halo! Aku asistan pribadi sekaligus teman ceritamu. Pakai tombol di bawah, atau langsung tulis, kirim foto, atau voice note.\n\n" +
@@ -31,7 +31,7 @@ const START_TEXT =
   "/memori  /lupakan  /atur\n\n" +
   `Otomatis: ringkasan pagi, check-in malam, dan rekap pengeluaran mingguan. Atur di /atur.\n` +
   "Aku mengingat hal-hal penting tentangmu supaya ngobrolnya nyambung. Lihat dengan /memori, hapus dengan /lupakan.\n\n" +
-  "Tugas, catatan, uang, dan obrolan di sini sama persis dengan yang ada di web.";
+  "Tugas, catatan, uang, dan obrolan di sini sama persis dengan yang ada di web. Pesan yang kamu tulis di web juga disalin ke sini (matikan dengan /salin off).";
 
 // ---------- Perintah ----------
 async function handleCommand(u, cmd, arg, say) {
@@ -213,7 +213,8 @@ async function handleCommand(u, cmd, arg, say) {
 
     case "/pagi":
     case "/checkin":
-    case "/rekapauto": {
+    case "/rekapauto":
+    case "/salin": {
       const cfgKey = TOGGLES[cmd];
       const a = arg.toLowerCase();
       if (a !== "on" && a !== "off") {
@@ -226,7 +227,7 @@ async function handleCommand(u, cmd, arg, say) {
     }
 
     case "/atur": {
-      const [p, c, r, loc] = await Promise.all([cfgOn(u, "pagi"), cfgOn(u, "checkin"), cfgOn(u, "rekapauto"), getLocation(u)]);
+      const [p, c, r, m, loc] = await Promise.all([cfgOn(u, "pagi"), cfgOn(u, "checkin"), cfgOn(u, "rekapauto"), cfgOn(u, "mirror"), getLocation(u)]);
       const s = (b) => (b ? "aktif" : "mati");
       const jam = (h) => String(h).padStart(2, "0") + ".00";
       await say(
@@ -234,6 +235,7 @@ async function handleCommand(u, cmd, arg, say) {
           `- Ringkasan pagi (${jam(HOURS.morning)} WIB): ${s(p)}  -> /pagi on | off\n` +
           `- Check-in malam (${jam(HOURS.checkin)} WIB): ${s(c)}  -> /checkin on | off\n` +
           `- Rekap pengeluaran (Minggu ${jam(HOURS.recap)}): ${s(r)}  -> /rekapauto on | off\n` +
+          `- Salin obrolan web ke sini: ${s(m)}  -> /salin on | off\n` +
           `- Lokasi cuaca: ${loc.name}  -> /lokasi <kota>`
       );
       return;

@@ -56,7 +56,8 @@ Cron ini mengirim pengingat, ringkasan pagi, check-in malam, dan rekap mingguan 
 | Berita | tombol Berita atau `/berita topik` |
 | Curhat | tombol Mode Curhat; kembali dengan Mode Asisten |
 | Ingatan | `/memori` melihat, `/lupakan` menghapus, `/reset` hapus riwayat chat |
-| Otomatis | `/atur` melihat status; `/pagi`, `/checkin`, `/rekapauto` diikuti `on` atau `off` |
+| Otomatis | `/atur` melihat status; `/pagi`, `/checkin`, `/rekapauto`, `/salin` diikuti `on` atau `off` |
+| Salin obrolan web | Pesan dan balasan dari web ikut dikirim ke Telegram (bawaan aktif). Matikan: `/salin off` |
 
 ## Catatan
 - Pesan otomatis dikirim paling lambat sekitar 1 menit dari waktunya. Jika cron sempat mati, ringkasan pagi masih dikirim selama masih dalam 3 jam sejak jamnya.
