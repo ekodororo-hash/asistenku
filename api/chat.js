@@ -6,7 +6,10 @@ const {
   trimHist, geminiRaw, fmtWib, rupiah,
   getMode, getHist, saveHist, getProfile,
   getTasks, addTask, getNotes, addNote, getExpenses, addExpense,
+  getReminders, addReminder, getBot,
 } = require("./_lib");
+
+const REPEAT_LABEL = { harian: "tiap hari", mingguan: "tiap minggu", bulanan: "tiap bulan" };
 const { requireUser } = require("./_auth");
 
 const PERSONA = {
@@ -23,7 +26,7 @@ Kalau pengguna terlihat sedang curhat atau emosional, berubah jadi pendengar yan
 - Dukung hubungannya dengan teman dan keluarga; jangan membuat dia bergantung hanya padamu.`,
 };
 
-function buildSystem(mode, { profile, taskList, noteList, moneyText }) {
+function buildSystem(mode, { profile, taskList, noteList, moneyText, remindText, botLinked }) {
   return `${mode === "curhat" ? PERSONA.curhat : PERSONA.asisten}
 Nama kamu: ${profile.assistantName || "Asisten"}.
 Pengguna bernama: ${profile.name || "(belum diisi)"}.
@@ -39,18 +42,25 @@ ${noteList}
 Pengeluaran pengguna:
 ${moneyText}
 
+Pengingat mendatang:
+${remindText}
+Bot Telegram pengguna: ${botLinked ? "sudah terhubung (pengingat dikirim ke sana)" : "BELUM terhubung. Pengingat tetap tersimpan tapi baru terkirim setelah bot dihubungkan di Pengaturan; ingatkan pengguna soal ini saat membuat pengingat."}
+
 Aturan:
 - Tulis teks biasa, tanpa markdown (tanpa * atau #). Emoji boleh secukupnya.
 - Jangan memberi diagnosis medis.
 - Jika ada tanda pengguna ingin menyakiti diri, ingin mengakhiri hidup, atau dalam bahaya: tanggapi dengan tenang dan sungguh-sungguh, tanyakan langsung apakah dia aman sekarang, jangan menghakimi, dorong dia menghubungi orang terdekat yang dipercaya dan layanan darurat/kesehatan jiwa setempat (Indonesia: 112 untuk darurat; 119 ekstensi 8 untuk layanan kesehatan jiwa Kemenkes), dan tetap temani dia bicara. Jangan memberi informasi cara menyakiti diri.
 
 Tag khusus (taruh di baris terakhir balasan; pengguna tidak melihatnya):
-- Tambah tugas: [[TASK: isi tugas singkat]]
+- Pengingat: [[REMIND: 2026-10-12T08:00:00+07:00 | isi pengingat singkat]]
+  Waktu format ISO 8601 dengan +07:00, dihitung dari waktu sekarang (ubah "besok", "lusa", "2 jam lagi" jadi waktu pasti). Jika jam tidak disebut, tanyakan dulu dan jangan buat tag.
+  Pengingat berulang: tambahkan bagian ketiga harian / mingguan / bulanan, contoh [[REMIND: 2026-10-13T09:00:00+07:00 | rapat tim | mingguan]]. Waktu = kemunculan pertama.
+- Tugas/checklist (hal yang perlu dikerjakan, BUKAN pengingat berwaktu): [[TASK: isi tugas singkat]]
 - Catatan jika pengguna minta mencatat sesuatu: [[CATAT: isi catatan]]
 - Pengeluaran yang sudah terjadi (mis. "makan siang 25rb", "beli bensin 50 ribu"): [[BELI: 25000 | makan | makan siang]]
   Jumlah rupiah angka bulat tanpa titik ("25rb" = 25000, "1,5jt" = 1500000). Kategori satu kata: makan, transport, belanja, tagihan, hiburan, kesehatan, lainnya.
 - Satu tag per hal, boleh lebih dari satu. Jangan membuat tag kalau pengguna tidak memintanya.
-- Data ini juga dipakai lewat bot Telegram pengguna (tugas, catatan, uang, riwayat obrolan sama persis). Untuk pengingat berjam-jam/berulang, sarankan memakai bot Telegram.`;
+- Data ini juga dipakai lewat bot Telegram pengguna (tugas, catatan, uang, pengingat, riwayat obrolan sama persis).`;
 }
 
 async function processTags(u, reply) {
@@ -59,6 +69,14 @@ async function processTags(u, reply) {
   for (const m of reply.matchAll(/\[\[TASK:\s*([^\]]+?)\s*\]\]/g)) {
     const t = await addTask(u, m[1]);
     if (t) added.push("✅ Tugas ditambahkan: " + t.text);
+  }
+  for (const m of reply.matchAll(/\[\[REMIND:\s*([^|\]]+?)\s*\|\s*([^|\]]+?)\s*(?:\|\s*(harian|mingguan|bulanan)\s*)?\]\]/gi)) {
+    const label = m[2].trim();
+    const repeat = m[3] ? m[3].toLowerCase() : null;
+    const r = await addReminder(u, label, Date.parse(m[1]), repeat);
+    added.push(r
+      ? "⏰ Pengingat diset: " + label + (repeat ? " (" + REPEAT_LABEL[repeat] + ")" : "") + "\n" + fmtWib(r.ts)
+      : 'Gagal mengatur pengingat "' + label + '" (waktu tidak valid atau sudah lewat).');
   }
   for (const m of reply.matchAll(/\[\[CATAT:\s*([^\]]+?)\s*\]\]/g)) {
     const n = await addNote(u, m[1]);
@@ -70,7 +88,7 @@ async function processTags(u, reply) {
     if (e) added.push("💰 Dicatat: " + rupiah(e.amt) + " (" + e.cat + ")" + (e.note ? " - " + e.note : ""));
   }
 
-  const clean = reply.replace(/\[\[(TASK|CATAT|BELI):[\s\S]*?\]\]/g, "").trim();
+  const clean = reply.replace(/\[\[(TASK|REMIND|CATAT|BELI):[\s\S]*?\]\]/g, "").trim();
   return { clean, added };
 }
 
@@ -95,9 +113,12 @@ module.exports = async (req, res) => {
   if (!text) return res.status(400).json({ error: "Pesan kosong" });
 
   try {
-    const [mode, hist, tasks, notes, expenses, profile] = await Promise.all([
-      getMode(u), getHist(u), getTasks(u), getNotes(u), getExpenses(u), getProfile(u),
+    const [mode, hist, tasks, notes, expenses, profile, reminders, bot] = await Promise.all([
+      getMode(u), getHist(u), getTasks(u), getNotes(u), getExpenses(u), getProfile(u), getReminders(u), getBot(u).catch(() => null),
     ]);
+    const remindText = reminders.length
+      ? reminders.slice(0, 10).map((r) => `- ${r.text}${r.repeat ? " [" + REPEAT_LABEL[r.repeat] + "]" : ""} (${fmtWib(r.ts)})`).join("\n")
+      : "(belum ada)";
 
     const taskList = tasks.length
       ? tasks.slice(-40).map((t, i) => `${i + 1}. ${t.done ? "[selesai]" : "[belum]"} ${t.text}`).join("\n")
@@ -106,7 +127,7 @@ module.exports = async (req, res) => {
       ? notes.slice(-20).map((n) => "- " + n.text).join("\n")
       : "(kosong)";
 
-    const system = buildSystem(mode, { profile, taskList, noteList, moneyText: moneyText(expenses) });
+    const system = buildSystem(mode, { profile, taskList, noteList, moneyText: moneyText(expenses), remindText, botLinked: !!(bot && bot.chatId) });
 
     const userTurn = { role: "user", parts: [{ text }], ts: Date.now() };
     const contents = trimHist([...hist, userTurn]);
@@ -119,10 +140,11 @@ module.exports = async (req, res) => {
     const newHist = [...hist, userTurn, { role: "model", parts: [{ text: reply || "(dicatat)" }], ts: Date.now() }];
     await saveHist(u, newHist);
 
-    const [freshTasks, freshNotes, freshExpenses] = await Promise.all([getTasks(u), getNotes(u), getExpenses(u)]);
+    const [freshTasks, freshNotes, freshExpenses, freshReminders] = await Promise.all([getTasks(u), getNotes(u), getExpenses(u), getReminders(u)]);
     return res.status(200).json({
       reply, added,
       tasks: freshTasks,
+      reminders: freshReminders,
       notes: freshNotes.slice(-100).reverse(),
       expenses: freshExpenses.slice(-100).reverse(),
     });

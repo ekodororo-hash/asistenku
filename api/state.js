@@ -10,7 +10,8 @@ const {
   getExpenses, addExpense, deleteExpenseById,
   getProfile, saveProfile,
   getMode, setMode,
-  getHist,
+  getHist, getBot,
+  getReminders, addReminder, deleteReminderById,
 } = require("./_lib");
 
 module.exports = async (req, res) => {
@@ -19,9 +20,13 @@ module.exports = async (req, res) => {
 
   if (req.method === "GET") {
     try {
-      const [tasks, notes, expenses, profile, mode, hist, keys, bot] = await Promise.all([
-        getTasks(u), getNotes(u), getExpenses(u), getProfile(u), getMode(u), getHist(u), listGeminiKeys(u), botStatus(u),
+      // ?light=1: dipakai web untuk penyegaran berkala (tanpa key dan tanpa panggilan ke Telegram)
+      const light = !!(req.query && req.query.light);
+      const [tasks, notes, expenses, profile, mode, hist, reminders, keys, bot, rawBot] = await Promise.all([
+        getTasks(u), getNotes(u), getExpenses(u), getProfile(u), getMode(u), getHist(u), getReminders(u),
+        light ? null : listGeminiKeys(u), light ? null : botStatus(u), light ? getBot(u).catch(() => null) : null,
       ]);
+      const botLinked = light ? !!(rawBot && rawBot.chatId) : !!(bot && bot.linked);
       const messages = hist.map((h) => ({
         role: h.role === "user" ? "user" : "model",
         text: (h.parts || []).map((p) => p.text || "").join(""),
@@ -31,8 +36,8 @@ module.exports = async (req, res) => {
         tasks,
         notes: notes.slice(-100).reverse(),
         expenses: expenses.slice(-100).reverse(),
-        profile, mode, messages,
-        geminiKeys: keys, maxKeys: MAX_KEYS, globalKey: !!process.env.GEMINI_API_KEY, bot,
+        profile, mode, messages, reminders, botLinked,
+        ...(light ? {} : { geminiKeys: keys, maxKeys: MAX_KEYS, globalKey: !!process.env.GEMINI_API_KEY, bot }),
       });
     } catch (e) {
       return res.status(500).json({ error: "Server error: " + e.message });
@@ -47,6 +52,8 @@ module.exports = async (req, res) => {
         case "addTask": result = await addTask(u, p.text); break;
         case "toggleTask": result = await toggleTask(u, p.id); break;
         case "deleteTask": result = await deleteTask(u, p.id); break;
+        case "addReminder": result = await addReminder(u, p.text, p.ts, p.repeat); if (!result) throw new Error("Waktu pengingat tidak valid atau sudah lewat."); break;
+        case "deleteReminder": result = await deleteReminderById(u, p.id); break;
         case "addNote": result = await addNote(u, p.text); break;
         case "deleteNote": result = await deleteNoteById(u, p.id); break;
         case "addExpense": result = await addExpense(u, p.amt, p.cat, p.note); break;

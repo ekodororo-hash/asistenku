@@ -466,6 +466,41 @@ async function deleteExpenseById(u, id, monthKey) {
   return true;
 }
 
+// ---------- Pengingat (dipakai bareng web & Telegram; dikirim lewat Telegram oleh cron) ----------
+const REPEATS = ["harian", "mingguan", "bulanan"];
+async function getReminders(u) {
+  const rows = await redis("ZRANGE", key(u, "reminders"), 0, -1, "WITHSCORES");
+  const out = [];
+  for (let i = 0; i < (rows || []).length; i += 2) {
+    let it = {};
+    try { it = JSON.parse(rows[i]); } catch {}
+    const ts = Number(rows[i + 1]);
+    out.push({ id: it.id || "t" + ts, text: it.text || "?", ts, repeat: it.repeat || null });
+  }
+  return out;
+}
+async function addReminder(u, text, ts, repeat) {
+  const t = String(text || "").trim().slice(0, 200);
+  const when = Number(ts);
+  if (!t || !Number.isFinite(when) || when <= Date.now()) return null;
+  const item = { id: uid(), text: t };
+  if (REPEATS.includes(repeat)) item.repeat = repeat;
+  await redis("ZADD", key(u, "reminders"), when, JSON.stringify(item));
+  return { id: item.id, text: item.text, ts: when, repeat: item.repeat || null };
+}
+async function deleteReminderById(u, id) {
+  const rows = await redis("ZRANGE", key(u, "reminders"), 0, -1, "WITHSCORES");
+  for (let i = 0; i < (rows || []).length; i += 2) {
+    let it = {};
+    try { it = JSON.parse(rows[i]); } catch {}
+    if ((it.id || "t" + Number(rows[i + 1])) === id) {
+      await redis("ZREM", key(u, "reminders"), rows[i]);
+      return true;
+    }
+  }
+  return false;
+}
+
 // ---------- Profil (web) ----------
 async function getProfile(u) {
   const raw = await redis("GET", key(u, "profile"));
@@ -703,4 +738,5 @@ module.exports = {
   getProfile, saveProfile,
   getMode, setMode,
   getHist, saveHist,
+  getReminders, addReminder, deleteReminderById,
 };

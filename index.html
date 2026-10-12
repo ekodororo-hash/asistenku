@@ -50,7 +50,7 @@
   aside::-webkit-scrollbar-thumb:hover { background:var(--muted); }
   aside h2 { font-size:15px; margin:0 0 10px; }
   .tabs { display:flex; gap:4px; margin-bottom:12px; }
-  .tabs button { flex:1; padding:6px 4px; font-size:13px; }
+  .tabs button { flex:1; min-width:0; padding:6px 2px; font-size:12px; }
   .tabs button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
   .pane { display:none; }
   .pane.on { display:block; }
@@ -178,6 +178,7 @@
 
     <div class="tabs">
       <button data-tab="tasks">Tugas</button>
+      <button data-tab="remind">Pengingat</button>
       <button data-tab="notes">Catatan</button>
       <button data-tab="money">Uang</button>
       <button data-tab="info">Info</button>
@@ -189,6 +190,22 @@
         <button id="taskAddBtn">+</button>
       </div>
       <div id="tasks"></div>
+    </div>
+
+    <div class="pane" id="pane-remind">
+      <div class="addrow">
+        <input id="remText" placeholder="Ingatkan aku untuk...">
+      </div>
+      <div class="addrow">
+        <input id="remWhen" type="datetime-local">
+        <select id="remRepeat">
+          <option value="">Sekali</option><option value="harian">Tiap hari</option>
+          <option value="mingguan">Tiap minggu</option><option value="bulanan">Tiap bulan</option>
+        </select>
+        <button id="remAddBtn">+</button>
+      </div>
+      <p class="muted" id="remNote"></p>
+      <div id="reminders"></div>
     </div>
 
     <div class="pane" id="pane-notes">
@@ -286,6 +303,8 @@ let messages = [];
 let tasks = [];
 let notes = [];
 let expenses = [];
+let reminders = [];
+let botLinked = true;
 let profile = { name: "", assistantName: "Asisten", notes: "" };
 let mode = "asisten";
 let busy = false;
@@ -371,6 +390,45 @@ async function addTask(text) {
   try {
     const { result } = await api("/api/state", { method: "POST", body: JSON.stringify({ op: "addTask", text }) });
     if (result) { tasks.push(result); renderTasks(); }
+  } catch (e) { alert(e.message); }
+}
+
+/* ---------- Pengingat (dikirim lewat Telegram oleh server) ---------- */
+const REPEAT_LABEL = { harian: "tiap hari", mingguan: "tiap minggu", bulanan: "tiap bulan" };
+const fmtWhen = (ts) => new Date(ts).toLocaleString("id-ID", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false }).replace(":", ".");
+
+function renderReminders() {
+  $("remNote").textContent = botLinked ? "" : "Bot Telegram belum terhubung, jadi pengingat belum bisa terkirim. Hubungkan dulu di Pengaturan.";
+  const box = $("reminders");
+  box.innerHTML = "";
+  if (!reminders.length) { box.innerHTML = '<p class="muted">Belum ada pengingat.</p>'; return; }
+  reminders.forEach((r) => {
+    box.appendChild(makeRow(
+      r.text + (r.repeat ? " (" + REPEAT_LABEL[r.repeat] + ")" : ""),
+      fmtWhen(r.ts),
+      async () => {
+        try { await api("/api/state", { method: "POST", body: JSON.stringify({ op: "deleteReminder", id: r.id }) }); reminders = reminders.filter((x) => x.id !== r.id); renderReminders(); }
+        catch (e) { alert(e.message); }
+      }
+    ));
+  });
+}
+
+async function doAddRem() {
+  const text = $("remText").value.trim();
+  const when = $("remWhen").value;
+  if (!text) { alert("Isi dulu pengingatnya."); return; }
+  if (!when) { alert("Pilih tanggal dan jam."); return; }
+  const ts = new Date(when).getTime();
+  if (!(ts > Date.now())) { alert("Waktunya sudah lewat."); return; }
+  try {
+    const { result } = await api("/api/state", { method: "POST", body: JSON.stringify({ op: "addReminder", text, ts, repeat: $("remRepeat").value || null }) });
+    if (result) {
+      reminders.push(result);
+      reminders.sort((a, b) => a.ts - b.ts);
+      renderReminders();
+      $("remText").value = ""; $("remWhen").value = ""; $("remRepeat").value = "";
+    }
   } catch (e) { alert(e.message); }
 }
 
@@ -586,6 +644,7 @@ async function send(text) {
     if (d.tasks) { tasks = d.tasks; renderTasks(); }
     if (d.notes) { notes = d.notes; renderNotes(); }
     if (d.expenses) { expenses = d.expenses; renderMoney(); }
+    if (d.reminders) { reminders = d.reminders; renderReminders(); }
   } catch (e) {
     setBubble(wait, "Error: " + e.message);
     wait.classList.add("err");
@@ -614,6 +673,8 @@ const onEnter = (id, fn) => $(id).addEventListener("keydown", (e) => { if (e.key
 
 const doAddTask = () => { addTask($("taskInput").value); $("taskInput").value = ""; };
 $("taskAddBtn").onclick = doAddTask; onEnter("taskInput", doAddTask);
+
+$("remAddBtn").onclick = doAddRem; onEnter("remText", doAddRem);
 
 const doAddNote = () => { addNote($("noteInput").value); $("noteInput").value = ""; };
 $("noteAddBtn").onclick = doAddNote; onEnter("noteInput", doAddNote);
@@ -690,7 +751,29 @@ async function loadState() {
   profile = d.profile || profile;
   mode = d.mode || "asisten";
   messages = d.messages || [];
+  reminders = d.reminders || [];
+  botLinked = d.botLinked !== false;
 }
+
+// Segarkan berkala supaya obrolan dari Telegram (dan perubahan lain) muncul tanpa muat ulang halaman
+const sig = (a) => a.length + ":" + (a.length ? a[a.length - 1].ts : 0);
+async function refreshFromServer() {
+  if (busy || document.hidden || $("pinGate") && !$("pinGate").classList.contains("hide")) return;
+  try {
+    const d = await api("/api/state?light=1");
+    if (busy) return; // pesan sedang dikirim, jangan timpa
+    const before = sig(messages), oldMode = mode;
+    tasks = d.tasks || []; notes = d.notes || []; expenses = d.expenses || [];
+    reminders = d.reminders || []; botLinked = d.botLinked !== false;
+    mode = d.mode || "asisten"; messages = d.messages || [];
+    if (sig(messages) !== before) renderChat();
+    if (mode !== oldMode) renderMode();
+    renderTasks(); renderNotes(); renderMoney(); renderReminders();
+  } catch {}
+}
+setInterval(refreshFromServer, 20000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshFromServer(); });
+window.addEventListener("focus", refreshFromServer);
 
 async function boot() {
   try {
@@ -698,7 +781,7 @@ async function boot() {
     wasLoggedIn = true;
     hideGate();
     renderTitle(); renderMode(); renderChat();
-    renderTasks(); renderNotes(); renderMoney();
+    renderTasks(); renderNotes(); renderMoney(); renderReminders();
     showTab(load("tab", "tasks"));
   } catch (e) {
     if (e.message !== "Belum login") showGate("Gagal memuat: " + e.message);
