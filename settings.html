@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#4f46e5">
+<title>Pengaturan · Asisten Pribadi</title>
+<style>
+  :root { --bg:#f6f7fb; --card:#fff; --ink:#1d2433; --muted:#6b7385; --accent:#4f46e5; --line:#e4e7ef; --err:#d33; --ok:#2a9d4b; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0f1220; --card:#181c2e; --ink:#e8eaf3; --muted:#9aa1b5; --line:#2a3050; }
+  }
+  * { box-sizing:border-box; }
+  html { -webkit-text-size-adjust:100%; }
+  body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--ink); min-height:100dvh; }
+  header { position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:10px; padding:12px 16px; padding-top:max(12px, env(safe-area-inset-top)); background:var(--card); border-bottom:1px solid var(--line); }
+  header h1 { font-size:17px; margin:0; flex:1; }
+  button, a.btn { font:inherit; cursor:pointer; border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:10px; padding:8px 14px; touch-action:manipulation; text-decoration:none; display:inline-flex; align-items:center; justify-content:center; line-height:1.2; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  button.danger { color:var(--err); border-color:var(--err); }
+  button:disabled { opacity:.5; cursor:default; }
+  main { max-width:640px; margin:0 auto; padding:16px; padding-bottom:max(32px, env(safe-area-inset-bottom)); display:flex; flex-direction:column; gap:14px; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; }
+  section h2 { font-size:16px; margin:0 0 4px; display:flex; align-items:baseline; gap:8px; }
+  section h2 small { font-weight:400; color:var(--muted); font-size:13px; }
+  .hint { color:var(--muted); font-size:13px; line-height:1.5; margin:0 0 12px; }
+  label { display:block; margin:12px 0 4px; font-size:13px; color:var(--muted); }
+  input, textarea { width:100%; border:1px solid var(--line); border-radius:10px; padding:10px; background:var(--bg); color:var(--ink); font:inherit; font-size:16px; }
+  textarea { resize:vertical; }
+  .row { display:flex; gap:8px; align-items:center; }
+  .row input { flex:1; min-width:0; }
+  .actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+  .msg { font-size:13px; min-height:18px; margin:8px 0 0; }
+  .msg.err { color:var(--err); }
+  .msg.ok { color:var(--ok); }
+  .item { display:flex; align-items:center; gap:6px; padding:8px 0; border-bottom:1px solid var(--line); }
+  .item:last-of-type { border-bottom:none; }
+  .item span { flex:1; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:14px; }
+  .item button { padding:6px 10px; min-width:36px; }
+  .status { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; border:1px solid var(--line); }
+  .status.on { color:var(--ok); border-color:var(--ok); }
+  .status.wait { color:var(--muted); }
+  .who { font-size:14px; margin:0 0 4px; }
+  hr { border:none; border-top:1px solid var(--line); margin:16px 0 4px; }
+</style>
+</head>
+<body>
+<header>
+  <a href="/" class="btn" aria-label="Kembali">← Kembali</a>
+  <h1>Pengaturan</h1>
+</header>
+
+<main>
+  <section id="secProfile">
+    <h2>Profil</h2>
+    <p class="hint">Dipakai asisten supaya jawabannya nyambung denganmu.</p>
+    <label for="pName">Nama kamu</label>
+    <input id="pName" autocomplete="off">
+    <label for="pAssistant">Nama asisten</label>
+    <input id="pAssistant" placeholder="mis. Nara" autocomplete="off">
+    <label for="pNotes">Catatan tentang kamu (jadwal rutin, kebiasaan, preferensi)</label>
+    <textarea id="pNotes" rows="4"></textarea>
+    <div class="actions"><button class="primary" id="profileSave">Simpan profil</button></div>
+    <p class="msg" id="profileMsg"></p>
+  </section>
+
+  <section id="secKeys">
+    <h2>API key Gemini <small id="keyCount"></small></h2>
+    <p class="hint">Maksimal 5. Dicoba berurutan; kalau kena limit otomatis lompat ke key berikutnya. <span id="globalKeyNote"></span></p>
+    <div id="keyList"></div>
+    <div class="row" id="keyAddRow" style="margin-top:8px">
+      <input id="keyInput" type="password" autocomplete="off" placeholder="Tempel API key (AIza...)">
+      <button id="keyAddBtn">Tambah</button>
+    </div>
+    <p class="msg" id="keyMsg"></p>
+  </section>
+
+  <section id="secBot">
+    <h2>Bot Telegram</h2>
+    <div id="botBox"></div>
+    <p class="msg" id="botMsg"></p>
+  </section>
+
+  <section id="secAccount">
+    <h2>Akun</h2>
+    <p class="who" id="who" style="color:var(--muted)"></p>
+    <label for="pwOld">Ganti password</label>
+    <input id="pwOld" type="password" autocomplete="current-password" placeholder="Password lama">
+    <div class="row" style="margin-top:8px">
+      <input id="pwNew" type="password" autocomplete="new-password" placeholder="Password baru (min. 8)">
+      <button id="pwBtn">Ganti</button>
+    </div>
+    <p class="msg" id="pwMsg"></p>
+    <hr>
+    <div class="actions"><button class="danger" id="logoutBtn">Keluar dari akun</button></div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, Object.assign({ credentials: "same-origin" }, opts, {
+    headers: Object.assign({ "Content-Type": "application/json" }, opts.headers || {}),
+  }));
+  if (r.status === 401) { location.href = "/"; throw new Error("Belum login"); }
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || "Gagal memuat");
+  return d;
+}
+const op = (name, extra) => api("/api/state", { method: "POST", body: JSON.stringify({ op: name, ...extra }) }).then((d) => d.result);
+function say(id, text, kind) { const m = $(id); m.textContent = text || ""; m.className = "msg" + (kind ? " " + kind : ""); }
+
+let profile = {}, geminiKeys = [], maxKeys = 5, globalKey = false, botState = { installed: false };
+
+/* ---------- Profil ---------- */
+$("profileSave").onclick = async () => {
+  const p = { name: $("pName").value.trim(), assistantName: $("pAssistant").value.trim() || "Asisten", notes: $("pNotes").value.trim() };
+  say("profileMsg", "Menyimpan...");
+  try { profile = await op("saveProfile", { profile: p }); say("profileMsg", "Tersimpan.", "ok"); }
+  catch (e) { say("profileMsg", e.message, "err"); }
+};
+
+/* ---------- API key Gemini ---------- */
+function renderKeys() {
+  const box = $("keyList");
+  box.innerHTML = "";
+  geminiKeys.forEach((k, i) => {
+    const row = document.createElement("div");
+    row.className = "item";
+    const label = document.createElement("span");
+    label.textContent = (i + 1) + ". •••• " + k.last4;
+    row.appendChild(label);
+    const mk = (txt, title, fn, disabled) => {
+      const b = document.createElement("button");
+      b.textContent = txt; b.title = title; b.disabled = !!disabled; b.onclick = fn; row.appendChild(b);
+    };
+    mk("↑", "Naikkan", () => keyOp("moveKey", { id: k.id, dir: "up" }), i === 0);
+    mk("↓", "Turunkan", () => keyOp("moveKey", { id: k.id, dir: "down" }), i === geminiKeys.length - 1);
+    mk("✕", "Hapus", () => { if (confirm("Hapus key …" + k.last4 + "?")) keyOp("deleteKey", { id: k.id }); });
+    box.appendChild(row);
+  });
+  $("keyCount").textContent = "(" + geminiKeys.length + "/" + maxKeys + ")";
+  $("keyAddRow").style.display = geminiKeys.length >= maxKeys ? "none" : "flex";
+  $("globalKeyNote").textContent = globalKey ? "Key bawaan server jadi cadangan terakhir." : "";
+}
+async function keyOp(name, extra) {
+  say("keyMsg", "");
+  try { geminiKeys = await op(name, extra); renderKeys(); return true; }
+  catch (e) { say("keyMsg", e.message, "err"); return false; }
+}
+$("keyInput").addEventListener("keydown", (e) => { if (e.key === "Enter") $("keyAddBtn").click(); });
+$("keyAddBtn").onclick = async () => {
+  const v = $("keyInput").value.trim();
+  if (!v) return;
+  $("keyAddBtn").disabled = true; say("keyMsg", "Memeriksa key...");
+  if (await keyOp("addKey", { value: v })) { $("keyInput").value = ""; say("keyMsg", "Key ditambahkan.", "ok"); }
+  $("keyAddBtn").disabled = false;
+};
+
+/* ---------- Bot Telegram ---------- */
+function renderBot() {
+  const box = $("botBox");
+  box.innerHTML = "";
+  const p = (html) => { const e = document.createElement("p"); e.className = "hint"; e.innerHTML = html; box.appendChild(e); return e; };
+  const btn = (txt, fn, cls) => { const b = document.createElement("button"); b.textContent = txt; if (cls) b.className = cls; b.onclick = fn; return b; };
+  if (!botState.installed) {
+    p("Buat bot di <b>@BotFather</b>, lalu tempel token-nya di sini. Webhook dipasang otomatis." + (botState.legacy ? " Saat ini kamu masih memakai bot bawaan server." : ""));
+    const row = document.createElement("div");
+    row.className = "row";
+    const inp = document.createElement("input");
+    inp.type = "password"; inp.autocomplete = "off"; inp.placeholder = "123456:ABC-DEF...";
+    const go = btn("Pasang", () => botOp("setBot", { token: inp.value.trim() }, go), "primary");
+    inp.addEventListener("keydown", (e) => { if (e.key === "Enter") go.click(); });
+    row.append(inp, go); box.appendChild(row);
+    return;
+  }
+  p("Bot: <b>@" + botState.username + "</b> &nbsp;<span class=\"status " + (botState.linked ? "on\">✅ terhubung" : "wait\">⏳ belum terhubung") + "</span>");
+  if (!botState.linked) {
+    const a = document.createElement("a");
+    a.className = "btn primary"; a.href = botState.linkUrl; a.target = "_blank"; a.rel = "noopener"; a.textContent = "Hubungkan Telegram";
+    a.style.cssText = "background:var(--accent);color:#fff;border-color:var(--accent)";
+    box.appendChild(a);
+    p("<br>Klik tautan itu lalu tekan <b>Start</b> di Telegram. Cuma tautan ini yang bisa mengunci bot ke chat-mu.");
+  }
+  const row = document.createElement("div");
+  row.className = "actions";
+  row.style.marginTop = "0";
+  row.appendChild(btn("Segarkan status", async () => { await load(); }));
+  if (botState.linked) row.appendChild(btn("Ganti chat Telegram", () => { if (confirm("Lepas kunci chat dan buat tautan baru?")) botOp("relinkBot"); }));
+  row.appendChild(btn("Lepas bot", () => { if (confirm("Lepas bot? Pengingat otomatis berhenti.")) botOp("removeBot"); }, "danger"));
+  box.appendChild(row);
+}
+async function botOp(name, extra, btnEl) {
+  say("botMsg", name === "setBot" ? "Memasang bot..." : "");
+  if (btnEl) btnEl.disabled = true;
+  try { botState = await op(name, extra); say("botMsg", ""); renderBot(); }
+  catch (e) { say("botMsg", e.message, "err"); if (btnEl) btnEl.disabled = false; }
+}
+
+/* ---------- Akun ---------- */
+$("pwBtn").onclick = async () => {
+  say("pwMsg", "Memproses...");
+  try {
+    await api("/api/auth", { method: "POST", body: JSON.stringify({ op: "changePassword", oldPassword: $("pwOld").value, newPassword: $("pwNew").value }) });
+    $("pwOld").value = ""; $("pwNew").value = "";
+    say("pwMsg", "Password diganti.", "ok");
+  } catch (e) { say("pwMsg", e.message, "err"); }
+};
+$("logoutBtn").onclick = async () => {
+  if (!confirm("Keluar dari akun ini?")) return;
+  try { await fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify({ op: "logout" }) }); } catch {}
+  location.href = "/";
+};
+
+/* ---------- Muat data ---------- */
+async function load() {
+  const d = await api("/api/state");
+  profile = d.profile || {};
+  $("pName").value = profile.name || "";
+  $("pAssistant").value = profile.assistantName || "Asisten";
+  $("pNotes").value = profile.notes || "";
+  geminiKeys = d.geminiKeys || []; maxKeys = d.maxKeys || 5; globalKey = !!d.globalKey;
+  botState = d.bot || { installed: false };
+  renderKeys(); renderBot();
+}
+load().catch((e) => { if (e.message !== "Belum login") say("profileMsg", "Gagal memuat: " + e.message, "err"); });
+api("/api/auth").then((d) => { $("who").textContent = "Masuk sebagai " + d.user.username; }).catch(() => {});
+</script>
+</body>
+</html>
