@@ -6,6 +6,10 @@
 <meta name="theme-color" content="#4f46e5">
 <title>Asisten Pribadi</title>
 <style>
+  * { -webkit-tap-highlight-color:transparent; }
+  button, a.btn, a { -webkit-touch-callout:none; user-select:none; -webkit-user-select:none; }
+  button:focus:not(:focus-visible), a:focus:not(:focus-visible) { outline:none; }
+  button:active { filter:brightness(.95); }
   :root { --bg:#f6f7fb; --outer:#e8eaf3; --card:#fff; --ink:#1d2433; --muted:#6b7385; --accent:#4f46e5; --line:#e4e7ef; --me:#4f46e5; }
   @media (prefers-color-scheme: dark) {
     :root { --bg:#0f1220; --outer:#080a14; --card:#181c2e; --ink:#e8eaf3; --muted:#9aa1b5; --line:#2a3050; }
@@ -97,6 +101,7 @@
   #pinGate input { display:block; width:100%; text-align:left; font-size:16px; letter-spacing:0; padding:13px 14px; border-radius:12px; border:1px solid var(--line); background:var(--card); color:var(--ink); margin:0 !important; font-family:inherit; }
   #pinGate input:focus { outline:2px solid var(--accent); outline-offset:-1px; border-color:var(--accent); }
   #pinGate p.err { color:#d33; font-size:13px; min-height:0; margin:0; text-align:center; }
+  #pinGate p.err.ok { color:#2a9d4b; }
   #pinGate p.err:empty { display:none; }
   #pinGate button.primary { width:100%; padding:13px; font-size:16px; font-weight:600; border-radius:12px; margin-top:4px; }
   #pinGate .switch { margin:18px 0 0; font-size:14px; text-align:center; }
@@ -830,16 +835,17 @@ $("authSwitch").addEventListener("click", (e) => { e.preventDefault(); setAuthMo
 
 $("authForm").addEventListener("submit", async (e) => {
   e.preventDefault();
-  $("pinErr").textContent = "Memproses...";
+  $("pinErr").textContent = "Memproses..."; $("pinErr").classList.add("ok");
   const body = { op: registerMode ? "register" : "login", username: $("authUser").value, password: $("authPass").value };
   if (registerMode) body.invite = $("authInvite").value;
   try {
     const r = await fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify(body) });
     const d = await r.json().catch(() => ({}));
+    $("pinErr").classList.remove("ok");
     if (!r.ok) { $("pinErr").textContent = d.error || "Gagal"; return; }
     $("pinErr").textContent = "";
     boot();
-  } catch (err) { $("pinErr").textContent = "Gagal terhubung: " + err.message; }
+  } catch (err) { $("pinErr").classList.remove("ok"); $("pinErr").textContent = "Gagal terhubung: " + err.message; }
 });
 
 
