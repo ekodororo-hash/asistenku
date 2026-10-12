@@ -3,7 +3,7 @@
 // supaya tugas, catatan, uang, mode, dan riwayat obrolan tersinkron di kedua sisi.
 
 const {
-  trimHist, geminiRaw, geminiSearch, sourceLine, REMIND_INTENT, fmtWib, rupiah,
+  trimHist, geminiRaw, geminiSearch, sourceLine, REMIND_INTENT, DELETE_INTENT, deleteReminderNumber, fmtWib, rupiah,
   getMode, takeCurhatExpiredNotice, getHist, saveHist, getProfile, gemini, loadCurhatContext, buildCurhatSystem, stripTags,
   getTasks, addTask, getNotes, addNote, getExpenses, addExpense,
   getReminders, addReminder, getBot, sendTelegram, cfgOn, quotaStatus, setSaldo, moneyContext, parseWib, addIncome, getIncomes, moneySummary,
@@ -53,12 +53,14 @@ Aturan:
 
 Tag khusus (taruh di baris terakhir balasan; pengguna tidak melihatnya):
 - Pengingat: [[REMIND: 2026-10-12T08:00:00+07:00 | isi pengingat singkat]]
-  Waktu format ISO 8601 dengan +07:00, dihitung dari waktu sekarang (ubah "besok", "lusa", "2 jam lagi" jadi waktu pasti). Jika jam tidak disebut, tanyakan dulu dan jangan buat tag.
+  Waktu format ISO 8601 dengan +07:00, dihitung dari waktu sekarang (ubah "besok", "lusa", "2 jam lagi" jadi waktu pasti). Jika pengguna menyebut hari/tanggal tanpa jam (mis. bayar wifi tanggal 10), pakai jam 08:00. Kalau cuma tanggal tanpa bulan, pakai tanggal itu yang terdekat dan belum lewat. Tagihan/cicilan/langganan atau kata tiap bulan dibuat bulanan. Kalau waktunya benar-benar tidak jelas (tanpa jam DAN tanpa hari), tanyakan dulu dan jangan buat tag. Jangan pernah bilang akan mengingatkan kalau kamu tidak membuat tag REMIND.
   Pengingat berulang: tambahkan bagian ketiga harian / mingguan / bulanan, contoh [[REMIND: 2026-10-13T09:00:00+07:00 | rapat tim | mingguan]]. Waktu = kemunculan pertama.
 - Tugas/checklist (pekerjaan yang perlu dikerjakan): [[TASK: isi tugas singkat]]
   Kalau pengguna menyebut jam/hari untuk tugas itu (mis. "nyuci piring besok jam 7"), tambahkan waktu: [[TASK: nyuci piring | 2026-10-13T07:00:00+07:00]]. Tugas berjam otomatis jadi pengingat yang bunyi tepat waktu dan dibatalkan kalau tugasnya dicentang selesai. Jangan buat TASK dan REMIND sekaligus untuk hal yang sama.
   Pakai REMIND hanya untuk pengingat murni yang bukan tugas (minum obat, rapat, tagihan) atau yang berulang.
 - Catatan jika pengguna minta mencatat sesuatu: [[CATAT: isi catatan]]
+- Pengingat BISA dihapus lewat tag [[HAPUS_PENGINGAT: N]] (N = nomor di daftar Pengingat mendatang). Buat tag ini hanya kalau pengguna jelas minta menghapus/membatalkan dan jelas pengingat yang mana; kalau belum jelas, tanyakan dulu. Jangan pernah bilang sudah dihapus tanpa tag ini: sistem menulis baris 🗑️ kalau berhasil.
+- Kamu TIDAK bisa menghapus tugas, catatan, pengeluaran, atau pemasukan. Kalau pengguna minta, jangan bilang sudah dihapus dan jangan buat tag; arahkan ke Panel (tombol x di samping item yang mau dihapus).
 - Pengeluaran yang sudah terjadi (mis. "makan siang 25rb", "beli bensin 50 ribu"): [[BELI: 25000 | makan | makan siang]]
   Jumlah rupiah angka bulat tanpa titik ("25rb" = 25000, "1,5jt" = 1500000). Kategori satu kata: makan, transport, belanja, tagihan, hiburan, kesehatan, lainnya.
 - Pemasukan / uang masuk yang sudah terjadi (mis. "gajian 3jt", "dapat bonus 500rb"): [[MASUK: 3000000 | gaji | gajian]]
@@ -66,7 +68,7 @@ Tag khusus (taruh di baris terakhir balasan; pengguna tidak melihatnya):
 - Saldo/uang yang dimiliki pengguna sekarang (mis. \"uangku sekarang 500rb\"): [[SALDO: 500000]]. Angka bulat tanpa titik. Sisa uang = saldo + pemasukan - pengeluaran tercatat setelahnya (sudah dihitung di data uang di atas; jangan menebak kalau saldo belum diketahui).
 - Kamu punya akses pencarian Google. Untuk hal yang terkini atau bisa berubah (jadwal pertandingan, skor, harga, berita, cuaca, hasil, tanggal rilis), cari dulu lalu jawab; jangan bilang kamu tidak bisa browsing. Jawab ringkas dan sebut waktu/tanggal datanya kalau penting. Hasil pencarian tidak perlu dicatat kecuali pengguna minta.
 - Pertanyaan info (kurs, jadwal, harga, berita, dll) dijawab SEKARANG dalam balasan yang sama. Jangan bilang "sebentar aku cek" lalu membuat pengingat atau tugas; REMIND hanya kalau pengguna jelas minta diingatkan.
-- Buat tag HANYA untuk permintaan di pesan pengguna yang TERBARU. Permintaan di pesan-pesan sebelumnya sudah diproses; jangan mengulang tagnya. Baris berawalan ⏰ ✅ 🗒️ 💰 💵 di akhir balasanmu sebelumnya ditulis otomatis oleh sistem setelah tag berhasil diproses; itu tandanya permintaan tersebut SUDAH SELESAI. Jangan menulis baris seperti itu sendiri.
+- Buat tag HANYA untuk permintaan di pesan pengguna yang TERBARU. Permintaan di pesan-pesan sebelumnya sudah diproses; jangan mengulang tagnya. Baris berawalan ⏰ ✅ 🗒️ 💰 💵 🗑️ di akhir balasanmu sebelumnya ditulis otomatis oleh sistem setelah tag berhasil diproses; itu tandanya permintaan tersebut SUDAH SELESAI. Jangan menulis baris seperti itu sendiri.
 - Satu tag per hal, boleh lebih dari satu. Jangan membuat tag kalau pengguna tidak memintanya.
 - Data ini juga dipakai lewat bot Telegram pengguna (tugas, catatan, uang, pengingat, riwayat obrolan sama persis).`;
 }
@@ -111,7 +113,16 @@ async function processTags(u, reply, userText = "") {
     if (sd) added.push("💵 Saldo dicatat: " + rupiah(sd.amt));
   }
 
-  const clean = reply.replace(/\[\[(TASK|REMIND|CATAT|BELI|MASUK|SALDO):[\s\S]*?\]\]/g, "").trim();
+  // Hapus pengingat (hanya kalau pesan pengguna memang meminta menghapus/membatalkan)
+  if (DELETE_INTENT.test(userText)) {
+    const nums = [...new Set([...reply.matchAll(/\[\[HAPUS_PENGINGAT:\s*(\d+)\s*\]\]/g)].map((m) => Number(m[1])))].sort((a, b) => b - a);
+    for (const n of nums) { // dari nomor terbesar supaya nomor lain tidak bergeser
+      const r = await deleteReminderNumber(u, n);
+      added.push(r ? "🗑️ Pengingat dihapus: " + r.text : "Gagal menghapus: pengingat nomor " + n + " tidak ditemukan.");
+    }
+  }
+
+  const clean = reply.replace(/\[\[(TASK|REMIND|CATAT|BELI|MASUK|SALDO|HAPUS_PENGINGAT):[\s\S]*?\]\]/g, "").trim();
   return { clean, added };
 }
 
@@ -153,7 +164,7 @@ module.exports = async (req, res) => {
       getHist(u, "asisten"), getTasks(u), getNotes(u), getExpenses(u), getProfile(u), getReminders(u), getBot(u).catch(() => null),
     ]);
     const remindText = reminders.length
-      ? reminders.slice(0, 10).map((r) => `- ${r.text}${r.repeat ? " [" + REPEAT_LABEL[r.repeat] + "]" : ""} (${fmtWib(r.ts)})`).join("\n")
+      ? reminders.slice(0, 10).map((r, i) => `${i + 1}. ${r.text}${r.repeat ? " [" + REPEAT_LABEL[r.repeat] + "]" : ""} (${fmtWib(r.ts)})`).join("\n")
       : "(belum ada)";
 
     const taskList = tasks.length

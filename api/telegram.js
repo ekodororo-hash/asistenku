@@ -1,6 +1,6 @@
 // Webhook bot Telegram: /api/telegram
 const {
-  HOURS, BTN, redis, tg, key, getBot, saveBot, sendTelegram, downloadTelegramFile, gemini, geminiSearch, sourceLine, REMIND_INTENT, trimHist,
+  HOURS, BTN, redis, tg, key, getBot, saveBot, sendTelegram, downloadTelegramFile, gemini, geminiSearch, sourceLine, REMIND_INTENT, DELETE_INTENT, deleteReminderNumber, trimHist,
   fmtWib, wib, rupiah, cfgOn, getLocation, setLocation, getWeather, getNews,
   recapText, deleteExpenseNumber, incomeListText, deleteIncomeNumber, loadContext, buildSystem,
   getTasks, addTask, toggleTask, deleteTask, unlinkTaskReminder, parseWib, fmtDue,
@@ -501,7 +501,16 @@ async function processTags(u, reply, userText = "") {
     if (n) notes.push("🗒️ Dicatat: " + n.text);
   }
 
-  const clean = reply.replace(/\[\[(TASK|REMIND|INGAT|BELI|MASUK|CATAT|SALDO):[\s\S]*?\]\]/g, "").trim();
+  // Hapus pengingat (hanya kalau pesan pengguna memang meminta menghapus/membatalkan)
+  if (DELETE_INTENT.test(userText)) {
+    const nums = [...new Set([...reply.matchAll(/\[\[HAPUS_PENGINGAT:\s*(\d+)\s*\]\]/g)].map((m) => Number(m[1])))].sort((a, b) => b - a);
+    for (const n of nums) { // dari nomor terbesar supaya nomor lain tidak bergeser
+      const r = await deleteReminderNumber(u, n);
+      notes.push(r ? "🗑️ Pengingat dihapus: " + r.text : "Gagal menghapus: pengingat nomor " + n + " tidak ditemukan.");
+    }
+  }
+
+  const clean = reply.replace(/\[\[(TASK|REMIND|INGAT|BELI|MASUK|CATAT|SALDO|HAPUS_PENGINGAT):[\s\S]*?\]\]/g, "").trim();
   return { clean, notes };
 }
 

@@ -584,7 +584,9 @@ async function geminiSearch(u, system, contents, src = "telegram") {
 }
 // Pengingat hanya dibuat kalau pesan pengguna memang menyiratkan waktu/permintaan diingatkan.
 // Mencegah AI membuat pengingat sendiri (mis. "cek kurs") untuk pertanyaan biasa.
-const REMIND_INTENT = /ingat|remind|alarm|bangun|jangan lupa|pengingat|notif|kabari|kasih tau|kasih tahu|tiap|setiap|\bjam\b|\d{1,2}[:.]\d{2}|menit lagi|detik lagi|besok|lusa|nanti|minggu depan|bulan depan/i;
+const REMIND_INTENT = /ing[ae]t|remind|tanggal\s*\d|tgl\.?\s*\d|alarm|bangun|jangan lupa|pengingat|notif|kabari|kasih tau|kasih tahu|tiap|setiap|\bjam\b|\d{1,2}[:.]\d{2}|menit lagi|detik lagi|besok|lusa|nanti|minggu depan|bulan depan/i;
+// Pengingat hanya dihapus kalau pesan pengguna memang meminta menghapus/membatalkan.
+const DELETE_INTENT = /hapus|batal|cancel|buang|hilangkan|g[ae]k usah|nggak usah|ga usah|tidak usah|tak usah/i;
 const sourceLine = (sources, searchError) =>
   searchError ? "⚠️ Pencarian Google lagi gagal, jadi jawaban ini tanpa pencarian. Dicoba lagi otomatis 30 menit lagi.\nAlasan: " + searchError
   : sources && sources.length ? "🔎 Sumber: " + sources.join(", ") : "";
@@ -809,6 +811,14 @@ async function deleteReminderById(u, id, unlink = true) {
     }
   }
   return false;
+}
+
+// Hapus pengingat berdasarkan nomor di daftar (urutan sama dengan /pengingat dan panel). Mengembalikan teksnya, atau null.
+async function deleteReminderNumber(u, n) {
+  const list = await getReminders(u);
+  const r = list[Number(n) - 1];
+  if (!r) return null;
+  return (await deleteReminderById(u, r.id)) ? r : null;
 }
 
 // ---------- Profil (web) ----------
@@ -1177,7 +1187,7 @@ const COMMON = `Aturan umum:
 
 Tag khusus (ditaruh di baris terakhir balasan; pengguna tidak melihatnya):
 - Pengingat: [[REMIND: 2026-10-12T08:00:00+07:00 | isi pengingat singkat]]
-  Waktu format ISO 8601 dengan +07:00, dihitung dari waktu sekarang (ubah "besok", "lusa", "2 jam lagi" jadi waktu pasti). Jika jam tidak disebut, tanyakan dulu dan jangan buat tag.
+  Waktu format ISO 8601 dengan +07:00, dihitung dari waktu sekarang (ubah "besok", "lusa", "2 jam lagi" jadi waktu pasti). Jika pengguna menyebut hari/tanggal tanpa jam (mis. bayar wifi tanggal 10), pakai jam 08:00. Kalau cuma tanggal tanpa bulan, pakai tanggal itu yang terdekat dan belum lewat. Tagihan/cicilan/langganan atau kata tiap bulan dibuat bulanan. Kalau waktunya benar-benar tidak jelas (tanpa jam DAN tanpa hari), tanyakan dulu dan jangan buat tag. Jangan pernah bilang akan mengingatkan kalau kamu tidak membuat tag REMIND.
   Pengingat berulang: tambahkan bagian ketiga harian / mingguan / bulanan, contoh [[REMIND: 2026-10-13T09:00:00+07:00 | rapat tim | mingguan]]. Waktu = kemunculan pertama.
 - Pengeluaran yang sudah terjadi (mis. "makan siang 25rb", "beli bensin 50 ribu", atau foto struk/nota): [[BELI: 25000 | makan | makan siang]]
   Jumlah rupiah angka bulat tanpa titik ("25rb" = 25000, "1,5jt" = 1500000). Kategori satu kata: makan, transport, belanja, tagihan, hiburan, kesehatan, lainnya. Untuk struk cukup satu tag berisi total.
@@ -1190,10 +1200,11 @@ Tag khusus (ditaruh di baris terakhir balasan; pengguna tidak melihatnya):
 - Fakta jangka panjang tentang pengguna (nama, orang penting, kebiasaan, preferensi, hal besar yang sedang dihadapi): [[INGAT: fakta singkat]]. Jangan simpan detail yang sangat sensitif kecuali pengguna memintanya.
 - Catatan jika pengguna minta mencatat sesuatu: [[CATAT: isi catatan]]
   JANGAN buat CATAT atau TASK untuk permintaan menghapus/menyelesaikan. Kata seperti "hapus" bukan isi catatan.
-- Kamu TIDAK bisa menghapus catatan, tugas, pengingat, pengeluaran, atau pemasukan. Jika pengguna minta menghapus, jangan bilang sudah dihapus dan jangan buat tag apa pun; arahkan: catatan -> ketik /hapuscatatan lalu balas nomornya; pengeluaran -> /rekap lalu balas nomornya (atau ketik "hapus pengeluaran 3"); pemasukan -> /masuk lalu balas nomornya (atau ketik "hapus pemasukan 3"); tugas -> /hapustugas lalu balas nomornya (menandai selesai: /tugasdone); pengingat -> /hapus N.
+- Pengingat BISA dihapus lewat tag [[HAPUS_PENGINGAT: N]] (N = nomor di daftar Pengingat mendatang). Buat tag ini hanya kalau pengguna jelas minta menghapus/membatalkan dan jelas pengingat yang mana; kalau belum jelas, tanyakan dulu. Jangan pernah bilang sudah dihapus tanpa tag ini: sistem menulis baris 🗑️ kalau berhasil.
+- Kamu TIDAK bisa menghapus catatan, tugas, pengeluaran, atau pemasukan. Jika pengguna minta menghapus, jangan bilang sudah dihapus dan jangan buat tag apa pun; arahkan: catatan -> ketik /hapuscatatan lalu balas nomornya; pengeluaran -> /rekap lalu balas nomornya (atau ketik "hapus pengeluaran 3"); pemasukan -> /masuk lalu balas nomornya (atau ketik "hapus pemasukan 3"); tugas -> /hapustugas lalu balas nomornya (menandai selesai: /tugasdone); pengingat -> /hapus N.
 - Kamu punya akses pencarian Google. Untuk hal yang terkini atau bisa berubah (jadwal pertandingan, skor, harga, berita, cuaca, hasil, tanggal rilis), cari dulu lalu jawab; jangan bilang kamu tidak bisa browsing. Jawab ringkas dan sebut waktu/tanggal datanya kalau penting. Hasil pencarian tidak perlu dicatat kecuali pengguna minta.
 - Pertanyaan info (kurs, jadwal, harga, berita, dll) dijawab SEKARANG dalam balasan yang sama. Jangan bilang "sebentar aku cek" lalu membuat pengingat atau tugas; REMIND hanya kalau pengguna jelas minta diingatkan.
-- Buat tag HANYA untuk permintaan di pesan pengguna yang TERBARU. Permintaan di pesan-pesan sebelumnya sudah diproses; jangan mengulang tagnya. Baris berawalan ⏰ ✅ 🗒️ 💰 💵 di akhir balasanmu sebelumnya ditulis otomatis oleh sistem setelah tag berhasil diproses; itu tandanya permintaan tersebut SUDAH SELESAI. Jangan menulis baris seperti itu sendiri.
+- Buat tag HANYA untuk permintaan di pesan pengguna yang TERBARU. Permintaan di pesan-pesan sebelumnya sudah diproses; jangan mengulang tagnya. Baris berawalan ⏰ ✅ 🗒️ 💰 💵 🗑️ di akhir balasanmu sebelumnya ditulis otomatis oleh sistem setelah tag berhasil diproses; itu tandanya permintaan tersebut SUDAH SELESAI. Jangan menulis baris seperti itu sendiri.
 - Satu tag per hal. Jangan membuat tag kalau tidak perlu. Jika pengguna mengirim foto, lihat isinya dan tanggapi sesuai konteks.
 - Pesan yang diawali [Pesan otomatis sistem] adalah instruksi dari sistem untuk menulis pesan proaktif, bukan dari pengguna.`;
 
@@ -1205,7 +1216,7 @@ function buildSystem(mode, ctx) {
   const persona = mode === "curhat" ? PERSONA.curhat : PERSONA.asisten;
   const rem = ctx.reminders.length
     ? ctx.reminders
-        .map((r) => `- ${r.text} (${fmtWib(r.ts)})${r.repeat ? " [berulang: " + r.repeat + "]" : ""}`)
+        .map((r, i) => `${i + 1}. ${r.text} (${fmtWib(r.ts)})${r.repeat ? " [berulang: " + r.repeat + "]" : ""}`)
         .join("\n")
     : "(belum ada)";
   return `${persona}
@@ -1266,7 +1277,7 @@ ${CURHAT_RULES}`;
 }
 
 // Buang tag [[...]] kalau model nekat menulisnya; di mode curhat tag tidak pernah diproses
-const stripTags = (t) => String(t || "").replace(/\[\[[A-Z]+:[\s\S]*?\]\]/g, "").trim();
+const stripTags = (t) => String(t || "").replace(/\[\[[A-Z_]+:[\s\S]*?\]\]/g, "").trim();
 
 module.exports = {
   TZ, DAY, HOUR, HOURS, BTN,
@@ -1282,5 +1293,5 @@ module.exports = {
   getProfile, saveProfile,
   getMode, setMode, switchMode, takeCurhatExpiredNotice, CURHAT_TTL,
   getHist, saveHist, hasHist, clearHist,
-  getReminders, addReminder, deleteReminderById,
+  getReminders, addReminder, deleteReminderById, deleteReminderNumber, DELETE_INTENT,
 };
