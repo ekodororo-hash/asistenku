@@ -2,7 +2,7 @@
 const {
   HOURS, BTN, redis, key, getBot, saveBot, sendTelegram, downloadTelegramFile, gemini, trimHist,
   fmtWib, wib, rupiah, cfgOn, getLocation, setLocation, getWeather, getNews,
-  recapText, loadContext, buildSystem,
+  recapText, deleteExpenseNumber, loadContext, buildSystem,
   getTasks, addTask, toggleTask, deleteTask,
   addNote, addExpense,
 } = require("./_lib");
@@ -25,7 +25,7 @@ const START_TEXT =
   "Perintah:\n" +
   "/pengingat  /hapus N\n" +
   "/tugas  /tugasdone N  /hapustugas N\n" +
-  "/rekap  /hapusbeli\n" +
+  "/rekap  /hapusbeli N\n" +
   "/catatan  /cari kata  /hapuscatatan N\n" +
   "/cuaca  /lokasi kota  /berita topik\n" +
   "/memori  /lupakan  /atur\n\n" +
@@ -154,11 +154,13 @@ async function handleCommand(u, cmd, arg, say) {
       return;
 
     case "/hapusbeli": {
-      const raw = await redis("RPOP", key(u, "exp:" + wib().monthKey));
-      if (!raw) { await say("Tidak ada pengeluaran bulan ini yang bisa dihapus."); return; }
-      let e = {};
-      try { e = JSON.parse(raw); } catch {}
-      await say(`Pengeluaran terakhir dihapus: ${e.note || e.cat || "?"} (${rupiah(e.amt || 0)})`);
+      const n = arg ? parseInt(arg, 10) : 0;
+      if (arg && (!n || n < 1)) { await say("Pakai: /hapusbeli <nomor>. Lihat nomornya di /rekap (tombol 💰 Uang). Tanpa nomor menghapus yang terakhir."); return; }
+      const r = await deleteExpenseNumber(u, n);
+      if (r.empty) { await say("Tidak ada pengeluaran bulan ini yang bisa dihapus."); return; }
+      if (r.range) { await say(`Nomor tidak ada. Bulan ini ada ${r.range} entri; lihat nomornya di /rekap.`); return; }
+      if (r.fail) { await say("Gagal menghapus entri."); return; }
+      await say(`Dihapus: ${r.item.note || r.item.cat || "?"} (${rupiah(r.item.amt || 0)})`);
       return;
     }
 

@@ -857,13 +857,25 @@ async function recapText(u) {
     return { text: "Belum ada pengeluaran tercatat bulan ini. Coba ketik: makan siang 25rb", weekCount: 0 };
   }
   const bw = breakdown(week), bm = breakdown(month);
-  const last = month.slice(-5).map((e) => `  - ${fmtDateShort(e.ts)}: ${e.note || e.cat}, ${rupiah(e.amt)} (${e.cat})`);
+  const base = Math.max(0, month.length - 8); // nomor = urutan di bulan ini, dipakai /hapusbeli N
+  const last = month.slice(-8).map((e, i) => `  ${base + i + 1}. ${fmtDateShort(e.ts)}: ${e.note || e.cat}, ${rupiah(e.amt)} (${e.cat})`);
   const text =
     `💰 Pengeluaran\n\n` +
     `Minggu ini: ${rupiah(bw.total)} (${week.length} transaksi)\n${bw.lines.join("\n") || "  -"}\n\n` +
     `Bulan ini: ${rupiah(bm.total)} (${month.length} transaksi)\n${bm.lines.join("\n")}\n\n` +
-    `Terakhir:\n${last.join("\n")}\n\nSalah catat? /hapusbeli menghapus entri terakhir.`;
+    `Terakhir:\n${last.join("\n")}\n\nSalah catat? /hapusbeli N menghapus entri bernomor N (tanpa nomor: entri terakhir).`;
   return { text, weekCount: week.length };
+}
+
+// Hapus pengeluaran bulan ini berdasarkan nomor di daftar /rekap (n kosong = yang terakhir)
+async function deleteExpenseNumber(u, n) {
+  const w = wib();
+  const month = await expensesSince(u, Date.UTC(w.y, w.m - 1, 1) - 7 * HOUR);
+  if (!month.length) return { empty: true };
+  const idx = n ? n - 1 : month.length - 1;
+  if (idx < 0 || idx >= month.length) return { range: month.length };
+  const item = month[idx];
+  return (await deleteExpenseById(u, item.id)) ? { item } : { fail: true };
 }
 
 // ---------- Konteks & prompt ----------
@@ -937,7 +949,7 @@ module.exports = {
   redis, sendTelegram, downloadTelegramFile, gemini, geminiRaw, trimHist, appendModelToHist,
   fmtWib, fmtTime, fmtDateShort, wib, startOfDayWib, nextRepeat, rupiah,
   cfgOn, getLocation, setLocation, getWeather, getNews,
-  recapText, loadContext, buildSystem,
+  recapText, deleteExpenseNumber, loadContext, buildSystem,
   getTasks, addTask, toggleTask, deleteTask,
   getNotes, addNote, deleteNoteById,
   getExpenses, addExpense, deleteExpenseById,
