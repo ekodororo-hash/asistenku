@@ -88,6 +88,7 @@
   <section id="secKeys">
     <h2>API key Gemini <small id="keyCount"></small></h2>
     <p class="hint">Maksimal 5. Dicoba berurutan; kalau kena limit otomatis lompat ke key berikutnya. <span id="globalKeyNote"></span></p>
+    <p class="hint">Catatan privasi: pada key tier gratis, Google dapat memakai isi chat untuk meningkatkan modelnya. Jangan masukkan data sensitif milik orang lain.</p>
     <details class="guide">
       <summary>Cara mendapat API key Gemini (gratis)</summary>
       <ol>
@@ -112,11 +113,11 @@
     <p class="msg" id="keyMsg"></p>
     <hr>
     <label for="mdlMain">Model Gemini</label>
-    <p class="hint" style="margin:0 0 8px">Kosongkan untuk memakai bawaan server (<span id="mdlDefault"></span>). Model cadangan dipakai otomatis kalau model utama kena limit di semua key atau tidak ditemukan. Klik kolom untuk memilih dari daftar.</p>
+    <p class="hint" style="margin:0 0 8px">Kosongkan untuk memakai bawaan server (<span id="mdlDefault"></span>). Model cadangan dipakai otomatis kalau model utama kena limit di semua key atau tidak ditemukan. Klik kolom untuk memilih dari daftar (model Flash yang gratis ada di atas; model khusus gambar/suara disembunyikan, tapi tetap bisa diketik manual). Saran: utama Flash, cadangan Flash-Lite, karena kuota gratis dihitung terpisah per model.</p>
     <input id="mdlMain" list="mdlList" placeholder="Model utama" autocomplete="off" autocapitalize="off" spellcheck="false">
     <input id="mdlFb" list="mdlList" placeholder="Model cadangan (opsional)" autocomplete="off" autocapitalize="off" spellcheck="false" style="margin-top:8px">
     <datalist id="mdlList"></datalist>
-    <div class="actions"><button id="mdlSave">Simpan model</button></div>
+    <div class="actions"><button id="mdlSuggest" type="button">Isi saran model</button><button id="mdlSave">Simpan model</button></div>
     <p class="msg" id="mdlMsg"></p>
     <a class="btn" id="histLink" href="/riwayat.html" style="margin-top:12px;width:100%">Lihat riwayat pemakaian →</a>
   </section>
@@ -243,22 +244,30 @@ function renderModel(c) {
   $("mdlMain").value = c.model || ""; $("mdlFb").value = c.fallback || "";
   $("mdlDefault").textContent = c.default || "gemini-flash-latest";
 }
-function modelTag(m) {
-  if (/image|tts|veo|imagen/i.test(m)) return "berbayar";
-  if (/pro/i.test(m)) return "berbayar";
-  if (/flash/i.test(m)) return "gratis (ada batas kuota)";
-  return "";
+// Klasifikasi dari nama model (API Google tidak memberi info gratis/berbayar; per Okt 2026 Pro tidak ada di tier gratis)
+function modelInfo(m) {
+  const n = String(m || "").toLowerCase();
+  if (/image|tts|veo|imagen|embed|live|audio|aqa|robotics|computer-use/.test(n)) return { tier: "khusus", label: "", rank: 9 };
+  if (/gemini-1\.|gemini-2\.0|gemini-exp/.test(n)) return { tier: "lawas", label: "lawas, mungkin sudah dimatikan", rank: 6 };
+  if (/pro/.test(n)) return { tier: "berbayar", label: "berbayar", rank: 5 };
+  const lite = /flash-lite/.test(n), latest = n.includes("latest");
+  if (lite) return { tier: "gratis", label: "gratis (ada batas kuota)", rank: latest ? 2 : 3 };
+  if (/flash/.test(n)) return { tier: "gratis", label: "gratis (ada batas kuota)", rank: latest ? 0 : 1 };
+  return { tier: "", label: "", rank: 4 };
 }
+let modelNames = [];
 async function loadModelList() {
   if (modelsLoaded) return;
   modelsLoaded = true;
   try {
     const list = await op("listModels");
+    modelNames = list.filter((m) => modelInfo(m).tier !== "khusus")
+      .sort((a, b) => modelInfo(a).rank - modelInfo(b).rank || b.localeCompare(a));
     $("mdlList").innerHTML = "";
-    list.forEach((m) => {
+    modelNames.forEach((m) => {
       const o = document.createElement("option");
       o.value = m;
-      const t = modelTag(m);
+      const t = modelInfo(m).label;
       if (t) o.label = t;
       $("mdlList").appendChild(o);
     });
@@ -266,7 +275,20 @@ async function loadModelList() {
 }
 $("mdlMain").addEventListener("focus", loadModelList);
 $("mdlFb").addEventListener("focus", loadModelList);
+$("mdlSuggest").onclick = async () => {
+  say("mdlMsg", "Memuat daftar model...");
+  await loadModelList();
+  const main = modelNames.find((m) => modelInfo(m).tier === "gratis" && !/flash-lite/i.test(m));
+  const fb = modelNames.find((m) => modelInfo(m).tier === "gratis" && /flash-lite/i.test(m));
+  if (!main) { say("mdlMsg", "Belum ada model Flash di daftar. Pastikan API key sudah ditambahkan.", "err"); return; }
+  $("mdlMain").value = main; $("mdlFb").value = fb || "";
+  say("mdlMsg", "Terisi dengan saran. Klik Simpan model untuk menerapkan.", "ok");
+};
 $("mdlSave").onclick = async () => {
+  const warn = [$("mdlMain").value, $("mdlFb").value].map((x) => x.trim()).filter(Boolean)
+    .map((x) => [x, modelInfo(x)]).filter(([, i]) => i.tier === "berbayar" || i.tier === "lawas");
+  if (warn.length && !confirm(warn.map(([x, i]) => `• ${x}: ${i.label}`).join("\n") +
+    "\n\nKalau API key kamu masih tier gratis atau model sudah dimatikan, chat akan gagal. Tetap simpan?")) return;
   $("mdlSave").disabled = true; say("mdlMsg", "Memeriksa model...");
   try { renderModel(await op("saveModel", { model: $("mdlMain").value, fallback: $("mdlFb").value })); say("mdlMsg", "Model disimpan.", "ok"); }
   catch (e) { say("mdlMsg", e.message, "err"); }
