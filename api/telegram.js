@@ -48,7 +48,7 @@ async function hapusBeli(u, n, say) {
 // ---------- Catatan: daftar rapi + hapus (dipakai /catatan, /hapuscatatan, dan balasan angka) ----------
 async function noteListText(u, interactive) {
   const all = await redis("LRANGE", key(u, "notes"), 0, -1);
-  if (!all || !all.length) return { text: "Belum ada catatan. Tulis: catat: isi catatanmu", count: 0 };
+  if (!all || !all.length) return { text: "🗒️ Catatan\n\nBelum ada catatan.\n\nCara menambah, ketik:\n  catat: ide konten minggu depan", count: 0 };
   const start = Math.max(0, all.length - 10);
   const lines = all.slice(start).map((r, i) => {
     let n = {};
@@ -68,7 +68,7 @@ async function noteListText(u, interactive) {
 // true = selesai (berhasil / kosong), false = nomor salah (boleh coba lagi)
 async function hapusCatatan(u, n, say) {
   const all = await redis("LRANGE", key(u, "notes"), 0, -1);
-  if (!all || !all.length) { await say("Belum ada catatan yang bisa dihapus."); return true; }
+  if (!all || !all.length) { await say("🗒️ Belum ada catatan yang bisa dihapus."); return true; }
   if (!n || n < 1 || n > all.length) { await say(`Nomor ${n || "?"} tidak ada. Ada ${all.length} catatan; balas dengan nomor yang tertera di daftar.`); return false; }
   const raw = all[n - 1];
   let it = {};
@@ -89,7 +89,7 @@ async function mulaiHapusCatatan(u, say) {
 // ---------- Tugas: daftar rapi + selesai/hapus (balas nomor, sama seperti catatan & uang) ----------
 async function taskListText(u, mode) {
   const tasks = await getTasks(u);
-  if (!tasks.length) return { text: "Belum ada tugas. Tulis: tambah tugas <isi>, atau pakai web.", count: 0 };
+  if (!tasks.length) return { text: "✅ Tugas\n\nBelum ada tugas.\n\nCara menambah, ketik:\n  tambah tugas nyuci piring\n  tambah tugas bayar listrik besok jam 8\n\n(kalau pakai jam, otomatis ada pengingatnya)", count: 0 };
   const row = (t, i) => `  ${i + 1}. ${t.text}${t.due && !t.done ? "\n      ⏰ " + fmtDue(t.due) : ""}`;
   const todo = [], done = [];
   tasks.forEach((t, i) => (t.done ? done : todo).push(row(t, i)));
@@ -106,7 +106,7 @@ async function taskListText(u, mode) {
 // true = selesai, false = nomor salah (boleh coba lagi)
 async function hapusTugas(u, n, say) {
   const tasks = await getTasks(u);
-  if (!tasks.length) { await say("Belum ada tugas yang bisa dihapus."); return true; }
+  if (!tasks.length) { await say("✅ Belum ada tugas yang bisa dihapus."); return true; }
   if (!n || n < 1 || n > tasks.length) { await say(`Nomor ${n || "?"} tidak ada. Ada ${tasks.length} tugas; balas dengan nomor yang tertera di daftar.`); return false; }
   const ok = await deleteTask(u, tasks[n - 1].id);
   await say(ok ? `🗑️ Dihapus: ${tasks[n - 1].text}` : "Gagal menghapus tugas.");
@@ -115,7 +115,7 @@ async function hapusTugas(u, n, say) {
 
 async function selesaiTugas(u, n, say) {
   const tasks = await getTasks(u);
-  if (!tasks.length) { await say("Belum ada tugas."); return true; }
+  if (!tasks.length) { await say("✅ Belum ada tugas."); return true; }
   if (!n || n < 1 || n > tasks.length) { await say(`Nomor ${n || "?"} tidak ada. Ada ${tasks.length} tugas; balas dengan nomor yang tertera di daftar.`); return false; }
   const t = await toggleTask(u, tasks[n - 1].id);
   await say(t ? `${t.done ? "✅ Selesai" : "↩️ Dibuka lagi"}: ${t.text}${t.done ? "\n(pengingatnya ikut batal)" : ""}` : "Gagal mengubah tugas.");
@@ -169,17 +169,17 @@ async function handleCommand(u, cmd, arg, say) {
     case "/pengingat": {
       const rows = await redis("ZRANGE", key(u, "reminders"), 0, -1, "WITHSCORES");
       if (!rows || !rows.length) {
-        await say("Belum ada pengingat.");
+        await say("📋 Pengingat\n\nBelum ada pengingat.\n\nCara menambah, ketik:\n  ingatkan aku besok jam 8 bayar listrik\n  ingatkan tiap Senin jam 9 rapat tim");
         return;
       }
       const lines = [];
       for (let i = 0; i < rows.length; i += 2) {
         let it = {};
         try { it = JSON.parse(rows[i]); } catch {}
-        const rep = it.repeat ? " [" + REPEAT_LABEL[it.repeat] + "]" : "";
-        lines.push(`${lines.length + 1}. ${it.text || "?"}${rep}\n   ${fmtWib(Number(rows[i + 1]))}`);
+        const rep = it.repeat ? " (" + REPEAT_LABEL[it.repeat] + ")" : "";
+        lines.push(`  ${lines.length + 1}. ${it.text || "?"}${rep}\n      ⏰ ${fmtDue(Number(rows[i + 1]))}`);
       }
-      await say("Pengingat mendatang:\n\n" + lines.join("\n") + "\n\nHapus: /hapus <nomor>");
+      await say(`📋 Pengingat (${lines.length} total)\n\n${lines.join("\n")}\n\nHapus: /hapus <nomor>, contoh: /hapus 2`);
       return;
     }
 
@@ -281,7 +281,7 @@ async function handleCommand(u, cmd, arg, say) {
         await say(`Hasil untuk "${arg}":\n\n` + hit.map((x) => `${x.i}. ${x.text}`).join("\n"));
         return;
       }
-      if (!items.length) { await say("Belum ada catatan."); return; }
+      if (!items.length) { await say("🗒️ Belum ada catatan."); return; }
       // Tidak ada yang cocok persis: minta Gemini mencari yang maknanya mirip
       const listing = items.slice(-100).map((x) => `${x.i}. ${x.text}`).join("\n");
       const out = await gemini(u,
