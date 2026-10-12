@@ -243,6 +243,20 @@ async function saveKeyRecords(u, list) {
 const HIST_MAX = 50;
 const HIST_TTL = DAY;
 const COOLDOWN_SEC = 60;
+const INVALID_SKIP_MS = HOUR;      // key "tidak valid" dilewati selama 1 jam sejak terakhir dicoba
+const MODEL_FIELD = "_model";      // pengaturan model disimpan di hash gstat yang sama (hemat perintah Redis)
+const DEFAULT_MODEL = () => process.env.GEMINI_MODEL || "gemini-flash-latest";
+
+// Kuota harian Gemini direset tengah malam waktu Pasifik, jadi hitungan "hari ini" mengikutinya
+function quotaDay() {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
+}
+async function loadUseToday(u) {
+  const rows = await redis("HGETALL", key(u, "guse:" + quotaDay()));
+  const out = {};
+  for (let i = 0; i < (rows || []).length; i += 2) out[rows[i]] = Number(rows[i + 1]) || 0;
+  return out;
+}
 
 async function loadKeyStats(u) {
   const rows = await redis("HGETALL", key(u, "gstat"));
@@ -255,10 +269,10 @@ async function loadKeyStats(u) {
 
 // Daftar untuk UI: tanpa nilai key utuh
 async function listGeminiKeys(u) {
-  const [list, st] = await Promise.all([loadKeyRecords(u), loadKeyStats(u)]);
+  const [list, st, use] = await Promise.all([loadKeyRecords(u), loadKeyStats(u), loadUseToday(u)]);
   return list.map((k) => {
     const s = st[k.id] || {};
-    return { id: k.id, last4: k.last4, name: k.name || "", status: s.status || "unused", lastUsed: s.lastUsed || null, until: s.until || null, error: s.error || "" };
+    return { id: k.id, last4: k.last4, name: k.name || "", status: s.status || "unused", lastUsed: s.lastUsed || null, until: s.until || null, error: s.error || "", today: use[k.id] || 0 };
   });
 }
 
@@ -282,8 +296,13 @@ async function recordKeyUse(u, c, outcome) {
       }));
     }
     await redis("ZADD", key(u, "ghist"), now, JSON.stringify({
-      id: uid(), ts: now, k: c.id ? c.last4 : "server", n: c.id ? (c.name || "") : "", src: outcome.src || "web", st: status, err: error,
+      id: uid(), ts: now, k: c.id ? c.last4 : "server", n: c.id ? (c.name || "") : "", m: outcome.model || "", src: outcome.src || "web", st: status, err: error,
     }));
+    if (outcome.ok) {
+      const hk = key(u, "guse:" + quotaDay());
+      const n = await redis("HINCRBY", hk, c.id || "server", 1);
+      if (Number(n) === 1) await redis("EXPIRE", hk, String(3 * 86400));
+    }
     await redis("ZREMRANGEBYSCORE", key(u, "ghist"), "-inf", now - HIST_TTL); // buang yang lebih tua dari 1 hari
     await redis("ZREMRANGEBYRANK", key(u, "ghist"), 0, -(HIST_MAX + 1));      // sisakan 50 terbaru
   } catch {} // pencatatan tidak boleh menggagalkan chat
@@ -312,15 +331,14 @@ async function testGeminiKey(u, id) {
   if (!rec) throw new Error("Key tidak ditemukan.");
   const gate = await redis("SET", key(u, "gtest:" + id), "1", "NX", "EX", "5");
   if (gate !== "OK") throw new Error("Tunggu beberapa detik sebelum test lagi.");
-  const model = process.env.GEMINI_MODEL || "gemini-flash-latest";
+  const model = ((await loadKeyStats(u))[MODEL_FIELD] || {}).model || DEFAULT_MODEL();
   const r = await fetch(`${GEMINI_BASE}/models/${model}:generateContent`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-goog-api-key": decrypt(rec.enc) },
     body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: "hi" }] }], generationConfig: { maxOutputTokens: 5 } }),
   });
   const data = await r.json().catch(() => ({}));
-  await recordKeyUse(u, { id, last4: rec.last4, name: rec.name }, { ok: r.ok, http: r.status, message: data?.error?.message, src: "uji" });
-  if (r.status === 429) await redis("SET", key(u, "gcool:" + id), "1", "EX", String(COOLDOWN_SEC));
+  await recordKeyUse(u, { id, last4: rec.last4, name: rec.name }, { ok: r.ok, http: r.status, message: data?.error?.message, src: "uji", model });
   return keyState(u);
 }
 
@@ -356,7 +374,6 @@ async function renameGeminiKey(u, id, name) {
 async function deleteGeminiKey(u, id) {
   const list = await loadKeyRecords(u);
   await saveKeyRecords(u, list.filter((x) => x.id !== id));
-  await redis("DEL", key(u, "gcool:" + id));
   await redis("HDEL", key(u, "gstat"), id);
   return keyState(u);
 }
@@ -369,6 +386,43 @@ async function moveGeminiKey(u, id, dir) {
   [list[i], list[j]] = [list[j], list[i]];
   await saveKeyRecords(u, list);
   return keyState(u);
+}
+
+// ---- Pilihan model per pengguna: utama + cadangan (opsional) ----
+const cleanModel = (m) => String(m || "").trim().replace(/^models\//, "");
+
+async function getModelCfg(u) {
+  const c = (await loadKeyStats(u))[MODEL_FIELD] || {};
+  return { model: c.model || "", fallback: c.fallback || "", default: DEFAULT_MODEL() };
+}
+
+async function saveModelCfg(u, model, fallback) {
+  const m = cleanModel(model);
+  let f = cleanModel(fallback);
+  if (f === m) f = "";
+  for (const x of [m, f]) if (x && !/^[\w.\-]{3,80}$/.test(x)) throw new Error("Nama model tidak valid.");
+  const cands = await geminiCandidates(u);
+  if (cands.length) { // cek ke Google; hanya "tidak ditemukan" yang menolak
+    for (const x of [m, f]) {
+      if (!x) continue;
+      const r = await fetch(`${GEMINI_BASE}/models/${x}`, { headers: { "x-goog-api-key": cands[0].key } }).catch(() => null);
+      if (r && r.status === 404) throw new Error(`Model "${x}" tidak ditemukan di Google. Pilih dari daftar model.`);
+    }
+  }
+  await redis("HSET", key(u, "gstat"), MODEL_FIELD, JSON.stringify({ model: m, fallback: f }));
+  return getModelCfg(u);
+}
+
+async function listGeminiModels(u) {
+  const cands = await geminiCandidates(u);
+  if (!cands.length) throw new Error("Tambahkan API key dulu supaya daftar model bisa dimuat.");
+  const r = await fetch(`${GEMINI_BASE}/models?pageSize=200`, { headers: { "x-goog-api-key": cands[0].key } });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d?.error?.message || "Gagal memuat daftar model.");
+  return (d.models || [])
+    .filter((m) => (m.supportedGenerationMethods || []).includes("generateContent"))
+    .map((m) => cleanModel(m.name))
+    .sort();
 }
 
 // Urutan: key pengguna 1..5, lalu GEMINI_API_KEY global sebagai cadangan terakhir
@@ -385,32 +439,64 @@ async function geminiCandidates(u) {
 const rotatable = (status) => status === 429 || status === 403 || status === 401 || status === 400 || status >= 500;
 
 async function geminiRaw(u, body, src) {
-  const model = process.env.GEMINI_MODEL || "gemini-flash-latest";
   const cands = await geminiCandidates(u);
   if (!cands.length) {
     const e = new Error("Belum ada API key Gemini. Tambahkan di Pengaturan.");
     e.status = 400;
     throw e;
   }
-  // Lewati key yang baru kena limit (cooldown), kecuali semuanya sedang cooldown
-  const cooled = await Promise.all(cands.map(async (c) => (c.id ? (await redis("EXISTS", key(u, "gcool:" + c.id))) === 1 : false)));
-  let order = cands.filter((_, i) => !cooled[i]);
-  if (!order.length) order = cands;
+  const st = await loadKeyStats(u); // status key + pilihan model, satu perintah Redis
+  const cfg = st[MODEL_FIELD] || {};
+  const models = [cfg.model || DEFAULT_MODEL()];
+  if (cfg.fallback && cfg.fallback !== models[0]) models.push(cfg.fallback);
+  const now = Date.now();
 
-  let lastErr;
-  for (const c of order) {
-    const r = await fetch(`${GEMINI_BASE}/models/${model}:generateContent`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": c.key },
-      body: JSON.stringify(body),
-    });
-    const data = await r.json().catch(() => ({}));
-    await recordKeyUse(u, c, { ok: r.ok, http: r.status, message: data?.error?.message, src });
-    if (r.ok) return data;
-    lastErr = new Error(data?.error?.message || "Gagal memanggil Gemini");
-    lastErr.status = r.status === 429 ? 429 : 502; // jangan 401: web mengira sesi habis
-    if (r.status === 429 && c.id) await redis("SET", key(u, "gcool:" + c.id), "1", "EX", "60");
-    if (!rotatable(r.status)) break;
+  // Key yang baru ditolak Google (tidak valid) dilewati 1 jam; setelah itu dicoba sekali lagi
+  const usable = cands.filter((c) => {
+    const s = c.id && st[c.id];
+    return !(s && s.status === "invalid" && s.lastUsed && now - s.lastUsed < INVALID_SKIP_MS);
+  });
+  if (!usable.length) {
+    const e = new Error("Semua API key ditolak Google (tidak valid). Cek di Pengaturan: tekan Test pada tiap key atau ganti key-nya.");
+    e.status = 502;
+    throw e;
+  }
+
+  let lastErr, modelMissing = null;
+  const codes = [];
+  for (let mi = 0; mi < models.length; mi++) {
+    const model = models[mi];
+    // Cooldown limit berlaku per key hanya untuk model utama; model cadangan punya kuota sendiri
+    let order = mi === 0 ? usable.filter((c) => !(c.id && st[c.id] && st[c.id].status === "limit" && st[c.id].until > now)) : usable;
+    if (!order.length) order = usable;
+
+    for (const c of order) {
+      const r = await fetch(`${GEMINI_BASE}/models/${model}:generateContent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": c.key },
+        body: JSON.stringify(body),
+      });
+      const data = await r.json().catch(() => ({}));
+      await recordKeyUse(u, c, { ok: r.ok, http: r.status, message: data?.error?.message, src, model });
+      if (r.ok) return data;
+      codes.push(r.status);
+      lastErr = new Error(data?.error?.message || "Gagal memanggil Gemini");
+      lastErr.status = r.status === 429 ? 429 : 502; // jangan 401: web mengira sesi habis
+      if (r.status === 404) { modelMissing = model; break; } // nama model salah: key lain pasti sama
+      if (!rotatable(r.status)) break;
+    }
+  }
+
+  if (modelMissing) {
+    const e = new Error(`Model "${modelMissing}" tidak ditemukan. Ganti nama model di Pengaturan.`);
+    e.status = 502;
+    throw e;
+  }
+  if (codes.length && codes.every((x) => x === 429)) {
+    const e = new Error("Semua API key sedang kena limit" + (models.length > 1 ? " (model cadangan juga)" : "") +
+      ". Coba lagi sebentar lagi. Kalau terus begini, kuota harian mungkin habis (reset sekitar pukul 14.00 WIB); tambah key dari project lain atau ganti model di Pengaturan.");
+    e.status = 429;
+    throw e;
   }
   throw lastErr;
 }
@@ -820,7 +906,7 @@ ${COMMON}`;
 
 module.exports = {
   TZ, DAY, HOUR, HOURS, BTN,
-  uid, key, MAX_KEYS, getBot, saveBot, setupBot, removeBot, relinkBot, botStatus, botUsers, listGeminiKeys, keyState, getKeyHistory, clearKeyHistory, testGeminiKey, addGeminiKey, renameGeminiKey, deleteGeminiKey, moveGeminiKey,
+  uid, key, MAX_KEYS, getBot, saveBot, setupBot, removeBot, relinkBot, botStatus, botUsers, listGeminiKeys, getModelCfg, saveModelCfg, listGeminiModels, keyState, getKeyHistory, clearKeyHistory, testGeminiKey, addGeminiKey, renameGeminiKey, deleteGeminiKey, moveGeminiKey,
   redis, sendTelegram, downloadTelegramFile, gemini, geminiRaw, trimHist, appendModelToHist,
   fmtWib, fmtTime, fmtDateShort, wib, startOfDayWib, nextRepeat, rupiah,
   cfgOn, getLocation, setLocation, getWeather, getNews,

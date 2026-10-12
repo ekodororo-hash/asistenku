@@ -2,7 +2,7 @@
 // Dipakai web untuk memuat state awal (GET) dan melakukan satu aksi (POST),
 // semua baca/tulis ke Redis yang sama dipakai bot Telegram.
 
-const { redis, key, MAX_KEYS, keyState, clearKeyHistory, testGeminiKey, addGeminiKey, renameGeminiKey, deleteGeminiKey, moveGeminiKey, setupBot, removeBot, relinkBot, botStatus } = require("./_lib");
+const { redis, key, MAX_KEYS, keyState, clearKeyHistory, testGeminiKey, getModelCfg, saveModelCfg, listGeminiModels, addGeminiKey, renameGeminiKey, deleteGeminiKey, moveGeminiKey, setupBot, removeBot, relinkBot, botStatus } = require("./_lib");
 const { requireUser } = require("./_auth");
 const {
   getTasks, addTask, toggleTask, deleteTask,
@@ -22,9 +22,9 @@ module.exports = async (req, res) => {
     try {
       // ?light=1: dipakai web untuk penyegaran berkala (tanpa key dan tanpa panggilan ke Telegram)
       const light = !!(req.query && req.query.light);
-      const [tasks, notes, expenses, profile, mode, hist, reminders, kstate, bot, rawBot] = await Promise.all([
+      const [tasks, notes, expenses, profile, mode, hist, reminders, kstate, bot, rawBot, mcfg] = await Promise.all([
         getTasks(u), getNotes(u), getExpenses(u), getProfile(u), getMode(u), getHist(u), getReminders(u),
-        light ? null : keyState(u), light ? null : botStatus(u), light ? getBot(u).catch(() => null) : null,
+        light ? null : keyState(u), light ? null : botStatus(u), light ? getBot(u).catch(() => null) : null, light ? null : getModelCfg(u),
       ]);
       const botLinked = light ? !!(rawBot && rawBot.chatId) : !!(bot && bot.linked);
       const messages = hist.map((h) => ({
@@ -37,7 +37,7 @@ module.exports = async (req, res) => {
         notes: notes.slice(-100).reverse(),
         expenses: expenses.slice(-100).reverse(),
         profile, mode, messages, reminders, botLinked,
-        ...(light ? {} : { geminiKeys: kstate.keys, keyHistoryCount: kstate.history.length, maxKeys: MAX_KEYS, globalKey: !!process.env.GEMINI_API_KEY, bot }),
+        ...(light ? {} : { geminiKeys: kstate.keys, keyHistoryCount: kstate.history.length, modelCfg: mcfg, maxKeys: MAX_KEYS, globalKey: !!process.env.GEMINI_API_KEY, bot }),
       });
     } catch (e) {
       return res.status(500).json({ error: "Server error: " + e.message });
@@ -63,6 +63,8 @@ module.exports = async (req, res) => {
         case "renameKey": result = await renameGeminiKey(u, p.id, p.name); break;
         case "deleteKey": result = await deleteGeminiKey(u, p.id); break;
         case "moveKey": result = await moveGeminiKey(u, p.id, p.dir); break;
+        case "saveModel": result = await saveModelCfg(u, p.model, p.fallback); break;
+        case "listModels": result = await listGeminiModels(u); break;
         case "keyHistory": result = await keyState(u); break;
         case "testKey": result = await testGeminiKey(u, p.id); break;
         case "clearKeyHistory": await clearKeyHistory(u); result = await keyState(u); break;

@@ -66,4 +66,6 @@ Env `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TELEGRAM_WEBHOOK_SECRET` hanya di
 
 Tiap key di Pengaturan punya nama (opsional, bisa diganti lewat ✎ Nama), status (Belum digunakan, Berfungsi, Kena limit, Tidak valid, Error), waktu "terakhir digunakan", dan tombol **Test** (permintaan kecil sungguhan, jeda 5 detik per key). Riwayat pemakaian mencatat waktu, key (4 karakter terakhir), sumber (Web/Telegram/Otomatis/Test), dan hasil. Isi pesan tidak disimpan.
 
-Riwayat dihapus saat menulis: setiap entri baru memicu penghapusan entri lebih tua dari 1 hari dan sisa di atas 50 entri (tanpa cron). Riwayat dilihat di halaman terpisah `/riwayat.html` (tautannya di bawah daftar key di Pengaturan), lengkap dengan filter status. Data di Redis: `u:<id>:gstat` (status per key) dan `u:<id>:ghist` (riwayat).
+Riwayat dihapus saat menulis: setiap entri baru memicu penghapusan entri lebih tua dari 1 hari dan sisa di atas 50 entri (tanpa cron). Key bertanda tidak valid dilewati 1 jam saat rotasi (lalu dicoba lagi sekali), dan tiap key menampilkan jumlah pemakaian berhasil "hari ini" menurut hari kuota Google (tengah malam waktu Pasifik). Di Pengaturan bisa dipilih model utama dan model cadangan; model cadangan dipakai bila model utama kena limit di semua key atau tidak ditemukan. Batas Google berlaku per project, bukan per key.
+
+Riwayat dilihat di halaman terpisah `/riwayat.html` (tautannya di bawah daftar key di Pengaturan), lengkap dengan filter status. Data di Redis: `u:<id>:gstat` (status per key) dan `u:<id>:ghist` (riwayat).

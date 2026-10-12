@@ -98,6 +98,8 @@
       <ul>
         <li>Kuota gratis per key terbatas. Tambah key dari akun Google lain (maks. 5) supaya tidak cepat habis.</li>
         <li>Error <b>429</b> artinya kuota sedang penuh. Tunggu sebentar, asisten otomatis pindah ke key berikutnya.</li>
+        <li>Batas Google berlaku <b>per project</b>, bukan per key. Dua key dari project yang sama berbagi kuota yang sama, jadi buat key di project atau akun Google yang berbeda.</li>
+        <li>Hitungan "× hari ini" mengikuti hari kuota Google: reset tengah malam waktu Pasifik, sekitar pukul 14.00 WIB.</li>
         <li>Jangan bagikan key ke siapa pun, termasuk lewat screenshot.</li>
       </ul>
     </details>
@@ -108,6 +110,14 @@
       <button id="keyAddBtn">Tambah</button>
     </div>
     <p class="msg" id="keyMsg"></p>
+    <hr>
+    <label for="mdlMain">Model Gemini</label>
+    <p class="hint" style="margin:0 0 8px">Kosongkan untuk memakai bawaan server (<span id="mdlDefault"></span>). Model cadangan dipakai otomatis kalau model utama kena limit di semua key atau tidak ditemukan. Klik kolom untuk memilih dari daftar.</p>
+    <input id="mdlMain" list="mdlList" placeholder="Model utama" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <input id="mdlFb" list="mdlList" placeholder="Model cadangan (opsional)" autocomplete="off" autocapitalize="off" spellcheck="false" style="margin-top:8px">
+    <datalist id="mdlList"></datalist>
+    <div class="actions"><button id="mdlSave">Simpan model</button></div>
+    <p class="msg" id="mdlMsg"></p>
     <a class="btn" id="histLink" href="/riwayat.html" style="margin-top:12px;width:100%">Lihat riwayat pemakaian →</a>
   </section>
 
@@ -193,7 +203,9 @@ function renderKeys() {
     const sub = document.createElement("span");
     sub.className = "ksub";
     sub.textContent = (k.name ? "•••• " + k.last4 + " · " : "") + (k.lastUsed ? "Terakhir digunakan " + ago(k.lastUsed) : "Belum pernah digunakan") +
-      ((k.status === "invalid" || k.status === "error") && k.error ? " · " + k.error : "");
+      (k.today ? " · " + k.today + "× hari ini" : "") +
+      ((k.status === "invalid" || k.status === "error") && k.error ? " · " + k.error : "") +
+      (k.status === "invalid" ? " · dilewati sementara" : "");
     main.appendChild(sub);
     row.appendChild(main);
     const btns = document.createElement("div");
@@ -224,6 +236,30 @@ function renderKeys() {
   $("keyAddRow").style.display = geminiKeys.length >= maxKeys ? "none" : "flex";
   $("globalKeyNote").textContent = globalKey ? "Key bawaan server jadi cadangan terakhir." : "";
 }
+
+/* ---------- Model Gemini ---------- */
+let modelsLoaded = false;
+function renderModel(c) {
+  $("mdlMain").value = c.model || ""; $("mdlFb").value = c.fallback || "";
+  $("mdlDefault").textContent = c.default || "gemini-flash-latest";
+}
+async function loadModelList() {
+  if (modelsLoaded) return;
+  modelsLoaded = true;
+  try {
+    const list = await op("listModels");
+    $("mdlList").innerHTML = "";
+    list.forEach((m) => { const o = document.createElement("option"); o.value = m; $("mdlList").appendChild(o); });
+  } catch (e) { modelsLoaded = false; say("mdlMsg", e.message, "err"); }
+}
+$("mdlMain").addEventListener("focus", loadModelList);
+$("mdlFb").addEventListener("focus", loadModelList);
+$("mdlSave").onclick = async () => {
+  $("mdlSave").disabled = true; say("mdlMsg", "Memeriksa model...");
+  try { renderModel(await op("saveModel", { model: $("mdlMain").value, fallback: $("mdlFb").value })); say("mdlMsg", "Model disimpan.", "ok"); }
+  catch (e) { say("mdlMsg", e.message, "err"); }
+  $("mdlSave").disabled = false;
+};
 
 /* ---------- Tautan ke halaman riwayat ---------- */
 function renderHistLink() {
@@ -341,7 +377,7 @@ async function load() {
   $("pName").value = profile.name || "";
   $("pAssistant").value = profile.assistantName || "Asisten";
   $("pNotes").value = profile.notes || "";
-  geminiKeys = d.geminiKeys || []; histCount = d.keyHistoryCount || 0; maxKeys = d.maxKeys || 5; globalKey = !!d.globalKey;
+  geminiKeys = d.geminiKeys || []; histCount = d.keyHistoryCount || 0; renderModel(d.modelCfg || {}); maxKeys = d.maxKeys || 5; globalKey = !!d.globalKey;
   botState = d.bot || { installed: false };
   renderKeys(); renderHistLink(); renderBot();
 }
