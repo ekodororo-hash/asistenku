@@ -64,12 +64,12 @@ const START_TEXT =
   "👋 Halo! Aku asisten pribadi sekaligus teman ceritamu.\n" +
   "Tinggal tulis, kirim foto, atau voice note. Atau pakai tombol di bawah.\n\n" +
   "💡 CONTOH\n" +
-  "\"Ingatkan aku besok jam 8 bayar listrik\"\n" +
-  "\"Ingatkan tiap Senin jam 9 rapat tim\"\n" +
-  "\"makan siang 25rb\" → catat pengeluaran\n" +
-  "\"gajian 3jt\" → catat pemasukan\n" +
-  "\"catat: ide konten minggu depan\"\n" +
-  "Kirim foto struk atau voice note\n\n" +
+  "• Ingatkan aku besok jam 8 bayar listrik\n" +
+  "• Ingatkan tiap Senin jam 9 rapat tim\n" +
+  "• makan siang 25rb → catat pengeluaran\n" +
+  "• gajian 3jt → catat pemasukan\n" +
+  "• catat: ide konten minggu depan\n" +
+  "• Kirim foto struk atau voice note\n\n" +
   "⏰ PENGINGAT & TUGAS\n" +
   "/pengingat → daftar pengingat\n" +
   "/hapus 2 → hapus pengingat nomor 2 (nomor dilihat di /pengingat)\n" +
