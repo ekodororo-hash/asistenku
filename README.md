@@ -68,3 +68,9 @@ Tiap key di Pengaturan punya nama (opsional, bisa diganti lewat ✎ Nama), statu
 Riwayat dihapus saat menulis: setiap entri baru memicu penghapusan entri lebih tua dari 1 hari dan sisa di atas 50 entri (tanpa cron). Key bertanda tidak valid dilewati 1 jam saat rotasi (lalu dicoba lagi sekali), dan tiap key menampilkan jumlah pemakaian berhasil "hari ini" menurut hari kuota Google (tengah malam waktu Pasifik). Di Pengaturan bisa dipilih model utama dan model cadangan; model cadangan dipakai bila model utama kena limit di semua key atau tidak ditemukan. Batas Google berlaku per project, bukan per key.
 
 Riwayat dilihat di halaman terpisah `/riwayat.html` (tautannya di bawah daftar key di Pengaturan), lengkap dengan filter status. Data di Redis: `u:<id>:gstat` (status per key) dan `u:<id>:ghist` (riwayat).
+
+## Mode curhat terpisah
+
+Asisten dan curhat punya riwayat obrolan sendiri; curhat tidak membuat tugas/catatan/pengingat/uang, tidak menyimpan memori, tidak memakai pencarian, dan tidak disalin ke Telegram. Keluar dari curhat menampilkan pilihan Hapus / Simpan dulu / Tetap curhat, dan riwayat curhat yang tidak disimpan terhapus sendiri setelah 6 jam tanpa dipakai. Detail di `TELEGRAM.md` (bagian Mode curhat).
+
+Data di Redis: `u:<id>:hist` (asisten), `u:<id>:hist:curhat` (curhat, ber-TTL), `u:<id>:curhatkeep` (penanda "Simpan dulu"), `u:<id>:exitcurhat` (pertanyaan keluar curhat yang menunggu jawaban, 5 menit). Riwayat lama (`u:<id>:hist`) otomatis dianggap milik mode asisten.

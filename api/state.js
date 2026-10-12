@@ -10,10 +10,17 @@ const {
   getExpenses, addExpense, deleteExpenseById,
   getIncomes, addIncome, deleteIncomeById, moneySummary,
   getProfile, saveProfile,
-  getMode, setMode,
-  getHist, getBot,
+  getMode, switchMode,
+  getHist, clearHist, getBot,
   getReminders, addReminder, deleteReminderById,
 } = require("./_lib");
+
+// Riwayat -> bentuk yang dipakai web
+const toMessages = (hist) => hist.map((h) => ({
+  role: h.role === "user" ? "user" : "model",
+  text: (h.parts || []).map((p) => p.text || "").join(""),
+  ts: h.ts || null,
+}));
 
 module.exports = async (req, res) => {
   const u = await requireUser(req, res);
@@ -23,16 +30,13 @@ module.exports = async (req, res) => {
     try {
       // ?light=1: dipakai web untuk penyegaran berkala (tanpa key dan tanpa panggilan ke Telegram)
       const light = !!(req.query && req.query.light);
-      const [tasks, notes, expenses, incomes, money, profile, mode, hist, reminders, kstate, bot, rawBot, mcfg] = await Promise.all([
-        getTasks(u), getNotes(u), getExpenses(u), getIncomes(u), moneySummary(u), getProfile(u), getMode(u), getHist(u), getReminders(u),
+      const mode = await getMode(u);
+      const [tasks, notes, expenses, incomes, money, profile, hist, reminders, kstate, bot, rawBot, mcfg] = await Promise.all([
+        getTasks(u), getNotes(u), getExpenses(u), getIncomes(u), moneySummary(u), getProfile(u), getHist(u, mode), getReminders(u),
         light ? null : keyState(u), light ? null : botStatus(u), light ? getBot(u).catch(() => null) : null, light ? null : getModelCfg(u),
       ]);
       const botLinked = light ? !!(rawBot && rawBot.chatId) : !!(bot && bot.linked);
-      const messages = hist.map((h) => ({
-        role: h.role === "user" ? "user" : "model",
-        text: (h.parts || []).map((p) => p.text || "").join(""),
-        ts: h.ts || null,
-      }));
+      const messages = toMessages(hist); // riwayat milik mode yang sedang aktif
       return res.status(200).json({
         tasks,
         notes: notes.slice(-100).reverse(),
@@ -80,8 +84,17 @@ module.exports = async (req, res) => {
         }
         case "removeBot": result = await removeBot(u); break;
         case "relinkBot": result = await relinkBot(u); break;
-        case "setMode": result = await setMode(u, p.mode); break;
-        case "resetHist": await redis("DEL", key(u, "hist")); result = { ok: true }; break;
+        case "setMode": {
+          result = await switchMode(u, p.mode, p.curhatAction);
+          if (!result.needConfirm) result.messages = toMessages(await getHist(u, result.mode)); // riwayat milik mode tujuan
+          break;
+        }
+        case "resetHist": { // hanya riwayat mode yang sedang aktif
+          const mode = await getMode(u);
+          await clearHist(u, mode);
+          result = { ok: true, mode };
+          break;
+        }
         default: return res.status(400).json({ error: "op tidak dikenal: " + op });
       }
       return res.status(200).json({ ok: true, result });

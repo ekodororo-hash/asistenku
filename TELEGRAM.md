@@ -54,14 +54,23 @@ Cron ini mengirim pengingat, ringkasan pagi, check-in malam, dan rekap mingguan 
 | Voice note | kirim pesan suara, bot mentranskrip lalu menjawab |
 | Cuaca | tombol Cuaca; `/lokasi <kota>` mengganti kota |
 | Berita | tombol Berita atau `/berita topik` |
-| Curhat | tombol Mode Curhat; kembali dengan Mode Asisten |
-| Ingatan | `/memori` melihat, `/lupakan` menghapus, `/reset` hapus riwayat chat |
+| Curhat | tombol Mode Curhat atau `/curhat`; keluar dengan Mode Asisten atau `/asisten` (ditanya dulu: Hapus & keluar / Simpan dulu / Tetap curhat). Lihat bagian Mode curhat di bawah |
+| Ingatan | `/memori` melihat, `/lupakan` menghapus, `/reset` hapus riwayat obrolan mode yang sedang aktif (asisten atau curhat, tidak keduanya) |
 | Otomatis | `/atur` melihat status; `/pagi`, `/checkin`, `/rekapauto`, `/salin` diikuti `on` atau `off` |
 | Salin obrolan web | Pesan dan balasan dari web ikut dikirim ke Telegram (bawaan aktif). Matikan: `/salin off` |
 
 ## Catatan
 - Pesan otomatis dikirim paling lambat sekitar 1 menit dari waktunya. Jika cron sempat mati, ringkasan pagi masih dikirim selama masih dalam 3 jam sejak jamnya.
-- Tugas, catatan, uang, dan obrolan di bot sama persis dengan di web (satu akun, satu data di Redis).
+- Tugas, catatan, uang, dan obrolan mode asisten di bot sama persis dengan di web (satu akun, satu data di Redis). Obrolan curhat punya riwayat sendiri (lihat di bawah).
 - Cuaca memakai Open-Meteo dan berita memakai RSS Google News, keduanya tanpa API key. Layanan gratis seperti ini bisa berubah sewaktu-waktu.
 - Setiap foto atau voice note memakai kuota Gemini gratis (voice note memakai dua panggilan). Kalau muncul error 429, tunggu sebentar.
 - Semua pesan dan data tersimpan di Redis milikmu. Jaga token bot dan akun Upstash.
+
+## Mode curhat (dipisah dari asisten)
+- **Riwayat terpisah.** Asisten dan curhat punya riwayat sendiri (`u:<id>:hist` dan `u:<id>:hist:curhat`). Saat curhat, Gemini hanya melihat obrolan curhat; saat asisten, hanya obrolan asisten. Prompt curhat juga tidak memuat tugas, catatan, pengingat, atau data uang.
+- **Tidak ada pencatatan otomatis.** Di mode curhat tag tugas, pengingat, catatan, uang, dan memori (`INGAT`) tidak diproses, `catat: ...` diperlakukan sebagai obrolan biasa, dan pencarian Google tidak dipakai. Memori yang sudah ada hanya dibaca, tidak pernah ditulis dari curhat.
+- **Tidak disalin ke Telegram.** Pesan curhat dari web tidak ikut disalin ke Telegram, apa pun pengaturan `/salin`.
+- **Keluar dari curhat ditanya dulu.** `/asisten` (atau tombol Mode Asisten, atau tombol Asisten di web) menampilkan pilihan: *Hapus & keluar* (riwayat curhat dihapus permanen), *Simpan dulu* (keluar, riwayat tetap tersimpan sampai kamu hapus sendiri), atau *Tetap curhat*. Kalau riwayat curhat kosong, langsung pindah tanpa bertanya.
+- **Jaring pengaman.** Riwayat curhat yang tidak disimpan terhapus sendiri setelah 6 jam tanpa dipakai (`CURHAT_TTL` di `api/_lib.js`), dan mode ikut kembali ke asisten. Riwayat yang dipilih "Simpan dulu" tidak kedaluwarsa, tapi modenya tetap kembali ke asisten kalau lama tidak dipakai.
+- **Hapus manual.** `/reset` (atau tombol Chat baru di web) hanya menghapus riwayat mode yang sedang aktif.
+- **Check-in malam** memakai prompt curhat tanpa data tugas/catatan/uang; ringkasan pagi selalu masuk ke riwayat asisten.

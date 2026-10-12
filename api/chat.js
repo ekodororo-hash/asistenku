@@ -4,7 +4,7 @@
 
 const {
   trimHist, geminiRaw, geminiSearch, sourceLine, REMIND_INTENT, fmtWib, rupiah,
-  getMode, getHist, saveHist, getProfile,
+  getMode, takeCurhatExpiredNotice, getHist, saveHist, getProfile, gemini, loadCurhatContext, buildCurhatSystem, stripTags,
   getTasks, addTask, getNotes, addNote, getExpenses, addExpense,
   getReminders, addReminder, getBot, sendTelegram, cfgOn, quotaStatus, setSaldo, moneyContext, parseWib, addIncome, getIncomes, moneySummary,
 } = require("./_lib");
@@ -136,8 +136,21 @@ module.exports = async (req, res) => {
   if (!text) return res.status(400).json({ error: "Pesan kosong" });
 
   try {
-    const [mode, hist, tasks, notes, expenses, profile, reminders, bot] = await Promise.all([
-      getMode(u), getHist(u), getTasks(u), getNotes(u), getExpenses(u), getProfile(u), getReminders(u), getBot(u).catch(() => null),
+    const mode = await getMode(u);
+
+    // ---- Mode curhat: riwayat sendiri, tanpa tag, tanpa pencarian, tanpa salinan ke Telegram ----
+    if (mode === "curhat") {
+      const [hist, ctx] = await Promise.all([getHist(u, "curhat"), loadCurhatContext(u)]);
+      const userTurn = { role: "user", parts: [{ text }], ts: Date.now() };
+      const raw = await gemini(u, buildCurhatSystem(ctx), trimHist([...hist, userTurn]), "web");
+      const reply = stripTags(raw) || "(tidak ada jawaban)";
+      await saveHist(u, [...hist, userTurn, { role: "model", parts: [{ text: reply }], ts: Date.now() }], "curhat");
+      return res.status(200).json({ reply, added: [], mode: "curhat" });
+    }
+
+    const expiredNotice = await takeCurhatExpiredNotice(u); // curhat kedaluwarsa sendiri: kabari sekali
+    const [hist, tasks, notes, expenses, profile, reminders, bot] = await Promise.all([
+      getHist(u, "asisten"), getTasks(u), getNotes(u), getExpenses(u), getProfile(u), getReminders(u), getBot(u).catch(() => null),
     ]);
     const remindText = reminders.length
       ? reminders.slice(0, 10).map((r) => `- ${r.text}${r.repeat ? " [" + REPEAT_LABEL[r.repeat] + "]" : ""} (${fmtWib(r.ts)})`).join("\n")
@@ -159,10 +172,10 @@ module.exports = async (req, res) => {
     const raw = found.text;
     const { clean, added } = await processTags(u, raw, text);
     const reply = clean || (added.length ? "" : "(tidak ada jawaban)");
-    const shown = [reply, sourceLine(found.sources, found.searchError)].filter(Boolean).join("\n\n"); // sumber hanya ditampilkan, tidak masuk riwayat
+    const shown = [expiredNotice, reply, sourceLine(found.sources, found.searchError)].filter(Boolean).join("\n\n"); // sumber hanya ditampilkan, tidak masuk riwayat
 
     const newHist = [...hist, userTurn, { role: "model", parts: [{ text: [reply, ...added].filter(Boolean).join("\n\n") || "(dicatat)" }], ts: Date.now() }];
-    await saveHist(u, newHist);
+    await saveHist(u, newHist, "asisten");
 
     // Salin ke Telegram supaya obrolan di web juga terlihat di chat Telegram (matikan: /salin off)
     if (bot && bot.chatId && (await cfgOn(u, "mirror").catch(() => true))) {

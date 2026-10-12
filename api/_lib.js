@@ -602,12 +602,10 @@ function trimHist(h, n = 30) {
   return out;
 }
 
-async function appendModelToHist(u, text) {
-  const raw = await redis("GET", key(u, "hist"));
-  let hist = [];
-  try { hist = raw ? JSON.parse(raw) : []; } catch {}
+async function appendModelToHist(u, text, mode = "asisten") {
+  const hist = await getHist(u, mode);
   hist.push({ role: "model", parts: [{ text }], ts: Date.now() });
-  await redis("SET", key(u, "hist"), JSON.stringify(hist.slice(-30)));
+  await saveHist(u, hist, mode);
 }
 
 // ---------- Waktu (WIB = UTC+7, tanpa DST) ----------
@@ -830,23 +828,74 @@ async function saveProfile(u, p) {
 }
 
 // ---------- Mode (dipakai bareng web & Telegram) ----------
+// Mode curhat otomatis kembali ke asisten kalau tidak dipakai CURHAT_TTL detik (kuncinya diberi kedaluwarsa).
+const CURHAT_TTL = 6 * 3600;
 async function getMode(u) {
   const m = await redis("GET", key(u, "mode"));
   return m === "curhat" ? "curhat" : "asisten";
 }
 async function setMode(u, m) {
   const mode = m === "curhat" ? "curhat" : "asisten";
-  await redis("SET", key(u, "mode"), mode);
+  if (mode === "curhat") {
+    await redis("SET", key(u, "mode"), mode, "EX", String(CURHAT_TTL));
+    await redis("SET", key(u, "curhatflag"), "1"); // penanda tanpa kedaluwarsa: kalau mode hilang tapi penanda ada, berarti kedaluwarsa sendiri
+  } else {
+    await redis("SET", key(u, "mode"), mode);
+    await redis("DEL", key(u, "curhatflag")); // keluar dengan sengaja: tidak perlu pemberitahuan
+  }
   return mode;
 }
 
-// ---------- Riwayat obrolan (dipakai bareng web & Telegram) ----------
-async function getHist(u) {
-  const raw = await redis("GET", key(u, "hist"));
+// Dipanggil saat ada pesan di mode asisten. Kalau mode curhat baru saja kedaluwarsa sendiri, kembalikan pemberitahuan (sekali saja).
+async function takeCurhatExpiredNotice(u) {
+  if (!(await redis("GET", key(u, "curhatflag")))) return "";
+  await redis("DEL", key(u, "curhatflag"));
+  const kept = await hasHist(u, "curhat");
+  return "ℹ️ Mode curhat sudah berakhir karena lama tidak dipakai, jadi pesanmu barusan kuanggap pesan asisten." +
+    (kept ? " Obrolan curhat yang kamu simpan masih ada." : "") + " Ketik /curhat kalau mau lanjut curhat.";
+}
+
+// ---------- Riwayat obrolan: satu riwayat per mode ----------
+// asisten -> u:<id>:hist (dipakai bareng web & Telegram)
+// curhat  -> u:<id>:hist:curhat (otomatis terhapus kalau tidak dipakai CURHAT_TTL, kecuali pengguna memilih "Simpan dulu")
+const histKey = (u, mode) => key(u, mode === "curhat" ? "hist:curhat" : "hist");
+async function getHist(u, mode = "asisten") {
+  const raw = await redis("GET", histKey(u, mode));
   try { return raw ? JSON.parse(raw) : []; } catch { return []; }
 }
-async function saveHist(u, hist) {
-  await redis("SET", key(u, "hist"), JSON.stringify(hist.slice(-60)));
+async function saveHist(u, hist, mode = "asisten") {
+  const val = JSON.stringify(hist.slice(-60));
+  if (mode !== "curhat") { await redis("SET", histKey(u, mode), val); return; }
+  const keep = await redis("GET", key(u, "curhatkeep"));
+  if (keep) await redis("SET", histKey(u, mode), val);                       // sengaja disimpan: tanpa kedaluwarsa
+  else await redis("SET", histKey(u, mode), val, "EX", String(CURHAT_TTL));  // jaring pengaman: hilang sendiri
+  await redis("EXPIRE", key(u, "mode"), String(CURHAT_TTL));                 // mode curhat kembali ke asisten kalau lama tidak dipakai
+}
+async function hasHist(u, mode) {
+  return Number(await redis("EXISTS", histKey(u, mode))) > 0;
+}
+async function clearHist(u, mode) {
+  await redis("DEL", histKey(u, mode));
+  if (mode === "curhat") await redis("DEL", key(u, "curhatkeep"));
+}
+
+// Pindah mode. Keluar dari curhat yang masih punya riwayat butuh keputusan: action = "delete" | "keep".
+// Tanpa action, tidak ada yang berubah dan hasilnya {needConfirm: true}.
+async function switchMode(u, to, action) {
+  const target = to === "curhat" ? "curhat" : "asisten";
+  const cur = await getMode(u);
+  if (cur === "curhat" && target === "asisten") {
+    const has = await hasHist(u, "curhat");
+    if (has && action !== "delete" && action !== "keep") return { needConfirm: true, mode: cur };
+    if (action === "delete") await clearHist(u, "curhat");
+    else if (action === "keep" && has) {
+      await redis("SET", key(u, "curhatkeep"), "1");
+      await redis("PERSIST", histKey(u, "curhat"));
+    }
+  }
+  const resumed = target === "curhat" && cur !== "curhat" && (await hasHist(u, "curhat"));
+  await setMode(u, target);
+  return { mode: target, resumed, changed: cur !== target, deleted: action === "delete" };
 }
 
 // ---------- Pengaturan (on/off) ----------
@@ -1184,19 +1233,54 @@ ${ctx.money || "(tidak ada data)"}
 ${COMMON}`;
 }
 
+// ---------- Mode curhat: prompt & konteks sendiri ----------
+// Sengaja TIDAK memuat tugas, catatan, pengingat, uang, dan petunjuk tag, supaya balasan tidak berasa asisten kerja
+// dan tidak ada yang tercatat otomatis dari isi curhat. Memori jangka panjang hanya dibaca, tidak pernah ditulis.
+const CURHAT_RULES = `Aturan:
+- Tulis teks biasa, tanpa markdown (tanpa * atau #). Emoji boleh secukupnya.
+- Jangan memberi diagnosis medis.
+- Jika ada tanda pengguna ingin menyakiti diri, ingin mengakhiri hidup, atau dalam bahaya: tanggapi dengan tenang dan sungguh-sungguh, tanyakan langsung apakah dia aman sekarang, jangan menghakimi, dorong dia menghubungi orang terdekat yang dipercaya dan layanan darurat/kesehatan jiwa setempat (Indonesia: 112 untuk darurat; 119 ekstensi 8 untuk layanan kesehatan jiwa Kemenkes), dan tetap temani dia bicara. Jangan memberi informasi cara menyakiti diri.
+- Di mode curhat tidak ada pencatatan apa pun: kamu tidak membuat tugas, pengingat, catatan, pengeluaran, atau ingatan baru. Jangan menulis tag atau kode dalam kurung siku ganda. Kalau pengguna minta dicatat atau diingatkan sesuatu, bilang dengan ramah bahwa itu bisa dilakukan setelah pindah ke mode asisten.
+- Kamu tidak punya akses internet. Jangan mengarang info terkini.
+- Obrolan curhat ini terpisah dari mode asisten dan tidak ikut disimpan ke tempat lain. Kalau ditanya, begitu penjelasannya.`;
+
+async function loadCurhatContext(u) {
+  const [facts, profile] = await Promise.all([redis("LRANGE", key(u, "facts"), 0, -1), getProfile(u)]);
+  return { facts: facts || [], profile };
+}
+
+function buildCurhatSystem(ctx) {
+  const p = (ctx && ctx.profile) || {};
+  const facts = (ctx && ctx.facts) || [];
+  return `${PERSONA.curhat}
+
+Waktu sekarang: ${fmtWib(Date.now())}.
+
+Nama kamu: ${p.assistantName || "Asisten"}. Pengguna bernama: ${p.name || "(belum diisi)"}.
+Catatan tentang pengguna: ${p.notes || "(belum ada)"}.
+
+Hal yang kamu ingat tentang pengguna (hanya untuk membuatmu nyambung, jangan disebut-sebut kalau tidak relevan):
+${facts.length ? facts.map((f) => "- " + f).join("\n") : "(belum ada)"}
+
+${CURHAT_RULES}`;
+}
+
+// Buang tag [[...]] kalau model nekat menulisnya; di mode curhat tag tidak pernah diproses
+const stripTags = (t) => String(t || "").replace(/\[\[[A-Z]+:[\s\S]*?\]\]/g, "").trim();
+
 module.exports = {
   TZ, DAY, HOUR, HOURS, BTN,
   uid, key, MAX_KEYS, getBot, saveBot, setupBot, removeBot, relinkBot, botStatus, botUsers, listGeminiKeys, getModelCfg, saveModelCfg, listGeminiModels, keyState, quotaStatus, getKeyHistory, clearKeyHistory, testGeminiKey, addGeminiKey, renameGeminiKey, deleteGeminiKey, moveGeminiKey,
   redis, sendTelegram, downloadTelegramFile, gemini, geminiRaw, geminiSearch, sourceLine, REMIND_INTENT, trimHist, appendModelToHist,
   fmtWib, fmtTime, fmtDateShort, wib, startOfDayWib, nextRepeat, rupiah,
   cfgOn, getLocation, setLocation, getWeather, getNews,
-  recapText, deleteExpenseNumber, loadContext, buildSystem,
+  recapText, deleteExpenseNumber, loadContext, buildSystem, loadCurhatContext, buildCurhatSystem, stripTags,
   getTasks, addTask, toggleTask, deleteTask, unlinkTaskReminder, parseWib, fmtDue,
   getNotes, addNote, deleteNoteById,
   getExpenses, addExpense, deleteExpenseById, getSaldo, setSaldo, moneyContext,
   getIncomes, addIncome, deleteIncomeById, incomesSince, moneySummary, incomeListText, deleteIncomeNumber,
   getProfile, saveProfile,
-  getMode, setMode,
-  getHist, saveHist,
+  getMode, setMode, switchMode, takeCurhatExpiredNotice, CURHAT_TTL,
+  getHist, saveHist, hasHist, clearHist,
   getReminders, addReminder, deleteReminderById,
 };

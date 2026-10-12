@@ -5,6 +5,7 @@ const {
   recapText, deleteExpenseNumber, incomeListText, deleteIncomeNumber, loadContext, buildSystem,
   getTasks, addTask, toggleTask, deleteTask, unlinkTaskReminder, parseWib, fmtDue,
   addNote, addExpense, addIncome, setSaldo, fmtDateShort,
+  getMode, switchMode, takeCurhatExpiredNotice, getHist, saveHist, clearHist, loadCurhatContext, buildCurhatSystem, stripTags,
 } = require("./_lib");
 const { getOwnerId, safeEq } = require("./_auth");
 
@@ -12,6 +13,23 @@ const PLAN_PROMPT =
   "Bantu aku susun rencana hari ini berdasarkan pengingat dan hal yang kamu tahu tentang aku. Tanya aku kalau butuh info tambahan.";
 
 const REPEAT_LABEL = { harian: "tiap hari", mingguan: "tiap minggu", bulanan: "tiap bulan" };
+// Pilihan saat keluar dari mode curhat (dikirim sebagai tombol, jawabannya masuk sebagai teks biasa)
+const EXIT = { del: "🗑️ Hapus & keluar", keep: "💾 Simpan dulu", stay: "↩️ Tetap curhat" };
+const EXIT_KEYBOARD = { keyboard: [[EXIT.del, EXIT.keep], [EXIT.stay]], resize_keyboard: true, one_time_keyboard: true };
+
+// Pasang foto (kalau ada) pada giliran user terakhir
+function withImage(contents, image, text) {
+  if (!image) return contents;
+  contents[contents.length - 1] = {
+    role: "user",
+    parts: [
+      { inlineData: { mimeType: image.mime, data: image.data } },
+      { text: text || "Ini fotoku. Tolong lihat dan tanggapi." },
+    ],
+  };
+  return contents;
+}
+
 const TOGGLES = { "/pagi": "pagi", "/checkin": "checkin", "/rekapauto": "rekapauto", "/salin": "mirror" };
 
 const START_TEXT =
@@ -31,10 +49,12 @@ const START_TEXT =
   "Hapus entri: balas nomornya saja (3) atau ketik \"hapus 3\" setelah /rekap atau /masuk.\n" +
   "/catatan  /cari kata  /hapuscatatan (lalu balas nomor)\n" +
   "/cuaca  /lokasi kota  /berita topik\n" +
-  "/memori  /lupakan  /atur\n\n" +
+  "/memori  /lupakan  /atur\n" +
+  "/curhat  /asisten  /reset (hapus riwayat mode yang sedang aktif)\n\n" +
   `Otomatis: ringkasan pagi, check-in malam, dan rekap uang mingguan. Atur di /atur.\n` +
   "Aku mengingat hal-hal penting tentangmu supaya ngobrolnya nyambung. Lihat dengan /memori, hapus dengan /lupakan.\n\n" +
-  "Tugas, catatan, uang, dan obrolan di sini sama persis dengan yang ada di web. Pesan yang kamu tulis di web juga disalin ke sini (matikan dengan /salin off).";
+  "Tugas, catatan, uang, dan obrolan mode asisten di sini sama persis dengan yang ada di web. Pesan yang kamu tulis di web juga disalin ke sini (matikan dengan /salin off).\n" +
+  "Mode curhat dipisah: riwayatnya sendiri, tidak membuat tugas/catatan/pengingat/uang, tidak masuk memori, dan tidak disalin dari web.";
 
 // ---------- Hapus pengeluaran (dipakai /hapusbeli dan balasan angka setelah /rekap) ----------
 // Mengembalikan true kalau selesai (berhasil / memang kosong), false kalau nomor salah (pengguna boleh coba lagi).
@@ -149,20 +169,46 @@ async function handleCommand(u, cmd, arg, say) {
       await say(START_TEXT);
       return;
 
-    case "/curhat":
-      await redis("SET", key(u, "mode"), "curhat");
-      await say("Oke, aku dengerin. Cerita aja, pelan-pelan juga gapapa.");
+    case "/curhat": {
+      const r = await switchMode(u, "curhat");
+      if (!r.changed) { await say("Kamu masih di mode curhat. Cerita aja."); return; }
+      await say(
+        r.resumed
+          ? "Oke, lanjut ya. Obrolan curhat yang kemarin masih tersimpan. Cerita aja."
+          : "Oke, aku dengerin. Cerita aja, pelan-pelan juga gapapa.\n\n" +
+            "🔒 Di mode curhat: obrolan punya riwayat sendiri (terpisah dari mode asisten), tidak membuat tugas, catatan, pengingat, atau pengeluaran, tidak masuk ke memori, dan tidak disalin dari web ke Telegram. " +
+            "Riwayatnya terhapus sendiri kalau lama tidak dipakai, atau saat kamu keluar (kamu ditanya dulu). Hapus kapan saja: /reset."
+      );
       return;
+    }
 
-    case "/asisten":
-      await redis("SET", key(u, "mode"), "asisten");
-      await say("Siap, balik ke mode asisten. Ada yang perlu dibantu?");
+    case "/asisten": {
+      const r = await switchMode(u, "asisten"); // tanpa keputusan: kalau curhat masih ada isinya, hanya mengembalikan needConfirm
+      if (r.needConfirm) {
+        await redis("SET", key(u, "exitcurhat"), "1", "EX", "300");
+        await say(
+          "Obrolan curhat akan dihapus kalau kamu keluar dari mode curhat. Lanjut?\n\n" +
+            `${EXIT.del}: obrolan curhat dihapus, tidak bisa dikembalikan.\n` +
+            `${EXIT.keep}: keluar, tapi obrolan curhat tetap tersimpan sampai kamu hapus sendiri.\n` +
+            `${EXIT.stay}: batal, tetap di mode curhat.`,
+          { reply_markup: EXIT_KEYBOARD }
+        );
+        return;
+      }
+      await say(r.changed ? "Siap, balik ke mode asisten. Ada yang perlu dibantu?" : "Kamu sudah di mode asisten.");
       return;
+    }
 
-    case "/reset":
-      await redis("DEL", key(u, "hist"));
-      await say("Riwayat obrolan dihapus. Hal-hal yang kuingat tentangmu tetap ada (hapus dengan /lupakan).");
+    case "/reset": {
+      const mode = await getMode(u); // hanya riwayat mode yang sedang aktif
+      await clearHist(u, mode);
+      await say(
+        mode === "curhat"
+          ? "Riwayat obrolan CURHAT dihapus. Obrolan mode asisten tidak disentuh."
+          : "Riwayat obrolan mode ASISTEN dihapus. Obrolan curhat tidak disentuh. Hal-hal yang kuingat tentangmu tetap ada (hapus dengan /lupakan)."
+      );
       return;
+    }
 
     case "/memori": {
       const facts = await redis("LRANGE", key(u, "facts"), 0, -1);
@@ -485,6 +531,26 @@ module.exports = async (req, res) => {
 
     // Setelah /rekap atau /hapuscatatan: balasan angka = nomor entri yang dihapus (tidak diteruskan ke Gemini).
     // Pesan lain apa pun membatalkan mode ini.
+    // Jawaban atas pertanyaan "keluar dari mode curhat?" (diminta lewat /asisten atau tombol Mode Asisten)
+    if (isText && Object.values(EXIT).includes(text)) {
+      const waiting = await redis("GET", key(u, "exitcurhat"));
+      await redis("DEL", key(u, "exitcurhat"));
+      if (!waiting) {
+        await say("Pilihan tadi sudah kedaluwarsa. Kalau mau keluar dari mode curhat, ketik /asisten lagi.");
+      } else if (text === EXIT.stay) {
+        await say("Oke, kita lanjut. Aku masih di sini.");
+      } else if ((await getMode(u)) !== "curhat") {
+        await say("Kamu sudah tidak di mode curhat.");
+      } else {
+        const del = text === EXIT.del;
+        await switchMode(u, "asisten", del ? "delete" : "keep");
+        await say(del
+          ? "🗑️ Obrolan curhat dihapus. Sekarang di mode asisten. Ada yang perlu dibantu?"
+          : "💾 Obrolan curhat disimpan. Sekarang di mode asisten. Mau lanjut curhat, ketik /curhat. Hapus kapan saja: /curhat lalu /reset.");
+      }
+      return res.status(200).end();
+    }
+
     if (isText) {
       // Balasan "3" atau "hapus 3" (juga "hapus no 3") sama-sama dihitung sebagai nomor entri
       const dm = text.match(/^(?:hapus|buang|delete)\s+(?:nomor|no\.?|ke)?\s*([1-9]\d{0,2})\s*$/i);
@@ -576,31 +642,36 @@ module.exports = async (req, res) => {
       return res.status(200).end();
     }
 
-    // "catat: ..." disimpan langsung tanpa Gemini
-    const cm = !image && text.match(/^catat(?:\s*:\s*|\s+)([\s\S]+)$/i);
+    // Mode aktif menentukan: riwayat mana yang dipakai, prompt, dan apakah tag/memori diproses
+    const mode = await getMode(u);
+    if (mode !== "curhat") { const n = await takeCurhatExpiredNotice(u); if (n) await say(n); } // curhat kedaluwarsa sendiri
+
+    // "catat: ..." disimpan langsung tanpa Gemini (tidak berlaku di mode curhat: tidak ada yang tercatat otomatis)
+    const cm = mode !== "curhat" && !image && text.match(/^catat(?:\s*:\s*|\s+)([\s\S]+)$/i);
     if (cm) {
       const n = await addNote(u, cm[1]);
       await say("🗒️ Dicatat: " + (n ? n.text : cm[1].trim()));
       return res.status(200).end();
     }
 
-    // ---- Obrolan -> Gemini ----
-    const [mode, rawHist, ctx] = await Promise.all([redis("GET", key(u, "mode")), redis("GET", key(u, "hist")), loadContext(u)]);
+    const userEntry = { role: "user", parts: [{ text: image ? `[Foto] ${text}`.trim() : text }], ts: Date.now() };
 
-    let hist = [];
-    try { hist = rawHist ? JSON.parse(rawHist) : []; } catch {}
-    hist.push({ role: "user", parts: [{ text: image ? `[Foto] ${text}`.trim() : text }], ts: Date.now() });
-
-    const contents = trimHist(hist);
-    if (image) {
-      contents[contents.length - 1] = {
-        role: "user",
-        parts: [
-          { inlineData: { mimeType: image.mime, data: image.data } },
-          { text: text || "Ini fotoku. Tolong lihat dan tanggapi." },
-        ],
-      };
+    // ---- Obrolan curhat -> Gemini: riwayat sendiri, tanpa pencarian, tanpa tag, tanpa memori ----
+    if (mode === "curhat") {
+      const [hist, cctx] = await Promise.all([getHist(u, "curhat"), loadCurhatContext(u)]);
+      hist.push(userEntry);
+      const contents = withImage(trimHist(hist), image, text);
+      const reply = stripTags(await gemini(u, buildCurhatSystem(cctx), contents)) || "(tidak ada jawaban)";
+      hist.push({ role: "model", parts: [{ text: reply }], ts: Date.now() });
+      await saveHist(u, hist, "curhat");
+      await say(reply);
+      return res.status(200).end();
     }
+
+    // ---- Obrolan asisten -> Gemini ----
+    const [hist, ctx] = await Promise.all([getHist(u, "asisten"), loadContext(u)]);
+    hist.push(userEntry);
+    const contents = withImage(trimHist(hist), image, text);
 
     const found = await geminiSearch(u, buildSystem(mode, ctx), contents);
     const raw = found.text;
@@ -608,9 +679,9 @@ module.exports = async (req, res) => {
     const reply = clean || (notes.length ? "" : "(tidak ada jawaban)");
 
     hist.push({ role: "model", parts: [{ text: [reply, ...notes].filter(Boolean).join("\n\n") || "(dicatat)" }], ts: Date.now() }); // sertakan hasil tag: tanda bahwa permintaan sudah selesai
-    await redis("SET", key(u, "hist"), JSON.stringify(hist.slice(-30)));
+    await saveHist(u, hist, "asisten");
 
-    const echo = voice && mode !== "curhat" ? `🎙️ "${text}"\n\n` : "";
+    const echo = voice ? `🎙️ "${text}"\n\n` : "";
     await say(echo + [reply, ...notes, sourceLine(found.sources, found.searchError)].filter(Boolean).join("\n\n"));
   } catch (e) {
     try { await say("Maaf, ada error: " + e.message); } catch {}

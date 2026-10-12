@@ -3,7 +3,7 @@
 const {
   DAY, HOURS, redis, key, getBot, botUsers, sendTelegram, gemini: geminiBase, appendModelToHist,
   fmtWib, fmtTime, fmtDue, wib, startOfDayWib, nextRepeat, getTasks,
-  cfgOn, getWeather, recapText, loadContext, buildSystem,
+  cfgOn, getWeather, recapText, loadContext, buildSystem, loadCurhatContext, buildCurhatSystem, getMode,
 } = require("./_lib");
 
 const gemini = (u, system, contents) => geminiBase(u, system, contents, "otomatis"); // riwayat key menandai sumbernya
@@ -15,7 +15,7 @@ async function once(k, ttlSec) {
   return (await redis("SET", k, "1", "NX", "EX", String(ttlSec))) === "OK";
 }
 
-const stripTags = (s) => s.replace(/\[\[(REMIND|INGAT|BELI|MASUK|CATAT|SALDO):[\s\S]*?\]\]/g, "").trim();
+const stripTags = (s) => s.replace(/\[\[(TASK|REMIND|INGAT|BELI|MASUK|CATAT|SALDO):[\s\S]*?\]\]/g, "").trim();
 const inWindow = (hour, start, len = 3) => hour >= start && hour < start + len;
 
 // ---- Pengingat (termasuk yang berulang) ----
@@ -108,7 +108,7 @@ async function morning(u, chatId) {
 
   const ok = await sendTelegram(u, chatId, text);
   if (!ok) { await redis("DEL", key(u, `sent:pagi:${w.dateKey}`)); return "gagal kirim"; }
-  await appendModelToHist(u, text);
+  await appendModelToHist(u, text, "asisten"); // ringkasan pagi berisi tugas: selalu ke riwayat asisten
   return "terkirim";
 }
 
@@ -119,11 +119,11 @@ async function checkin(u, chatId) {
   if (!(await cfgOn(u, "checkin"))) return "off";
   if (!(await once(key(u, `sent:checkin:${w.dateKey}`), 2 * DAY / 1000))) return "done";
 
-  const ctx = await loadContext(u);
+  const ctx = await loadCurhatContext(u); // tanpa tugas/catatan/uang: hanya nama dan hal yang diingat
   let text = "Malam 🌙 Gimana harimu hari ini? Mau cerita?";
   try {
     const out = stripTags(
-      await gemini(u, buildSystem("curhat", ctx), [
+      await gemini(u, buildCurhatSystem(ctx), [
         {
           role: "user",
           parts: [{
@@ -139,7 +139,7 @@ async function checkin(u, chatId) {
 
   const ok = await sendTelegram(u, chatId, text);
   if (!ok) { await redis("DEL", key(u, `sent:checkin:${w.dateKey}`)); return "gagal kirim"; }
-  await appendModelToHist(u, text);
+  await appendModelToHist(u, text, await getMode(u)); // balasan pengguna akan masuk ke riwayat mode yang aktif, jadi nyambung
   return "terkirim";
 }
 

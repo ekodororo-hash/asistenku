@@ -25,9 +25,19 @@
       padding-right:max(16px, calc((100% - 720px) / 2));
     }
     #app .msg { max-width:80%; }
+    #app .curhatnote { padding-left:max(16px, calc((100% - 720px) / 2)); padding-right:max(16px, calc((100% - 720px) / 2)); }
   }
   header { display:flex; align-items:center; gap:8px; padding:12px 16px; background:var(--card); border-bottom:2px solid var(--line); }
   body[data-mode="curhat"] header { border-bottom-color:var(--accent); }
+  .curhatnote { display:none; margin:0; padding:8px 16px; font-size:13px; line-height:1.4; color:var(--muted); background:var(--card); border-bottom:1px dashed var(--line); }
+  body[data-mode="curhat"] .curhatnote { display:block; }
+  body[data-mode="curhat"] .chips { display:none; }
+  #exitDlg h3 { margin:0 0 8px; font-size:17px; }
+  #exitDlg p { margin:0 0 12px; font-size:14px; line-height:1.45; color:var(--muted); }
+  #exitDlg .opts { display:flex; flex-direction:column; gap:8px; }
+  #exitDlg .opts button { text-align:left; padding:10px 14px; }
+  #exitDlg .opts small { display:block; font-weight:400; opacity:.8; margin-top:2px; font-size:12px; }
+  #exitDlg button.danger { border-color:#d33; color:#d33; }
   header h1 { font-size:17px; margin:0; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .hbtns { display:flex; gap:6px; align-items:center; flex:none; }
   a.btn { display:inline-flex; align-items:center; justify-content:center; font:inherit; border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:10px; padding:8px 12px; text-decoration:none; line-height:1.2; }
@@ -159,6 +169,15 @@
     <p class="switch"><a href="#" id="authSwitch">Belum punya akun? Daftar</a></p>
   </div>
 </div>
+<dialog id="exitDlg">
+  <h3>Keluar dari mode curhat?</h3>
+  <p>Obrolan curhat akan dihapus. Hanya riwayat curhat yang terhapus; obrolan asisten, tugas, catatan, dan uang tidak terpengaruh.</p>
+  <div class="opts">
+    <button id="exitDel" class="danger">🗑️ Hapus &amp; keluar<small>Obrolan curhat dihapus dan tidak bisa dikembalikan.</small></button>
+    <button id="exitKeep">💾 Simpan dulu<small>Keluar, tapi obrolan curhat tetap tersimpan sampai kamu hapus sendiri.</small></button>
+    <button id="exitStay" class="primary">Tetap curhat</button>
+  </div>
+</dialog>
 <div id="app">
 <header>
   <button id="tasksToggle" title="Panel">☰ Panel</button>
@@ -172,6 +191,7 @@
 
 <main>
   <section id="chatCol">
+    <div id="curhatNote" class="curhatnote">🔒 Mode curhat: obrolan ini punya riwayat sendiri, tidak membuat tugas, catatan, pengingat, atau pengeluaran, tidak masuk memori, dan tidak disalin ke Telegram. Terhapus sendiri kalau lama tidak dipakai.</div>
     <div id="chat"></div>
     <div id="quotaBar" class="quota" hidden></div>
     <div class="chips">
@@ -380,7 +400,9 @@ function addBubble(role, text, cls, ts) {
 function renderChat() {
   $("chat").innerHTML = "";
   if (!messages.length) {
-    addBubble("bot", "Halo! Aku asistan pribadimu. Aku bisa bantu atur rencana, catat tugas dan catatan, mencatat pengeluaran, tulis pesan, atau jadi teman cerita.\n\nObrolan, tugas, catatan, dan uang di sini sama persis dengan bot Telegram-mu.\n\nCoba: \"makan siang 25rb\", \"catat: ide konten minggu depan\", atau \"tambah tugas bayar listrik besok\".");
+    addBubble("bot", mode === "curhat"
+      ? "Mode curhat. Cerita aja, aku dengerin. Pelan-pelan juga gapapa.\n\nObrolan di sini terpisah dari mode asisten: tidak membuat tugas, catatan, pengingat, atau pengeluaran, tidak masuk memori, dan tidak disalin ke Telegram."
+      : "Halo! Aku asisten pribadimu. Aku bisa bantu atur rencana, catat tugas dan catatan, mencatat pengeluaran, tulis pesan, atau jadi teman cerita.\n\nObrolan asisten, tugas, catatan, dan uang di sini sama persis dengan bot Telegram-mu. Mau curhat? Pakai tombol Curhat: riwayatnya terpisah.\n\nCoba: \"makan siang 25rb\", \"catat: ide konten minggu depan\", atau \"tambah tugas bayar listrik besok\".");
   }
   messages.forEach((m) => addBubble(m.role, m.text, "", m.ts));
 }
@@ -388,6 +410,7 @@ function renderChat() {
 function renderMode() {
   document.body.dataset.mode = mode;
   $("modeBtn").textContent = mode === "curhat" ? "Asisten" : "Curhat";
+  $("input").placeholder = mode === "curhat" ? "Cerita aja..." : "Tulis pesan...";
 }
 
 /* ---------- Tugas ---------- */
@@ -793,13 +816,39 @@ $("tasksToggle").onclick = () => toggleSide(!$("side").classList.contains("open"
 $("closeSide").onclick = () => toggleSide(false);
 $("backdrop").onclick = () => toggleSide(false);
 
+// Dialog keluar dari curhat: "delete" | "keep" | null (tetap curhat / ditutup)
+function chooseExit() {
+  return new Promise((resolve) => {
+    const d = $("exitDlg");
+    let value = null;
+    const pick = (v) => () => { value = v; d.close(); };
+    $("exitDel").onclick = pick("delete");
+    $("exitKeep").onclick = pick("keep");
+    $("exitStay").onclick = pick(null);
+    d.addEventListener("close", () => resolve(value), { once: true }); // Esc / tutup = tetap curhat
+    d.showModal();
+  });
+}
+async function postMode(next, curhatAction) {
+  const d = await api("/api/state", { method: "POST", body: JSON.stringify({ op: "setMode", mode: next, curhatAction }) });
+  return d.result;
+}
 $("modeBtn").onclick = async () => {
+  if (busy) return;
   const next = mode === "curhat" ? "asisten" : "curhat";
   try {
-    await api("/api/state", { method: "POST", body: JSON.stringify({ op: "setMode", mode: next }) });
-    mode = next;
+    let r = await postMode(next);
+    if (r.needConfirm) { // keluar dari curhat yang masih ada isinya: tanya dulu
+      const choice = await chooseExit();
+      if (!choice) return;
+      r = await postMode(next, choice);
+    }
+    mode = r.mode;
+    messages = r.messages || [];
     renderMode();
-    addBubble("bot", mode === "curhat" ? "Mode curhat aktif. Cerita aja, aku dengerin." : "Kembali ke mode asisten.", "note");
+    renderChat();
+    if (r.resumed) addBubble("bot", "Lanjut ya. Obrolan curhat sebelumnya masih tersimpan.", "note");
+    else if (r.deleted) addBubble("bot", "Obrolan curhat dihapus. Kembali ke mode asisten.", "note");
   } catch (e) { alert(e.message); }
 };
 
@@ -820,7 +869,10 @@ if (window.visualViewport) {
 }
 
 $("clearBtn").onclick = async () => {
-  if (!confirm("Mulai obrolan baru? Riwayat obrolan dihapus (di bot Telegram juga, karena datanya sama). Tugas, catatan, uang, dan pengingat tetap aman.")) return;
+  const msg = mode === "curhat"
+    ? "Hapus obrolan curhat? Hanya riwayat curhat yang dihapus dan tidak bisa dikembalikan. Obrolan asisten, tugas, catatan, uang, dan pengingat tidak terpengaruh."
+    : "Mulai obrolan baru? Riwayat obrolan mode asisten dihapus (di bot Telegram juga, karena datanya sama). Obrolan curhat, tugas, catatan, uang, dan pengingat tetap aman.";
+  if (!confirm(msg)) return;
   try {
     await api("/api/state", { method: "POST", body: JSON.stringify({ op: "resetHist" }) });
     messages = []; renderChat();
@@ -853,8 +905,8 @@ async function refreshFromServer() {
     tasks = d.tasks || []; notes = d.notes || []; expenses = d.expenses || []; incomes = d.incomes || []; money = d.money || null;
     reminders = d.reminders || []; botLinked = d.botLinked !== false;
     mode = d.mode || "asisten"; messages = d.messages || [];
-    if (sig(messages) !== before) renderChat();
     if (mode !== oldMode) renderMode();
+    if (sig(messages) !== before || mode !== oldMode) renderChat();
     renderTasks(); renderNotes(); renderMoney(); renderReminders();
   } catch {}
 }
