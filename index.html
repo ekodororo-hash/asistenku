@@ -124,13 +124,16 @@
 <body data-mode="asisten">
 <div id="pinGate">
   <div class="box">
-    <h2 style="margin:0 0 6px">🔒 Masuk</h2>
-    <p class="muted" style="margin:0 0 4px">Masukkan PIN untuk membuka asistenmu.</p>
-    <form id="pinForm">
-      <input id="pinInput" type="password" autocomplete="off" placeholder="PIN">
-      <p class="err" id="pinErr"></p>
-      <button class="primary" type="submit" style="width:100%">Buka</button>
+    <h2 style="margin:0 0 6px" id="authTitle">🔒 Masuk</h2>
+    <p class="muted" style="margin:0 0 4px" id="authSub">Masuk ke asistenmu.</p>
+    <form id="authForm">
+      <input id="authUser" type="text" autocomplete="username" autocapitalize="none" placeholder="Username" style="font-size:16px;letter-spacing:0;margin:14px 0 0">
+      <input id="authPass" type="password" autocomplete="current-password" placeholder="Password" style="font-size:16px;letter-spacing:0;margin:8px 0 0">
+      <input id="authInvite" type="password" autocomplete="off" placeholder="Kode undangan" style="font-size:16px;letter-spacing:0;margin:8px 0 0;display:none">
+      <p class="err" id="pinErr" style="margin-top:10px"></p>
+      <button class="primary" type="submit" id="authBtn" style="width:100%">Masuk</button>
     </form>
+    <p class="muted" style="margin:14px 0 0;font-size:13px"><a href="#" id="authSwitch">Belum punya akun? Daftar</a></p>
   </div>
 </div>
 <div id="app">
@@ -138,7 +141,8 @@
   <button id="tasksToggle">☰ Panel</button>
   <h1 id="title">Asisten Pribadi</h1>
   <button id="modeBtn">💬 Curhat</button>
-  <button id="settingsBtn">Profil</button>
+  <button id="settingsBtn">Pengaturan</button>
+  <button id="logoutBtn" title="Keluar">Keluar</button>
   <button id="clearBtn">Reset</button>
 </header>
 
@@ -224,13 +228,32 @@
 
 <dialog id="dlg">
   <form method="dialog" id="profileForm">
-    <h3 style="margin-top:0">Profil</h3>
+    <h3 style="margin-top:0">Pengaturan</h3>
+    <h4 style="margin:0 0 4px">Profil</h4>
     <label>Nama kamu</label>
     <input id="pName">
     <label>Nama asisten</label>
     <input id="pAssistant" placeholder="mis. Nara">
     <label>Catatan tentang kamu (jadwal rutin, kebiasaan, preferensi)</label>
     <textarea id="pNotes" rows="4"></textarea>
+    <h4 style="margin:18px 0 4px">API key Gemini <span class="muted" id="keyCount"></span></h4>
+    <p class="muted" style="margin:0 0 8px;font-size:13px">Maksimal 5. Dicoba berurutan; kalau kena limit otomatis lompat ke key berikutnya. <span id="globalKeyNote"></span></p>
+    <div id="keyList"></div>
+    <div id="keyAddRow" style="display:flex;gap:6px;margin-top:8px">
+      <input id="keyInput" type="password" autocomplete="off" placeholder="Tempel API key (AIza...)" style="flex:1;margin:0">
+      <button type="button" id="keyAddBtn">Tambah</button>
+    </div>
+    <p class="err" id="keyErr" style="color:#d33;font-size:13px;min-height:18px;margin:4px 0 0"></p>
+    <h4 style="margin:18px 0 4px">Bot Telegram</h4>
+    <div id="botBox"></div>
+    <p class="err" id="botErr" style="color:#d33;font-size:13px;min-height:18px;margin:4px 0 0"></p>
+    <h4 style="margin:18px 0 4px">Ganti password</h4>
+    <input id="pwOld" type="password" autocomplete="current-password" placeholder="Password lama" style="margin:0 0 6px">
+    <div style="display:flex;gap:6px">
+      <input id="pwNew" type="password" autocomplete="new-password" placeholder="Password baru (min. 8)" style="flex:1;margin:0">
+      <button type="button" id="pwBtn">Ganti</button>
+    </div>
+    <p id="pwMsg" style="font-size:13px;min-height:18px;margin:4px 0 0"></p>
     <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:14px">
       <button value="cancel">Batal</button>
       <button class="primary" value="save">Simpan</button>
@@ -246,29 +269,35 @@ const rupiah = (n) => "Rp" + Math.round(n).toLocaleString("id-ID");
 const fmtDate = (ts) => new Date(ts).toLocaleDateString("id-ID", { day: "numeric", month: "short" });
 
 /* ---------- PIN & API (data tersinkron dengan Telegram, disimpan di server) ---------- */
-const PIN_KEY = "webpin";
-const getPin = () => localStorage.getItem(PIN_KEY) || "";
-const setPin = (v) => localStorage.setItem(PIN_KEY, v);
-const clearPin = () => localStorage.removeItem(PIN_KEY);
-
 async function api(path, opts = {}) {
-  const headers = Object.assign({ "Content-Type": "application/json", "x-web-pin": getPin() }, opts.headers || {});
-  const r = await fetch(path, Object.assign({}, opts, { headers }));
+  const headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
+  const r = await fetch(path, Object.assign({}, opts, { headers, credentials: "same-origin" }));
   if (r.status === 401) {
-    clearPin();
-    showGate("PIN salah. Coba lagi.");
-    throw new Error("PIN tidak valid");
+    showGate("Sesi habis. Silakan masuk lagi.");
+    throw new Error("Belum login");
   }
   const d = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(d.error || "Gagal memuat");
   return d;
 }
 
+let registerMode = false;
+function setAuthMode(reg) {
+  registerMode = reg;
+  $("authTitle").textContent = reg ? "✨ Daftar" : "🔒 Masuk";
+  $("authSub").textContent = reg ? "Buat akun baru (perlu kode undangan)." : "Masuk ke asistenmu.";
+  $("authInvite").style.display = reg ? "" : "none";
+  $("authPass").autocomplete = reg ? "new-password" : "current-password";
+  $("authBtn").textContent = reg ? "Daftar" : "Masuk";
+  $("authSwitch").textContent = reg ? "Sudah punya akun? Masuk" : "Belum punya akun? Daftar";
+  $("pinErr").textContent = "";
+}
 function showGate(err) {
   $("pinGate").classList.remove("hide");
   $("pinErr").textContent = err || "";
-  $("pinInput").value = "";
-  $("pinInput").focus();
+  $("authPass").value = "";
+  $("authInvite").value = "";
+  $("authUser").focus();
 }
 function hideGate() { $("pinGate").classList.add("hide"); }
 
@@ -279,6 +308,7 @@ let notes = [];
 let expenses = [];
 let profile = { name: "", assistantName: "Asisten", notes: "" };
 let mode = "asisten";
+let botState = { installed: false }, geminiKeys = [], maxKeys = 5, globalKey = false;
 let busy = false;
 let infoLoaded = false;
 
@@ -651,6 +681,7 @@ $("clearBtn").onclick = async () => {
 
 $("settingsBtn").onclick = () => {
   $("pName").value = profile.name; $("pAssistant").value = profile.assistantName; $("pNotes").value = profile.notes;
+  $("keyErr").textContent = ""; renderKeys(); $("botErr").textContent = ""; renderBot(); $("pwMsg").textContent = "";
   $("dlg").showModal();
 };
 $("profileForm").addEventListener("submit", async (e) => {
@@ -663,6 +694,107 @@ $("profileForm").addEventListener("submit", async (e) => {
   }
 });
 
+
+/* ---------- API key Gemini ---------- */
+function renderKeys() {
+  const box = $("keyList");
+  box.innerHTML = "";
+  geminiKeys.forEach((k, i) => {
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid var(--line)";
+    const label = document.createElement("span");
+    label.style.flex = "1";
+    label.textContent = (i + 1) + ". •••• " + k.last4;
+    row.appendChild(label);
+    const mk = (txt, title, fn, disabled) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.textContent = txt; b.title = title; b.disabled = !!disabled;
+      b.onclick = fn; row.appendChild(b);
+    };
+    mk("↑", "Naikkan", () => keyOp("moveKey", { id: k.id, dir: "up" }), i === 0);
+    mk("↓", "Turunkan", () => keyOp("moveKey", { id: k.id, dir: "down" }), i === geminiKeys.length - 1);
+    mk("✕", "Hapus", () => { if (confirm("Hapus key …" + k.last4 + "?")) keyOp("deleteKey", { id: k.id }); });
+    box.appendChild(row);
+  });
+  $("keyCount").textContent = "(" + geminiKeys.length + "/" + maxKeys + ")";
+  $("keyAddRow").style.display = geminiKeys.length >= maxKeys ? "none" : "flex";
+  $("globalKeyNote").textContent = globalKey ? "Key bawaan server jadi cadangan terakhir." : "";
+}
+async function keyOp(op, extra) {
+  $("keyErr").textContent = "";
+  try {
+    const { result } = await api("/api/state", { method: "POST", body: JSON.stringify({ op, ...extra }) });
+    geminiKeys = result; renderKeys();
+    return true;
+  } catch (err) { $("keyErr").textContent = err.message; return false; }
+}
+$("keyInput").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("keyAddBtn").click(); } });
+$("keyAddBtn").onclick = async () => {
+  const v = $("keyInput").value.trim();
+  if (!v) return;
+  $("keyAddBtn").disabled = true; $("keyErr").textContent = "Memeriksa key...";
+  if (await keyOp("addKey", { value: v })) { $("keyInput").value = ""; $("keyErr").textContent = ""; }
+  $("keyAddBtn").disabled = false;
+};
+
+
+/* ---------- Bot Telegram ---------- */
+function renderBot() {
+  const box = $("botBox");
+  box.innerHTML = "";
+  const p = (html) => { const e = document.createElement("p"); e.className = "muted"; e.style.cssText = "margin:0 0 8px;font-size:13px"; e.innerHTML = html; box.appendChild(e); return e; };
+  const btn = (txt, fn) => { const b = document.createElement("button"); b.type = "button"; b.textContent = txt; b.onclick = fn; return b; };
+  if (!botState.installed) {
+    p("Buat bot di @BotFather, lalu tempel token-nya di sini. Webhook dipasang otomatis." + (botState.legacy ? " (Saat ini kamu masih memakai bot bawaan server.)" : ""));
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex;gap:6px";
+    const inp = document.createElement("input");
+    inp.type = "password"; inp.autocomplete = "off"; inp.placeholder = "123456:ABC-DEF..."; inp.style.cssText = "flex:1;margin:0";
+    const go = btn("Pasang", () => botOp("setBot", { token: inp.value.trim() }, go));
+    inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); go.click(); } });
+    row.append(inp, go); box.appendChild(row);
+    return;
+  }
+  p("Bot terpasang: <b>@" + botState.username + "</b> — " + (botState.linked ? "✅ terhubung ke chat kamu" : "⏳ belum terhubung"));
+  if (!botState.linked) {
+    const e = p("Klik untuk menghubungkan chat-mu: ");
+    const a = document.createElement("a");
+    a.href = botState.linkUrl; a.target = "_blank"; a.rel = "noopener"; a.textContent = "Hubungkan Telegram";
+    e.appendChild(a);
+    p("Lalu tekan Start di Telegram. Cuma tautan ini yang bisa mengunci bot ke chat-mu.");
+  }
+  const row = document.createElement("div");
+  row.style.cssText = "display:flex;gap:6px;flex-wrap:wrap";
+  if (botState.linked) row.appendChild(btn("Ganti chat Telegram", () => { if (confirm("Lepas kunci chat dan buat tautan baru?")) botOp("relinkBot"); }));
+  row.appendChild(btn("Lepas bot", () => { if (confirm("Lepas bot? Pengingat otomatis berhenti.")) botOp("removeBot"); }));
+  const rf = btn("Segarkan status", async () => { await loadState(); renderBot(); });
+  row.appendChild(rf);
+  box.appendChild(row);
+}
+async function botOp(op, extra, btnEl) {
+  $("botErr").textContent = op === "setBot" ? "Memasang bot..." : "";
+  if (btnEl) btnEl.disabled = true;
+  try {
+    const { result } = await api("/api/state", { method: "POST", body: JSON.stringify({ op, ...extra }) });
+    botState = result; $("botErr").textContent = ""; renderBot();
+  } catch (err) { $("botErr").textContent = err.message; if (btnEl) btnEl.disabled = false; }
+}
+
+
+/* ---------- Ganti password ---------- */
+$("pwBtn").onclick = async () => {
+  const m = $("pwMsg");
+  m.style.color = ""; m.textContent = "Memproses...";
+  try {
+    const r = await fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin",
+      body: JSON.stringify({ op: "changePassword", oldPassword: $("pwOld").value, newPassword: $("pwNew").value }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { m.style.color = "#d33"; m.textContent = d.error || "Gagal"; return; }
+    $("pwOld").value = ""; $("pwNew").value = "";
+    m.style.color = "#2a9d4b"; m.textContent = "Password diganti.";
+  } catch (err) { m.style.color = "#d33"; m.textContent = err.message; }
+};
+
 /* ---------- Boot: cek PIN lalu muat semua data dari server ---------- */
 async function loadState() {
   const d = await api("/api/state");
@@ -672,6 +804,7 @@ async function loadState() {
   profile = d.profile || profile;
   mode = d.mode || "asisten";
   messages = d.messages || [];
+  geminiKeys = d.geminiKeys || []; maxKeys = d.maxKeys || 5; globalKey = !!d.globalKey; botState = d.bot || { installed: false };
 }
 
 async function boot() {
@@ -682,18 +815,33 @@ async function boot() {
     renderTasks(); renderNotes(); renderMoney();
     showTab(load("tab", "tasks"));
   } catch (e) {
-    showGate(getPin() ? "Gagal memuat: " + e.message : "");
+    if (e.message !== "Belum login") showGate("Gagal memuat: " + e.message);
   }
 }
 
-$("pinForm").addEventListener("submit", (e) => {
+$("logoutBtn").onclick = () => { if (confirm("Keluar dari akun ini?")) logout(); };
+$("authSwitch").addEventListener("click", (e) => { e.preventDefault(); setAuthMode(!registerMode); });
+
+$("authForm").addEventListener("submit", async (e) => {
   e.preventDefault();
-  setPin($("pinInput").value.trim());
-  $("pinErr").textContent = "Memuat...";
-  boot();
+  $("pinErr").textContent = "Memproses...";
+  const body = { op: registerMode ? "register" : "login", username: $("authUser").value, password: $("authPass").value };
+  if (registerMode) body.invite = $("authInvite").value;
+  try {
+    const r = await fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify(body) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { $("pinErr").textContent = d.error || "Gagal"; return; }
+    $("pinErr").textContent = "";
+    boot();
+  } catch (err) { $("pinErr").textContent = "Gagal terhubung: " + err.message; }
 });
 
-if (getPin()) boot(); else showGate();
+async function logout() {
+  try { await fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify({ op: "logout" }) }); } catch {}
+  location.reload();
+}
+
+boot();
 </script>
 </body>
 </html>

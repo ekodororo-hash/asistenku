@@ -16,19 +16,6 @@ function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
-// Cek PIN web (header x-web-pin). Dipakai api/chat.js dan api/state.js supaya
-// data pribadi (tugas/catatan/uang/obrolan) tidak bisa diakses sembarang orang.
-function requirePin(req, res) {
-  const pin = process.env.WEB_PIN;
-  if (!pin) {
-    res.status(500).json({ error: "WEB_PIN belum diisi di Vercel. Tambahkan dulu lalu redeploy." });
-    return false;
-  }
-  if (req.headers["x-web-pin"] === pin) return true;
-  res.status(401).json({ error: "PIN salah." });
-  return false;
-}
-
 // ---------- Redis (Upstash REST) ----------
 async function redis(...cmd) {
   const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
@@ -43,6 +30,12 @@ async function redis(...cmd) {
   if (d.error) throw new Error("Redis: " + d.error);
   return d.result;
 }
+
+// Semua data pengguna disimpan dengan awalan u:<userId>:
+const key = (u, name) => {
+  if (!u) throw new Error("userId wajib");
+  return `u:${u}:${name}`;
+};
 
 // ---------- Telegram ----------
 // Tombol permanen di bawah kolom ketik
@@ -68,17 +61,134 @@ const KEYBOARD = {
   is_persistent: true,
 };
 
-async function sendTelegram(chatId, text, extra = {}) {
-  const r = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text: String(text).slice(0, 4000), reply_markup: KEYBOARD, ...extra }),
-  });
-  return r.ok;
+// ---------- Bot Telegram per pengguna ----------
+// Disimpan di u:<id>:bot = {tokenEnc, username, secret, linkCode, chatId}
+// Bot lama (env TELEGRAM_*) tetap dilayani untuk pemilik data lama sampai dia memasang bot sendiri.
+async function getBot(u) {
+  const raw = await redis("GET", key(u, "bot"));
+  try {
+    if (raw) {
+      const b = JSON.parse(raw);
+      return { ...b, token: decrypt(b.tokenEnc) };
+    }
+  } catch {}
+  if (process.env.TELEGRAM_BOT_TOKEN && (await redis("GET", "legacy:owner")) === u) {
+    return {
+      legacy: true,
+      token: process.env.TELEGRAM_BOT_TOKEN,
+      secret: process.env.TELEGRAM_WEBHOOK_SECRET || "",
+      chatId: process.env.TELEGRAM_CHAT_ID || null,
+    };
+  }
+  return null;
+}
+async function saveBot(u, b) {
+  const { token, legacy, ...rest } = b;
+  await redis("SET", key(u, "bot"), JSON.stringify(rest));
 }
 
-async function downloadTelegramFile(fileId) {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
+async function tg(token, method, body) {
+  const r = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body || {}),
+  });
+  return r.json().catch(() => ({ ok: false }));
+}
+
+const sha = (t) => crypto.createHash("sha256").update(t).digest("hex");
+
+// Pasang bot: validasi token, daftarkan webhook otomatis ke /api/telegram?u=<id>
+async function setupBot(u, tokenIn, baseUrl) {
+  const token = String(tokenIn || "").trim();
+  if (!/^\d{6,12}:[\w-]{30,50}$/.test(token)) throw new Error("Format token bot tidak valid (ambil dari @BotFather).");
+  const me = await tg(token, "getMe");
+  if (!me.ok) throw new Error("Token ditolak Telegram. Cek lagi token-nya.");
+
+  const h = sha(token);
+  const owner = await redis("GET", "bottoken:" + h);
+  if (owner && owner !== u) throw new Error("Bot ini sudah dipakai akun lain.");
+
+  const old = await redis("GET", key(u, "bot"));
+  let prev = null;
+  try { prev = old ? JSON.parse(old) : null; } catch {}
+  if (prev) await removeBot(u); // lepas bot sebelumnya dulu
+
+  const secret = crypto.randomBytes(24).toString("hex");
+  const linkCode = crypto.randomBytes(6).toString("hex");
+  const wh = await tg(token, "setWebhook", {
+    url: `${baseUrl}/api/telegram?u=${u}`,
+    secret_token: secret,
+    allowed_updates: ["message"],
+    drop_pending_updates: true,
+  });
+  if (!wh.ok) throw new Error("Gagal mendaftarkan webhook: " + (wh.description || "tidak diketahui"));
+
+  await saveBot(u, { tokenEnc: encrypt(token), username: me.result.username, secret, linkCode, chatId: null });
+  await redis("SET", "bottoken:" + h, u);
+  await redis("SADD", "bots", u);
+  return botStatus(u);
+}
+
+async function removeBot(u) {
+  const raw = await redis("GET", key(u, "bot"));
+  if (!raw) return botStatus(u);
+  try {
+    const b = JSON.parse(raw);
+    const token = decrypt(b.tokenEnc);
+    await tg(token, "deleteWebhook", {});
+    await redis("DEL", "bottoken:" + sha(token));
+  } catch {}
+  await redis("DEL", key(u, "bot"));
+  await redis("SREM", "bots", u);
+  return botStatus(u);
+}
+
+// Kunci chat dilepas, kode tautan baru dibuat (mis. ganti akun Telegram)
+async function relinkBot(u) {
+  const raw = await redis("GET", key(u, "bot"));
+  if (!raw) throw new Error("Belum ada bot terpasang.");
+  const b = JSON.parse(raw);
+  b.chatId = null;
+  b.linkCode = crypto.randomBytes(6).toString("hex");
+  await redis("SET", key(u, "bot"), JSON.stringify(b));
+  return botStatus(u);
+}
+
+async function botStatus(u) {
+  const raw = await redis("GET", key(u, "bot"));
+  if (!raw) {
+    const legacy = await getBot(u);
+    return { installed: false, legacy: !!legacy };
+  }
+  const b = JSON.parse(raw);
+  return {
+    installed: true,
+    username: b.username,
+    linked: !!b.chatId,
+    linkUrl: b.chatId ? null : `https://t.me/${b.username}?start=${b.linkCode}`,
+  };
+}
+
+// Semua pengguna yang punya bot aktif (untuk cron)
+async function botUsers() {
+  const ids = new Set((await redis("SMEMBERS", "bots")) || []);
+  const owner = await redis("GET", "legacy:owner");
+  if (owner && process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID) ids.add(owner);
+  return [...ids];
+}
+
+async function sendTelegram(u, chatId, text, extra = {}) {
+  const bot = await getBot(u);
+  if (!bot) return false;
+  const r = await tg(bot.token, "sendMessage", { chat_id: chatId, text: String(text).slice(0, 4000), reply_markup: KEYBOARD, ...extra });
+  return !!r.ok;
+}
+
+async function downloadTelegramFile(u, fileId) {
+  const bot = await getBot(u);
+  if (!bot) throw new Error("Bot belum terpasang");
+  const token = bot.token;
   const r = await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${encodeURIComponent(fileId)}`);
   const d = await r.json();
   if (!d.ok) throw new Error("Gagal mengambil file dari Telegram");
@@ -88,23 +198,125 @@ async function downloadTelegramFile(fileId) {
   return { base64: buf.toString("base64"), path: d.result.file_path };
 }
 
-// ---------- Gemini ----------
-async function gemini(system, contents) {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) throw new Error("GEMINI_API_KEY belum diisi");
+// ---------- Gemini (multi API key per pengguna + rotasi) ----------
+const crypto = require("crypto");
+const MAX_KEYS = 5;
+const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
+
+// Kunci API disimpan terenkripsi (AES-256-GCM) dengan kunci turunan SESSION_SECRET
+function encKey() {
+  const s = process.env.SESSION_SECRET;
+  if (!s || s.length < 16) throw new Error("SESSION_SECRET belum diisi");
+  return crypto.createHash("sha256").update("gkeys:" + s).digest();
+}
+function encrypt(text) {
+  const iv = crypto.randomBytes(12);
+  const c = crypto.createCipheriv("aes-256-gcm", encKey(), iv);
+  const enc = Buffer.concat([c.update(text, "utf8"), c.final()]);
+  return [iv, c.getAuthTag(), enc].map((b) => b.toString("base64")).join(".");
+}
+function decrypt(str) {
+  const [iv, tag, enc] = String(str).split(".").map((x) => Buffer.from(x, "base64"));
+  const d = crypto.createDecipheriv("aes-256-gcm", encKey(), iv);
+  d.setAuthTag(tag);
+  return Buffer.concat([d.update(enc), d.final()]).toString("utf8");
+}
+
+async function loadKeyRecords(u) {
+  const raw = await redis("GET", key(u, "gkeys"));
+  try { return raw ? JSON.parse(raw) : []; } catch { return []; }
+}
+async function saveKeyRecords(u, list) {
+  await redis("SET", key(u, "gkeys"), JSON.stringify(list));
+}
+
+// Daftar untuk UI: tanpa nilai key utuh
+async function listGeminiKeys(u) {
+  return (await loadKeyRecords(u)).map((k) => ({ id: k.id, last4: k.last4 }));
+}
+
+async function checkGeminiKey(k) {
+  const r = await fetch(`${GEMINI_BASE}/models?pageSize=1`, { headers: { "x-goog-api-key": k } });
+  if (r.ok || r.status === 429) return true; // 429 = key valid tapi sedang kena limit
+  return false;
+}
+
+async function addGeminiKey(u, value) {
+  const k = String(value || "").trim();
+  if (!/^[\w-]{20,100}$/.test(k)) throw new Error("Format API key tidak valid.");
+  const list = await loadKeyRecords(u);
+  if (list.length >= MAX_KEYS) throw new Error(`Maksimal ${MAX_KEYS} API key.`);
+  if (list.some((x) => decrypt(x.enc) === k)) throw new Error("API key ini sudah ada.");
+  if (!(await checkGeminiKey(k))) throw new Error("API key ditolak Google. Cek lagi key-nya.");
+  list.push({ id: uid(), enc: encrypt(k), last4: k.slice(-4) });
+  await saveKeyRecords(u, list);
+  return listGeminiKeys(u);
+}
+
+async function deleteGeminiKey(u, id) {
+  const list = await loadKeyRecords(u);
+  await saveKeyRecords(u, list.filter((x) => x.id !== id));
+  await redis("DEL", key(u, "gcool:" + id));
+  return listGeminiKeys(u);
+}
+
+async function moveGeminiKey(u, id, dir) {
+  const list = await loadKeyRecords(u);
+  const i = list.findIndex((x) => x.id === id);
+  const j = i + (dir === "up" ? -1 : 1);
+  if (i < 0 || j < 0 || j >= list.length) return listGeminiKeys(u);
+  [list[i], list[j]] = [list[j], list[i]];
+  await saveKeyRecords(u, list);
+  return listGeminiKeys(u);
+}
+
+// Urutan: key pengguna 1..5, lalu GEMINI_API_KEY global sebagai cadangan terakhir
+async function geminiCandidates(u) {
+  const out = [];
+  for (const r of await loadKeyRecords(u)) {
+    try { out.push({ id: r.id, key: decrypt(r.enc) }); } catch {}
+  }
+  if (process.env.GEMINI_API_KEY) out.push({ id: null, key: process.env.GEMINI_API_KEY });
+  return out;
+}
+
+// Error yang layak dicoba dengan key berikutnya
+const rotatable = (status) => status === 429 || status === 403 || status === 401 || status === 400 || status >= 500;
+
+async function geminiRaw(u, body) {
   const model = process.env.GEMINI_MODEL || "gemini-flash-latest";
+  const cands = await geminiCandidates(u);
+  if (!cands.length) {
+    const e = new Error("Belum ada API key Gemini. Tambahkan di Pengaturan.");
+    e.status = 400;
+    throw e;
+  }
+  // Lewati key yang baru kena limit (cooldown), kecuali semuanya sedang cooldown
+  const cooled = await Promise.all(cands.map(async (c) => (c.id ? (await redis("EXISTS", key(u, "gcool:" + c.id))) === 1 : false)));
+  let order = cands.filter((_, i) => !cooled[i]);
+  if (!order.length) order = cands;
+
+  let lastErr;
+  for (const c of order) {
+    const r = await fetch(`${GEMINI_BASE}/models/${model}:generateContent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": c.key },
+      body: JSON.stringify(body),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (r.ok) return data;
+    lastErr = new Error(data?.error?.message || "Gagal memanggil Gemini");
+    lastErr.status = r.status === 429 ? 429 : 502; // jangan 401: web mengira sesi habis
+    if (r.status === 429 && c.id) await redis("SET", key(u, "gcool:" + c.id), "1", "EX", "60");
+    if (!rotatable(r.status)) break;
+  }
+  throw lastErr;
+}
+
+async function gemini(u, system, contents) {
   const body = { contents };
   if (system) body.systemInstruction = { parts: [{ text: system }] };
-  const r = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-      body: JSON.stringify(body),
-    }
-  );
-  const data = await r.json();
-  if (!r.ok) throw new Error(data?.error?.message || "Gagal memanggil Gemini");
+  const data = await geminiRaw(u, body);
   return (data.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("");
 }
 
@@ -121,12 +333,12 @@ function trimHist(h, n = 30) {
   return out;
 }
 
-async function appendModelToHist(text) {
-  const raw = await redis("GET", "hist");
+async function appendModelToHist(u, text) {
+  const raw = await redis("GET", key(u, "hist"));
   let hist = [];
   try { hist = raw ? JSON.parse(raw) : []; } catch {}
   hist.push({ role: "model", parts: [{ text }] });
-  await redis("SET", "hist", JSON.stringify(hist.slice(-30)));
+  await redis("SET", key(u, "hist"), JSON.stringify(hist.slice(-30)));
 }
 
 // ---------- Waktu (WIB = UTC+7, tanpa DST) ----------
@@ -170,120 +382,120 @@ function nextRepeat(ts, rule) {
 const rupiah = (n) => "Rp" + Math.round(n).toLocaleString("id-ID");
 
 // ---------- Tugas (dipakai bareng web & Telegram) ----------
-async function getTasks() {
-  const raw = await redis("GET", "tasks");
+async function getTasks(u) {
+  const raw = await redis("GET", key(u, "tasks"));
   try { return raw ? JSON.parse(raw) : []; } catch { return []; }
 }
-async function saveTasks(tasks) {
-  await redis("SET", "tasks", JSON.stringify(tasks.slice(-200)));
+async function saveTasks(u, tasks) {
+  await redis("SET", key(u, "tasks"), JSON.stringify(tasks.slice(-200)));
 }
-async function addTask(text) {
-  const tasks = await getTasks();
+async function addTask(u, text) {
+  const tasks = await getTasks(u);
   const item = { id: uid(), text: String(text).trim().slice(0, 300), done: false };
   if (!item.text) return null;
   tasks.push(item);
-  await saveTasks(tasks);
+  await saveTasks(u, tasks);
   return item;
 }
-async function toggleTask(id) {
-  const tasks = await getTasks();
+async function toggleTask(u, id) {
+  const tasks = await getTasks(u);
   const t = tasks.find((x) => x.id === id);
   if (!t) return null;
   t.done = !t.done;
-  await saveTasks(tasks);
+  await saveTasks(u, tasks);
   return t;
 }
-async function deleteTask(id) {
-  const tasks = await getTasks();
+async function deleteTask(u, id) {
+  const tasks = await getTasks(u);
   const next = tasks.filter((x) => x.id !== id);
   if (next.length === tasks.length) return false;
-  await saveTasks(next);
+  await saveTasks(u, next);
   return true;
 }
 
 // ---------- Catatan (dipakai bareng web & Telegram) ----------
-async function getNotes() {
-  const rows = await redis("LRANGE", "notes", 0, -1);
+async function getNotes(u) {
+  const rows = await redis("LRANGE", key(u, "notes"), 0, -1);
   return (rows || []).map((r) => { try { return JSON.parse(r); } catch { return null; } }).filter(Boolean);
 }
-async function addNote(text) {
+async function addNote(u, text) {
   const t = String(text).trim().slice(0, 1000);
   if (!t) return null;
   const item = { id: uid(), ts: Date.now(), text: t };
-  await redis("RPUSH", "notes", JSON.stringify(item));
-  await redis("LTRIM", "notes", -300, -1);
+  await redis("RPUSH", key(u, "notes"), JSON.stringify(item));
+  await redis("LTRIM", key(u, "notes"), -300, -1);
   return item;
 }
-async function deleteNoteById(id) {
-  const all = await getNotes();
+async function deleteNoteById(u, id) {
+  const all = await getNotes(u);
   const next = all.filter((n) => n.id !== id);
   if (next.length === all.length) return false;
-  await redis("DEL", "notes");
-  if (next.length) await redis("RPUSH", "notes", ...next.map((n) => JSON.stringify(n)));
+  await redis("DEL", key(u, "notes"));
+  if (next.length) await redis("RPUSH", key(u, "notes"), ...next.map((n) => JSON.stringify(n)));
   return true;
 }
 
 // ---------- Pengeluaran (dipakai bareng web & Telegram) ----------
-async function addExpense(amt, cat, note) {
+async function addExpense(u, amt, cat, note) {
   const n = Math.round(Number(amt));
   if (!Number.isFinite(n) || n <= 0 || n > 1e10) return null;
   const item = { id: uid(), ts: Date.now(), amt: n, cat: String(cat || "lainnya").toLowerCase().slice(0, 20), note: String(note || "").slice(0, 100) };
-  await redis("RPUSH", "exp:" + wib().monthKey, JSON.stringify(item));
+  await redis("RPUSH", key(u, "exp:" + wib().monthKey), JSON.stringify(item));
   return item;
 }
-async function getExpenses(monthKey) {
-  const rows = await redis("LRANGE", "exp:" + (monthKey || wib().monthKey), 0, -1);
+async function getExpenses(u, monthKey) {
+  const rows = await redis("LRANGE", key(u, "exp:" + (monthKey || wib().monthKey)), 0, -1);
   return (rows || []).map((r) => { try { return JSON.parse(r); } catch { return null; } }).filter(Boolean);
 }
-async function deleteExpenseById(id, monthKey) {
+async function deleteExpenseById(u, id, monthKey) {
   const mk = monthKey || wib().monthKey;
-  const all = await getExpenses(mk);
+  const all = await getExpenses(u, mk);
   const next = all.filter((e) => e.id !== id);
   if (next.length === all.length) return false;
-  await redis("DEL", "exp:" + mk);
-  if (next.length) await redis("RPUSH", "exp:" + mk, ...next.map((e) => JSON.stringify(e)));
+  await redis("DEL", key(u, "exp:" + mk));
+  if (next.length) await redis("RPUSH", key(u, "exp:" + mk), ...next.map((e) => JSON.stringify(e)));
   return true;
 }
 
 // ---------- Profil (web) ----------
-async function getProfile() {
-  const raw = await redis("GET", "profile");
+async function getProfile(u) {
+  const raw = await redis("GET", key(u, "profile"));
   try { if (raw) return JSON.parse(raw); } catch {}
   return { name: "", assistantName: "Asisten", notes: "" };
 }
-async function saveProfile(p) {
+async function saveProfile(u, p) {
   const profile = {
     name: String((p || {}).name || "").slice(0, 100),
     assistantName: String((p || {}).assistantName || "Asisten").slice(0, 50),
     notes: String((p || {}).notes || "").slice(0, 1000),
   };
-  await redis("SET", "profile", JSON.stringify(profile));
+  await redis("SET", key(u, "profile"), JSON.stringify(profile));
   return profile;
 }
 
 // ---------- Mode (dipakai bareng web & Telegram) ----------
-async function getMode() {
-  const m = await redis("GET", "mode");
+async function getMode(u) {
+  const m = await redis("GET", key(u, "mode"));
   return m === "curhat" ? "curhat" : "asisten";
 }
-async function setMode(m) {
+async function setMode(u, m) {
   const mode = m === "curhat" ? "curhat" : "asisten";
-  await redis("SET", "mode", mode);
+  await redis("SET", key(u, "mode"), mode);
   return mode;
 }
 
 // ---------- Riwayat obrolan (dipakai bareng web & Telegram) ----------
-async function getHist() {
-  const raw = await redis("GET", "hist");
+async function getHist(u) {
+  const raw = await redis("GET", key(u, "hist"));
   try { return raw ? JSON.parse(raw) : []; } catch { return []; }
 }
-async function saveHist(hist) {
-  await redis("SET", "hist", JSON.stringify(hist.slice(-60)));
+async function saveHist(u, hist) {
+  await redis("SET", key(u, "hist"), JSON.stringify(hist.slice(-60)));
 }
 
 // ---------- Pengaturan (on/off) ----------
-async function cfgOn(key) {
-  const v = await redis("HGET", "cfg", key);
+async function cfgOn(u, name) {
+  const v = await redis("HGET", key(u, "cfg"), name);
   return v !== "off";
 }
 
@@ -301,8 +513,8 @@ function wmo(c) {
   return "berubah-ubah";
 }
 
-async function getLocation() {
-  const raw = await redis("GET", "loc");
+async function getLocation(u) {
+  const raw = await redis("GET", key(u, "loc"));
   try { if (raw) return JSON.parse(raw); } catch {}
   return {
     name: process.env.WEATHER_CITY || "Jakarta",
@@ -311,7 +523,7 @@ async function getLocation() {
   };
 }
 
-async function setLocation(name) {
+async function setLocation(u, name) {
   const r = await fetch(
     `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=1&language=id`
   );
@@ -319,12 +531,12 @@ async function setLocation(name) {
   const g = d.results && d.results[0];
   if (!g) return null;
   const loc = { name: g.name, lat: g.latitude, lon: g.longitude };
-  await redis("SET", "loc", JSON.stringify(loc));
+  await redis("SET", key(u, "loc"), JSON.stringify(loc));
   return loc;
 }
 
-async function getWeather() {
-  const loc = await getLocation();
+async function getWeather(u) {
+  const loc = await getLocation(u);
   const url =
     `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}` +
     `&current=temperature_2m,apparent_temperature,weather_code` +
@@ -365,11 +577,11 @@ async function getNews(topic) {
 }
 
 // ---------- Pengeluaran ----------
-async function expensesSince(fromTs) {
+async function expensesSince(u, fromTs) {
   const keys = new Set([wib(fromTs).monthKey, wib().monthKey]);
   const all = [];
   for (const k of keys) {
-    const rows = await redis("LRANGE", "exp:" + k, 0, -1);
+    const rows = await redis("LRANGE", key(u, "exp:" + k), 0, -1);
     for (const r of rows || []) { try { all.push(JSON.parse(r)); } catch {} }
   }
   return all.filter((e) => e.ts >= fromTs).sort((a, b) => a.ts - b.ts);
@@ -383,12 +595,12 @@ function breakdown(list) {
   return { total, lines };
 }
 
-async function recapText() {
+async function recapText(u) {
   const now = Date.now();
   const w = wib(now);
   const weekStart = startOfDayWib(now) - ((w.weekday + 6) % 7) * DAY; // Senin
   const monthStart = Date.UTC(w.y, w.m - 1, 1) - 7 * HOUR;
-  const all = await expensesSince(Math.min(weekStart, monthStart));
+  const all = await expensesSince(u, Math.min(weekStart, monthStart));
   const week = all.filter((e) => e.ts >= weekStart);
   const month = all.filter((e) => e.ts >= monthStart);
   if (!month.length) {
@@ -405,10 +617,10 @@ async function recapText() {
 }
 
 // ---------- Konteks & prompt ----------
-async function loadContext() {
+async function loadContext(u) {
   const [facts, rows] = await Promise.all([
-    redis("LRANGE", "facts", 0, -1),
-    redis("ZRANGE", "reminders", 0, 9, "WITHSCORES"),
+    redis("LRANGE", key(u, "facts"), 0, -1),
+    redis("ZRANGE", key(u, "reminders"), 0, 9, "WITHSCORES"),
   ]);
   const reminders = [];
   for (let i = 0; i < (rows || []).length; i += 2) {
@@ -471,7 +683,7 @@ ${COMMON}`;
 
 module.exports = {
   TZ, DAY, HOUR, HOURS, BTN,
-  uid, requirePin,
+  uid, key, MAX_KEYS, getBot, saveBot, setupBot, removeBot, relinkBot, botStatus, botUsers, listGeminiKeys, addGeminiKey, deleteGeminiKey, moveGeminiKey,
   redis, sendTelegram, downloadTelegramFile, gemini, trimHist, appendModelToHist,
   fmtWib, fmtTime, fmtDateShort, wib, startOfDayWib, nextRepeat, rupiah,
   cfgOn, getLocation, setLocation, getWeather, getNews,

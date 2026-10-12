@@ -1,11 +1,12 @@
 // Webhook bot Telegram: /api/telegram
 const {
-  HOURS, BTN, redis, sendTelegram, downloadTelegramFile, gemini, trimHist,
+  HOURS, BTN, redis, key, getBot, saveBot, sendTelegram, downloadTelegramFile, gemini, trimHist,
   fmtWib, wib, rupiah, cfgOn, getLocation, setLocation, getWeather, getNews,
   recapText, loadContext, buildSystem,
   getTasks, addTask, toggleTask, deleteTask,
   addNote, addExpense,
 } = require("./_lib");
+const { getOwnerId, safeEq } = require("./_auth");
 
 const PLAN_PROMPT =
   "Bantu aku susun rencana hari ini berdasarkan pengingat dan hal yang kamu tahu tentang aku. Tanya aku kalau butuh info tambahan.";
@@ -33,7 +34,7 @@ const START_TEXT =
   "Tugas, catatan, uang, dan obrolan di sini sama persis dengan yang ada di web.";
 
 // ---------- Perintah ----------
-async function handleCommand(cmd, arg, say) {
+async function handleCommand(u, cmd, arg, say) {
   switch (cmd) {
     case "/start":
     case "/help":
@@ -41,22 +42,22 @@ async function handleCommand(cmd, arg, say) {
       return;
 
     case "/curhat":
-      await redis("SET", "mode", "curhat");
+      await redis("SET", key(u, "mode"), "curhat");
       await say("Oke, aku dengerin. Cerita aja, pelan-pelan juga gapapa.");
       return;
 
     case "/asisten":
-      await redis("SET", "mode", "asisten");
+      await redis("SET", key(u, "mode"), "asisten");
       await say("Siap, balik ke mode asisten. Ada yang perlu dibantu?");
       return;
 
     case "/reset":
-      await redis("DEL", "hist");
+      await redis("DEL", key(u, "hist"));
       await say("Riwayat obrolan dihapus. Hal-hal yang kuingat tentangmu tetap ada (hapus dengan /lupakan).");
       return;
 
     case "/memori": {
-      const facts = await redis("LRANGE", "facts", 0, -1);
+      const facts = await redis("LRANGE", key(u, "facts"), 0, -1);
       await say(
         facts && facts.length
           ? "Yang kuingat tentangmu:\n\n" + facts.map((f, i) => `${i + 1}. ${f}`).join("\n")
@@ -66,12 +67,12 @@ async function handleCommand(cmd, arg, say) {
     }
 
     case "/lupakan":
-      await redis("DEL", "facts");
+      await redis("DEL", key(u, "facts"));
       await say("Semua yang kuingat tentangmu sudah dihapus.");
       return;
 
     case "/pengingat": {
-      const rows = await redis("ZRANGE", "reminders", 0, -1, "WITHSCORES");
+      const rows = await redis("ZRANGE", key(u, "reminders"), 0, -1, "WITHSCORES");
       if (!rows || !rows.length) {
         await say("Belum ada pengingat.");
         return;
@@ -89,12 +90,12 @@ async function handleCommand(cmd, arg, say) {
 
     case "/hapus": {
       const n = parseInt(arg, 10);
-      const rows = await redis("ZRANGE", "reminders", 0, -1);
+      const rows = await redis("ZRANGE", key(u, "reminders"), 0, -1);
       if (!n || n < 1 || n > rows.length) {
         await say("Pakai: /hapus <nomor>. Lihat nomornya di /pengingat.");
         return;
       }
-      await redis("ZREM", "reminders", rows[n - 1]);
+      await redis("ZREM", key(u, "reminders"), rows[n - 1]);
       let it = {};
       try { it = JSON.parse(rows[n - 1]); } catch {}
       await say(`Pengingat dihapus: ${it.text || "?"}`);
@@ -102,7 +103,7 @@ async function handleCommand(cmd, arg, say) {
     }
 
     case "/tugas": {
-      const tasks = await getTasks();
+      const tasks = await getTasks(u);
       if (!tasks.length) { await say("Belum ada tugas. Tulis: tambah tugas <isi>, atau pakai web."); return; }
       const lines = tasks.map((t, i) => `${i + 1}. ${t.done ? "[selesai]" : "[belum]"} ${t.text}`);
       await say("Tugas (sama dengan di web):\n\n" + lines.join("\n") + "\n\nTandai selesai: /tugasdone N\nHapus: /hapustugas N");
@@ -111,34 +112,34 @@ async function handleCommand(cmd, arg, say) {
 
     case "/tugasdone": {
       const n = parseInt(arg, 10);
-      const tasks = await getTasks();
+      const tasks = await getTasks(u);
       if (!n || n < 1 || n > tasks.length) { await say("Pakai: /tugasdone <nomor>. Lihat nomornya di /tugas."); return; }
-      const t = await toggleTask(tasks[n - 1].id);
+      const t = await toggleTask(u, tasks[n - 1].id);
       await say(t ? `Tugas "${t.text}" ditandai ${t.done ? "selesai" : "belum selesai"}.` : "Gagal mengubah tugas.");
       return;
     }
 
     case "/hapustugas": {
       const n = parseInt(arg, 10);
-      const tasks = await getTasks();
+      const tasks = await getTasks(u);
       if (!n || n < 1 || n > tasks.length) { await say("Pakai: /hapustugas <nomor>. Lihat nomornya di /tugas."); return; }
-      const ok = await deleteTask(tasks[n - 1].id);
+      const ok = await deleteTask(u, tasks[n - 1].id);
       await say(ok ? `Tugas dihapus: ${tasks[n - 1].text}` : "Gagal menghapus tugas.");
       return;
     }
 
     case "/cuaca":
-      try { await say("⛅ " + (await getWeather())); }
+      try { await say("⛅ " + (await getWeather(u))); }
       catch (e) { await say("Gagal mengambil cuaca: " + e.message); }
       return;
 
     case "/lokasi": {
       if (!arg) {
-        const loc = await getLocation();
+        const loc = await getLocation(u);
         await say(`Lokasi cuaca saat ini: ${loc.name}.\nGanti dengan: /lokasi <nama kota>`);
         return;
       }
-      const loc = await setLocation(arg);
+      const loc = await setLocation(u, arg);
       await say(loc ? `Lokasi cuaca diganti ke ${loc.name}.` : "Kota tidak ditemukan. Coba tulis nama kota yang lain.");
       return;
     }
@@ -149,11 +150,11 @@ async function handleCommand(cmd, arg, say) {
       return;
 
     case "/rekap":
-      await say((await recapText()).text);
+      await say((await recapText(u)).text);
       return;
 
     case "/hapusbeli": {
-      const raw = await redis("RPOP", "exp:" + wib().monthKey);
+      const raw = await redis("RPOP", key(u, "exp:" + wib().monthKey));
       if (!raw) { await say("Tidak ada pengeluaran bulan ini yang bisa dihapus."); return; }
       let e = {};
       try { e = JSON.parse(raw); } catch {}
@@ -162,7 +163,7 @@ async function handleCommand(cmd, arg, say) {
     }
 
     case "/catatan": {
-      const all = await redis("LRANGE", "notes", 0, -1);
+      const all = await redis("LRANGE", key(u, "notes"), 0, -1);
       if (!all || !all.length) { await say("Belum ada catatan. Tulis: catat: isi catatanmu"); return; }
       const start = Math.max(0, all.length - 10);
       const lines = all.slice(start).map((r, i) => {
@@ -176,7 +177,7 @@ async function handleCommand(cmd, arg, say) {
 
     case "/cari": {
       if (!arg) { await say("Pakai: /cari <kata kunci>"); return; }
-      const all = await redis("LRANGE", "notes", 0, -1);
+      const all = await redis("LRANGE", key(u, "notes"), 0, -1);
       const items = (all || []).map((r, i) => {
         let n = {};
         try { n = JSON.parse(r); } catch {}
@@ -191,7 +192,7 @@ async function handleCommand(cmd, arg, say) {
       if (!items.length) { await say("Belum ada catatan."); return; }
       // Tidak ada yang cocok persis: minta Gemini mencari yang maknanya mirip
       const listing = items.slice(-100).map((x) => `${x.i}. ${x.text}`).join("\n");
-      const out = await gemini(
+      const out = await gemini(u,
         "Kamu mencari catatan pengguna. Tulis teks biasa tanpa markdown.",
         [{ role: "user", parts: [{ text: `Catatan:\n${listing}\n\nCari catatan yang relevan dengan: "${arg}". Tulis nomor dan isinya. Jika tidak ada yang relevan, katakan tidak ada.` }] }]
       );
@@ -201,11 +202,11 @@ async function handleCommand(cmd, arg, say) {
 
     case "/hapuscatatan": {
       const n = parseInt(arg, 10);
-      const all = await redis("LRANGE", "notes", 0, -1);
+      const all = await redis("LRANGE", key(u, "notes"), 0, -1);
       if (!n || n < 1 || !all || n > all.length) { await say("Pakai: /hapuscatatan <nomor>. Lihat nomornya di /catatan."); return; }
       const rest = all.filter((_, i) => i !== n - 1);
-      await redis("DEL", "notes");
-      if (rest.length) await redis("RPUSH", "notes", ...rest);
+      await redis("DEL", key(u, "notes"));
+      if (rest.length) await redis("RPUSH", key(u, "notes"), ...rest);
       await say("Catatan dihapus.");
       return;
     }
@@ -213,19 +214,19 @@ async function handleCommand(cmd, arg, say) {
     case "/pagi":
     case "/checkin":
     case "/rekapauto": {
-      const key = TOGGLES[cmd];
+      const cfgKey = TOGGLES[cmd];
       const a = arg.toLowerCase();
       if (a !== "on" && a !== "off") {
         await say(`Pakai: ${cmd} on  atau  ${cmd} off. Status lengkap: /atur`);
         return;
       }
-      await redis("HSET", "cfg", key, a);
+      await redis("HSET", key(u, "cfg"), cfgKey, a);
       await say(`${cmd.slice(1)} sekarang ${a === "on" ? "aktif" : "dimatikan"}.`);
       return;
     }
 
     case "/atur": {
-      const [p, c, r, loc] = await Promise.all([cfgOn("pagi"), cfgOn("checkin"), cfgOn("rekapauto"), getLocation()]);
+      const [p, c, r, loc] = await Promise.all([cfgOn(u, "pagi"), cfgOn(u, "checkin"), cfgOn(u, "rekapauto"), getLocation(u)]);
       const s = (b) => (b ? "aktif" : "mati");
       const jam = (h) => String(h).padStart(2, "0") + ".00";
       await say(
@@ -244,12 +245,12 @@ async function handleCommand(cmd, arg, say) {
 }
 
 // ---------- Tag dari Gemini ----------
-async function processTags(reply) {
+async function processTags(u, reply) {
   const notes = [];
 
   // Tugas/checklist
   for (const m of reply.matchAll(/\[\[TASK:\s*([^\]]+?)\s*\]\]/g)) {
-    const t = await addTask(m[1]);
+    const t = await addTask(u, m[1]);
     if (t) notes.push("✅ Tugas ditambahkan: " + t.text);
   }
 
@@ -264,28 +265,28 @@ async function processTags(reply) {
     }
     const item = { id: Math.random().toString(36).slice(2, 10), text: label };
     if (repeat) item.repeat = repeat;
-    await redis("ZADD", "reminders", ts, JSON.stringify(item));
+    await redis("ZADD", key(u, "reminders"), ts, JSON.stringify(item));
     notes.push("⏰ Pengingat diset: " + label + (repeat ? " (" + REPEAT_LABEL[repeat] + ")" : "") + "\n" + fmtWib(ts));
   }
 
   // Fakta tentang pengguna
   let savedFacts = false;
   for (const m of reply.matchAll(/\[\[INGAT:\s*([^\]]+?)\s*\]\]/g)) {
-    await redis("RPUSH", "facts", m[1].trim().slice(0, 300));
+    await redis("RPUSH", key(u, "facts"), m[1].trim().slice(0, 300));
     savedFacts = true;
   }
-  if (savedFacts) await redis("LTRIM", "facts", -40, -1);
+  if (savedFacts) await redis("LTRIM", key(u, "facts"), -40, -1);
 
   // Pengeluaran
   for (const m of reply.matchAll(/\[\[BELI:\s*([^|\]]+?)\s*\|\s*([^|\]]+?)\s*\|\s*([^\]]*?)\s*\]\]/g)) {
     const amt = Number(String(m[1]).replace(/[^\d]/g, ""));
-    const e = await addExpense(amt, m[2].trim(), m[3].trim());
+    const e = await addExpense(u, amt, m[2].trim(), m[3].trim());
     if (e) notes.push("💰 Dicatat: " + rupiah(e.amt) + " (" + e.cat + ")" + (e.note ? " - " + e.note : ""));
   }
 
   // Catatan
   for (const m of reply.matchAll(/\[\[CATAT:\s*([^\]]+?)\s*\]\]/g)) {
-    const n = await addNote(m[1]);
+    const n = await addNote(u, m[1]);
     if (n) notes.push("🗒️ Dicatat: " + n.text);
   }
 
@@ -297,31 +298,34 @@ async function processTags(reply) {
 module.exports = async (req, res) => {
   if (req.method !== "POST") return res.status(200).send("ok");
 
-  // Pastikan request benar-benar dari Telegram
-  if (req.headers["x-telegram-bot-api-secret-token"] !== process.env.TELEGRAM_WEBHOOK_SECRET) {
-    return res.status(401).end();
-  }
-
   const msg = req.body && req.body.message;
   if (!msg) return res.status(200).end();
 
+  // Pengguna ditentukan dari ?u=<id> (webhook per pengguna). Tanpa ?u = bot lama milik pemilik data lama.
+  const u = String(req.query.u || "").match(/^[a-f0-9]{16}$/) ? req.query.u : await getOwnerId();
+  const bot = u ? await getBot(u) : null;
+  if (!bot) return res.status(200).end();
+
+  // Pastikan request benar-benar dari Telegram (secret per bot)
+  const sentSecret = req.headers["x-telegram-bot-api-secret-token"] || "";
+  if (!bot.secret || !safeEq(sentSecret, bot.secret)) return res.status(401).end();
+
   const chatId = String(msg.chat.id);
-  const owner = process.env.TELEGRAM_CHAT_ID;
-  const say = (t, extra) => sendTelegram(chatId, t, extra);
+  const say = (t, extra) => sendTelegram(u, chatId, t, extra);
 
   try {
-    // /id boleh dipakai siapa saja, untuk mengetahui chat ID saat setup
-    if (msg.text && msg.text.trim() === "/id") {
-      await say(`Chat ID kamu: ${chatId}\nIsi angka ini di env TELEGRAM_CHAT_ID di Vercel, lalu redeploy.`);
+    // Kunci chat: pesan pertama harus /start <kode> dari tautan di Pengaturan web
+    if (!bot.chatId) {
+      const m = !bot.legacy && msg.text && msg.text.trim().match(/^\/start(?:@\w+)?\s+(\w+)$/);
+      if (m && bot.linkCode && safeEq(m[1], bot.linkCode)) {
+        await saveBot(u, { ...bot, chatId, linkCode: null });
+        await say("✅ Terhubung! Bot ini sekarang terkunci ke chat ini.\n\n" + START_TEXT);
+      } else {
+        await say("Bot ini belum terhubung. Buka Pengaturan di web, lalu klik tautan Hubungkan Telegram.");
+      }
       return res.status(200).end();
     }
-
-    // Hanya pemilik yang dilayani
-    if (!owner) {
-      await say("Bot belum dikunci ke pemilik. Kirim /id untuk melihat chat ID-mu.");
-      return res.status(200).end();
-    }
-    if (chatId !== String(owner)) return res.status(200).end();
+    if (chatId !== String(bot.chatId)) return res.status(200).end();
 
     // Tombol permanen mengirim teks biasa; ubah jadi perintah
     const map = {
@@ -344,11 +348,11 @@ module.exports = async (req, res) => {
     let voice = false;
 
     if (msg.photo && msg.photo.length) {
-      const f = await downloadTelegramFile(msg.photo[msg.photo.length - 1].file_id);
+      const f = await downloadTelegramFile(u, msg.photo[msg.photo.length - 1].file_id);
       image = { mime: "image/jpeg", data: f.base64 };
     } else if (msg.voice) {
-      const f = await downloadTelegramFile(msg.voice.file_id);
-      const t = await gemini("Kamu hanya menulis transkrip.", [
+      const f = await downloadTelegramFile(u, msg.voice.file_id);
+      const t = await gemini(u, "Kamu hanya menulis transkrip.", [
         {
           role: "user",
           parts: [
@@ -370,20 +374,20 @@ module.exports = async (req, res) => {
     // Perintah
     if (isText && text.startsWith("/")) {
       const [rawCmd, ...rest] = text.split(/\s+/);
-      await handleCommand(rawCmd.split("@")[0].toLowerCase(), rest.join(" ").trim(), say);
+      await handleCommand(u, rawCmd.split("@")[0].toLowerCase(), rest.join(" ").trim(), say);
       return res.status(200).end();
     }
 
     // "catat: ..." disimpan langsung tanpa Gemini
     const cm = !image && text.match(/^catat(?:\s*:\s*|\s+)([\s\S]+)$/i);
     if (cm) {
-      const n = await addNote(cm[1]);
+      const n = await addNote(u, cm[1]);
       await say("🗒️ Dicatat: " + (n ? n.text : cm[1].trim()));
       return res.status(200).end();
     }
 
     // ---- Obrolan -> Gemini ----
-    const [mode, rawHist, ctx] = await Promise.all([redis("GET", "mode"), redis("GET", "hist"), loadContext()]);
+    const [mode, rawHist, ctx] = await Promise.all([redis("GET", key(u, "mode")), redis("GET", key(u, "hist")), loadContext(u)]);
 
     let hist = [];
     try { hist = rawHist ? JSON.parse(rawHist) : []; } catch {}
@@ -400,12 +404,12 @@ module.exports = async (req, res) => {
       };
     }
 
-    const raw = await gemini(buildSystem(mode, ctx), contents);
-    const { clean, notes } = await processTags(raw);
+    const raw = await gemini(u, buildSystem(mode, ctx), contents);
+    const { clean, notes } = await processTags(u, raw);
     const reply = clean || (notes.length ? "" : "(tidak ada jawaban)");
 
     hist.push({ role: "model", parts: [{ text: reply || "(dicatat)" }] });
-    await redis("SET", "hist", JSON.stringify(hist.slice(-30)));
+    await redis("SET", key(u, "hist"), JSON.stringify(hist.slice(-30)));
 
     const echo = voice && mode !== "curhat" ? `🎙️ "${text}"\n\n` : "";
     await say(echo + [reply, ...notes].filter(Boolean).join("\n\n"));

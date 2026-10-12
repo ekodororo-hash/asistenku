@@ -3,10 +3,11 @@
 // supaya tugas, catatan, uang, mode, dan riwayat obrolan tersinkron di kedua sisi.
 
 const {
-  requirePin, trimHist, fmtWib, rupiah,
+  trimHist, geminiRaw, fmtWib, rupiah,
   getMode, getHist, saveHist, getProfile,
   getTasks, addTask, getNotes, addNote, getExpenses, addExpense,
 } = require("./_lib");
+const { requireUser } = require("./_auth");
 
 const PERSONA = {
   asisten: `Kamu asisten pribadi sekaligus teman. Jawab dalam bahasa Indonesia yang santai, ringkas, dan membantu.
@@ -52,20 +53,20 @@ Tag khusus (taruh di baris terakhir balasan; pengguna tidak melihatnya):
 - Data ini juga dipakai lewat bot Telegram pengguna (tugas, catatan, uang, riwayat obrolan sama persis). Untuk pengingat berjam-jam/berulang, sarankan memakai bot Telegram.`;
 }
 
-async function processTags(reply) {
+async function processTags(u, reply) {
   const added = [];
 
   for (const m of reply.matchAll(/\[\[TASK:\s*([^\]]+?)\s*\]\]/g)) {
-    const t = await addTask(m[1]);
+    const t = await addTask(u, m[1]);
     if (t) added.push("✅ Tugas ditambahkan: " + t.text);
   }
   for (const m of reply.matchAll(/\[\[CATAT:\s*([^\]]+?)\s*\]\]/g)) {
-    const n = await addNote(m[1]);
+    const n = await addNote(u, m[1]);
     if (n) added.push("🗒️ Dicatat: " + n.text);
   }
   for (const m of reply.matchAll(/\[\[BELI:\s*([^|\]]+?)\s*\|\s*([^|\]]+?)\s*\|\s*([^\]]*?)\s*\]\]/g)) {
     const amt = Number(String(m[1]).replace(/[^\d]/g, ""));
-    const e = await addExpense(amt, m[2].trim(), m[3].trim());
+    const e = await addExpense(u, amt, m[2].trim(), m[3].trim());
     if (e) added.push("💰 Dicatat: " + rupiah(e.amt) + " (" + e.cat + ")" + (e.note ? " - " + e.note : ""));
   }
 
@@ -87,20 +88,15 @@ module.exports = async (req, res) => {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Gunakan metode POST" });
   }
-  if (!requirePin(req, res)) return;
-
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) {
-    return res.status(500).json({ error: "GEMINI_API_KEY belum diisi di Vercel" });
-  }
-  const model = process.env.GEMINI_MODEL || "gemini-flash-latest";
+  const u = await requireUser(req, res);
+  if (!u) return;
 
   const text = String((req.body || {}).text || "").trim().slice(0, 4000);
   if (!text) return res.status(400).json({ error: "Pesan kosong" });
 
   try {
     const [mode, hist, tasks, notes, expenses, profile] = await Promise.all([
-      getMode(), getHist(), getTasks(), getNotes(), getExpenses(), getProfile(),
+      getMode(u), getHist(u), getTasks(u), getNotes(u), getExpenses(u), getProfile(u),
     ]);
 
     const taskList = tasks.length
@@ -115,26 +111,15 @@ module.exports = async (req, res) => {
     const userTurn = { role: "user", parts: [{ text }] };
     const contents = trimHist([...hist, userTurn]);
 
-    const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-        body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents }),
-      }
-    );
-    const data = await r.json();
-    if (!r.ok) {
-      return res.status(r.status).json({ error: data?.error?.message || "Gagal memanggil Gemini" });
-    }
+    const data = await geminiRaw(u, { systemInstruction: { parts: [{ text: system }] }, contents });
     const raw = (data.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("");
-    const { clean, added } = await processTags(raw);
+    const { clean, added } = await processTags(u, raw);
     const reply = clean || (added.length ? "" : "(tidak ada jawaban)");
 
     const newHist = [...hist, userTurn, { role: "model", parts: [{ text: reply || "(dicatat)" }] }];
-    await saveHist(newHist);
+    await saveHist(u, newHist);
 
-    const [freshTasks, freshNotes, freshExpenses] = await Promise.all([getTasks(), getNotes(), getExpenses()]);
+    const [freshTasks, freshNotes, freshExpenses] = await Promise.all([getTasks(u), getNotes(u), getExpenses(u)]);
     return res.status(200).json({
       reply, added,
       tasks: freshTasks,
@@ -142,6 +127,6 @@ module.exports = async (req, res) => {
       expenses: freshExpenses.slice(-100).reverse(),
     });
   } catch (e) {
-    return res.status(500).json({ error: "Server error: " + e.message });
+    return res.status(e.status || 500).json({ error: e.status ? e.message : "Server error: " + e.message });
   }
 };
