@@ -6,7 +6,7 @@ const {
   trimHist, geminiRaw, geminiSearch, sourceLine, REMIND_INTENT, DELETE_INTENT, deleteReminderNumber, fmtWib, rupiah,
   getMode, takeCurhatExpiredNotice, getHist, saveHist, getProfile, gemini, loadCurhatContext, buildCurhatSystem, stripTags,
   getTasks, addTask, getNotes, addNote, getExpenses, addExpense,
-  getReminders, addReminder, getBot, sendTelegram, cfgOn, quotaStatus, setSaldo, moneyContext, parseWib, addIncome, getIncomes, moneySummary,
+  getReminders, addReminder, getBot, sendTelegram, cfgOn, quotaStatus, setSaldo, addOutsideMoney, moneyContext, parseWib, addIncome, getIncomes, moneySummary,
   partnerContext, incomingTransfers, sendTransfer, handlePartnerIncome, answerDupMasuk,
 } = require("./_lib");
 
@@ -67,7 +67,7 @@ Tag khusus (taruh di baris terakhir balasan; pengguna tidak melihatnya):
   Jumlah rupiah angka bulat tanpa titik ("25rb" = 25000, "1,5jt" = 1500000). Kategori satu kata: makan, transport, belanja, tagihan, hiburan, kesehatan, lainnya.
 - Pemasukan / uang masuk yang sudah terjadi (mis. "gajian 3jt", "dapat bonus 500rb"): [[MASUK: 3000000 | gaji | gajian]]
   Format angka sama seperti BELI. Kategori satu kata: gaji, bonus, usaha, hadiah, lainnya. Jangan pakai SALDO untuk uang masuk baru.
-- Saldo/uang yang dimiliki pengguna sekarang (mis. \"uangku sekarang 500rb\"): [[SALDO: 500000]]. Angka bulat tanpa titik. Sisa uang = saldo + pemasukan - pengeluaran tercatat setelahnya (sudah dihitung di data uang di atas; jangan menebak kalau saldo belum diketahui).
+- Saldo/uang yang dimiliki pengguna sekarang (mis. \"uangku sekarang 500rb\"): [[SALDO: 500000]]. Kalau yang disebut uang TAMBAHAN di luar catatan (bukan total), pakai [[SALDO_LAIN: 65000]]. Angka bulat tanpa titik. Sisa uang = saldo + pemasukan - pengeluaran tercatat setelahnya (sudah dihitung di data uang di atas; jangan menebak kalau saldo belum diketahui).
 - Kamu punya akses pencarian Google. Untuk hal yang terkini atau bisa berubah (jadwal pertandingan, skor, harga, berita, cuaca, hasil, tanggal rilis), cari dulu lalu jawab; jangan bilang kamu tidak bisa browsing. Jawab ringkas dan sebut waktu/tanggal datanya kalau penting. Hasil pencarian tidak perlu dicatat kecuali pengguna minta.
 - Pertanyaan info (kurs, jadwal, harga, berita, dll) dijawab SEKARANG dalam balasan yang sama. Jangan bilang "sebentar aku cek" lalu membuat pengingat atau tugas; REMIND hanya kalau pengguna jelas minta diingatkan.
 - Buat tag HANYA untuk permintaan di pesan pengguna yang TERBARU. Permintaan di pesan-pesan sebelumnya sudah diproses; jangan mengulang tagnya. Baris berawalan ⏰ ✅ 🗒️ 💰 💵 🗑️ di akhir balasanmu sebelumnya ditulis otomatis oleh sistem setelah tag berhasil diproses; itu tandanya permintaan tersebut SUDAH SELESAI. Jangan menulis baris seperti itu sendiri.
@@ -132,6 +132,10 @@ async function processTags(u, reply, userText = "") {
     const sd = await setSaldo(u, Number(String(m[1]).replace(/[^\d]/g, "")));
     if (sd) added.push("💵 Saldo dicatat: " + rupiah(sd.amt));
   }
+  for (const m of reply.matchAll(/\[\[SALDO_LAIN:\s*([^\]]+?)\s*\]\]/g)) {
+    const r = await addOutsideMoney(u, Number(String(m[1]).replace(/[^\d]/g, "")));
+    if (r) added.push("💵 Uang lain " + rupiah(r.extra) + " ditambahkan ke catatan (" + rupiah(r.base) + "). Sisa uang sekarang: " + rupiah(r.saldo.amt));
+  }
 
   // Hapus pengingat (hanya kalau pesan pengguna memang meminta menghapus/membatalkan)
   if (DELETE_INTENT.test(userText)) {
@@ -142,7 +146,7 @@ async function processTags(u, reply, userText = "") {
     }
   }
 
-  const clean = reply.replace(/\[\[(TASK|REMIND|CATAT|BELI|MASUK|KIRIM|PASANGAN_MASUK|SALDO|HAPUS_PENGINGAT):[\s\S]*?\]\]/g, "").trim();
+  const clean = reply.replace(/\[\[(TASK|REMIND|CATAT|BELI|MASUK|KIRIM|PASANGAN_MASUK|SALDO_LAIN|SALDO|HAPUS_PENGINGAT):[\s\S]*?\]\]/g, "").trim();
   return { clean, added };
 }
 

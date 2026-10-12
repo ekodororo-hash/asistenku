@@ -4,7 +4,7 @@ const {
   fmtWib, wib, rupiah, cfgOn, getLocation, setLocation, getWeather, getNews,
   recapText, deleteExpenseNumber, incomeListText, deleteIncomeNumber, loadContext, buildSystem,
   getTasks, addTask, toggleTask, deleteTask, unlinkTaskReminder, parseWib, fmtDue,
-  addNote, addExpense, addIncome, setSaldo, fmtDateShort,
+  addNote, addExpense, addIncome, setSaldo, addOutsideMoney, fmtDateShort,
   sendTransfer, acceptTransfer, declineTransfer, handlePartnerIncome, answerDupMasuk,
   getMode, switchMode, takeCurhatExpiredNotice, getHist, saveHist, clearHist, loadCurhatContext, buildCurhatSystem, stripTags,
 } = require("./_lib");
@@ -512,6 +512,10 @@ async function processTags(u, reply, userText = "") {
     const sd = await setSaldo(u, Number(String(m[1]).replace(/[^\d]/g, "")));
     if (sd) notes.push("💵 Saldo dicatat: " + rupiah(sd.amt));
   }
+  for (const m of reply.matchAll(/\[\[SALDO_LAIN:\s*([^\]]+?)\s*\]\]/g)) {
+    const r = await addOutsideMoney(u, Number(String(m[1]).replace(/[^\d]/g, "")));
+    if (r) notes.push("💵 Uang lain " + rupiah(r.extra) + " ditambahkan ke catatan (" + rupiah(r.base) + "). Sisa uang sekarang: " + rupiah(r.saldo.amt));
+  }
 
   // Catatan
   for (const m of reply.matchAll(/\[\[CATAT:\s*([^\]]+?)\s*\]\]/g)) {
@@ -529,7 +533,7 @@ async function processTags(u, reply, userText = "") {
     }
   }
 
-  const clean = reply.replace(/\[\[(TASK|REMIND|INGAT|BELI|MASUK|KIRIM|PASANGAN_MASUK|CATAT|SALDO|HAPUS_PENGINGAT):[\s\S]*?\]\]/g, "").trim();
+  const clean = reply.replace(/\[\[(TASK|REMIND|INGAT|BELI|MASUK|KIRIM|PASANGAN_MASUK|CATAT|SALDO_LAIN|SALDO|HAPUS_PENGINGAT):[\s\S]*?\]\]/g, "").trim();
   return { clean, notes };
 }
 

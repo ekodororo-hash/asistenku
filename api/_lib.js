@@ -1118,7 +1118,18 @@ async function moneySummary(u) {
     const [e2, i2] = await Promise.all([expensesSince(u, saldo.ts), incomesSince(u, saldo.ts)]);
     remaining = saldo.amt + i2.reduce((s, e) => s + e.amt, 0) - e2.reduce((s, e) => s + e.amt, 0);
   }
-  return { income, expense, net: income - expense, saldo: saldo ? saldo.amt : null, saldoTs: saldo ? saldo.ts : null, remaining };
+  // Belum ada saldo: perkiraan dari pemasukan - pengeluaran bulan ini (tandai estimated), jangan dibiarkan kosong
+  const estimated = !saldo && (inc.length > 0 || exp.length > 0);
+  if (estimated) remaining = income - expense;
+  return { income, expense, net: income - expense, saldo: saldo ? saldo.amt : null, saldoTs: saldo ? saldo.ts : null, remaining, estimated };
+}
+// Uang lain di luar catatan (mis. "aku punya 65rb sebelum dikasih"): ditambahkan ke sisa uang sekarang, bukan menimpanya
+async function addOutsideMoney(u, amt) {
+  const n = Math.round(Number(amt));
+  if (!Number.isFinite(n) || n < 0 || n > 1e12) return null;
+  const sm = await moneySummary(u);
+  const sd = await setSaldo(u, (sm.remaining || 0) + n);
+  return sd ? { saldo: sd, base: sm.remaining || 0, extra: n } : null;
 }
 async function moneyContext(u) {
   const [month, incs, saldo] = await Promise.all([getExpenses(u), getIncomes(u), getSaldo(u)]);
@@ -1149,7 +1160,14 @@ async function moneyContext(u) {
       `dan kalau menjelaskan rinciannya sebutkan SEMUA pemasukan di atas (termasuk kiriman dari pasangan), bukan hanya satu. ` +
       `(Kalau pengguna menyebut saldo terbaru, catat ulang dengan tag SALDO.)`;
   } else {
-    out += "\nSaldo awal pengguna BELUM diketahui. Jangan menebak sisa uang; kalau ditanya sisa uang, minta pengguna menyebut uangnya sekarang, lalu catat dengan tag SALDO.";
+    const expT = month.reduce((s, e) => s + e.amt, 0), incT = incs.reduce((s, e) => s + e.amt, 0);
+    if (incs.length || month.length) {
+      out += `\nSaldo awal pengguna BELUM diketahui. PERKIRAAN SISA UANG dari catatan bulan ini saja: ${incT - expT < 0 ? "-" : ""}${rupiah(Math.abs(incT - expT))} (semua pemasukan dikurangi semua pengeluaran di atas). ` +
+        `Kalau ditanya sisa uang, jawab angka itu sebagai perkiraan dan sebutkan SEMUA pemasukan dan pengeluarannya, lalu tanya SATU kali apakah ada uang lain di luar catatan. ` +
+        `Kalau ada, pengguna cukup menyebut jumlah uang lain itu saja (bukan total); catat dengan tag SALDO_LAIN, jangan SALDO, supaya pemasukan yang sudah tercatat tidak hilang.`;
+    } else {
+      out += "\nSaldo awal pengguna BELUM diketahui dan belum ada pemasukan/pengeluaran. Kalau ditanya sisa uang, minta pengguna menyebut uangnya sekarang, lalu catat dengan tag SALDO.";
+    }
   }
   return out;
 }
@@ -1197,6 +1215,7 @@ Tag khusus (ditaruh di baris terakhir balasan; pengguna tidak melihatnya):
 - Pemasukan / uang masuk yang sudah terjadi (mis. "gajian 3jt", "dapat bonus 500rb", "dikasih ortu 200rb"): [[MASUK: 3000000 | gaji | gajian]]
   Format angka sama seperti BELI. Kategori satu kata: gaji, bonus, usaha, hadiah, lainnya. Jangan pakai MASUK untuk pengeluaran, dan jangan pakai SALDO untuk uang masuk baru (SALDO hanya untuk saat pengguna menyebut total uangnya sekarang).
 - Saldo/uang yang dimiliki pengguna sekarang (mis. \"uangku sekarang 500rb\", \"saldo 1,2jt\"): [[SALDO: 500000]]. Angka bulat tanpa titik. Sisa uang dihitung dari saldo dikurangi pengeluaran yang tercatat setelahnya.
+  PENTING: SALDO menimpa semua perhitungan sebelumnya. Kalau pengguna menyebut uang tambahan di luar catatan (mis. \"aku punya 65rb di luar itu\"), pakai [[SALDO_LAIN: 65000]]: sistem menambahkannya ke sisa uang dari catatan. Kalau belum jelas angkanya total atau tambahan sementara ada pemasukan tercatat, tanyakan dulu sebelum membuat tag.
 - Tugas/checklist (pekerjaan yang perlu dikerjakan): [[TASK: isi tugas singkat]]
   Kalau pengguna menyebut jam/hari untuk tugas itu (mis. "nyuci piring besok jam 7"), tambahkan waktu: [[TASK: nyuci piring | 2026-10-13T07:00:00+07:00]]. Tugas berjam otomatis jadi pengingat yang bunyi tepat waktu dan dibatalkan kalau tugasnya dicentang selesai. Jangan buat TASK dan REMIND sekaligus untuk hal yang sama.
   Pakai REMIND hanya untuk pengingat murni yang bukan tugas (minum obat, rapat, tagihan) atau yang berulang.
@@ -1540,7 +1559,7 @@ module.exports = {
   recapText, deleteExpenseNumber, loadContext, buildSystem, loadCurhatContext, buildCurhatSystem, stripTags,
   getTasks, addTask, toggleTask, deleteTask, unlinkTaskReminder, parseWib, fmtDue,
   getNotes, addNote, deleteNoteById,
-  getExpenses, addExpense, deleteExpenseById, getSaldo, setSaldo, moneyContext,
+  getExpenses, addExpense, deleteExpenseById, getSaldo, setSaldo, addOutsideMoney, moneyContext,
   getIncomes, addIncome, deleteIncomeById, incomesSince, moneySummary, incomeListText, deleteIncomeNumber,
   getProfile, saveProfile,
   getMode, setMode, switchMode, takeCurhatExpiredNotice, CURHAT_TTL,
