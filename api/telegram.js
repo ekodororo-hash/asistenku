@@ -1,6 +1,6 @@
 // Webhook bot Telegram: /api/telegram
 const {
-  HOURS, BTN, redis, key, getBot, saveBot, sendTelegram, downloadTelegramFile, gemini, geminiSearch, sourceLine, REMIND_INTENT, trimHist,
+  HOURS, BTN, redis, tg, key, getBot, saveBot, sendTelegram, downloadTelegramFile, gemini, geminiSearch, sourceLine, REMIND_INTENT, trimHist,
   fmtWib, wib, rupiah, cfgOn, getLocation, setLocation, getWeather, getNews,
   recapText, deleteExpenseNumber, incomeListText, deleteIncomeNumber, loadContext, buildSystem,
   getTasks, addTask, toggleTask, deleteTask, unlinkTaskReminder, parseWib, fmtDue,
@@ -13,9 +13,36 @@ const PLAN_PROMPT =
   "Bantu aku susun rencana hari ini berdasarkan pengingat dan hal yang kamu tahu tentang aku. Tanya aku kalau butuh info tambahan.";
 
 const REPEAT_LABEL = { harian: "tiap hari", mingguan: "tiap minggu", bulanan: "tiap bulan" };
-// Pilihan saat keluar dari mode curhat (dikirim sebagai tombol, jawabannya masuk sebagai teks biasa)
+// Pilihan saat keluar dari mode curhat: tombol di bawah pesan (inline), jawabannya masuk sebagai callback_query
 const EXIT = { del: "🗑️ Hapus & keluar", keep: "💾 Simpan dulu", stay: "↩️ Tetap curhat" };
-const EXIT_KEYBOARD = { keyboard: [[EXIT.del, EXIT.keep], [EXIT.stay]], resize_keyboard: true, one_time_keyboard: true };
+const EXIT_BUTTONS = {
+  inline_keyboard: [
+    [{ text: EXIT.del, callback_data: "exit:delete" }, { text: EXIT.keep, callback_data: "exit:keep" }],
+    [{ text: EXIT.stay, callback_data: "exit:stay" }],
+  ],
+};
+
+// Tombol inline butuh webhook menerima callback_query. Bot lama didaftarkan hanya untuk "message",
+// jadi sebelum menampilkan tombol, daftarkan ulang (URL dan secret sama, antrean tidak dibuang).
+async function ensureCallbacks(u, bot, req) {
+  const host = req.headers["x-forwarded-host"] || req.headers.host;
+  if (!host || !bot.secret) return;
+  const url = `https://${host}/api/telegram` + (/^[a-f0-9]{16}$/.test(String(req.query.u || "")) ? `?u=${u}` : "");
+  try { await tg(bot.token, "setWebhook", { url, secret_token: bot.secret, allowed_updates: ["message", "callback_query"] }); } catch {}
+}
+
+// Jalankan pilihan keluar dari curhat; mengembalikan teks hasilnya
+async function resolveExit(u, choice) {
+  const waiting = await redis("GET", key(u, "exitcurhat"));
+  await redis("DEL", key(u, "exitcurhat"));
+  if (!waiting) return "Pilihan tadi sudah kedaluwarsa. Kalau mau keluar dari mode curhat, ketik /asisten lagi.";
+  if (choice === "stay") return "Oke, kita lanjut. Aku masih di sini.";
+  if ((await getMode(u)) !== "curhat") return "Kamu sudah tidak di mode curhat.";
+  await switchMode(u, "asisten", choice);
+  return choice === "delete"
+    ? "🗑️ Obrolan curhat dihapus. Sekarang di mode asisten. Ada yang perlu dibantu?"
+    : "💾 Obrolan curhat disimpan. Sekarang di mode asisten. Mau lanjut curhat, ketik /curhat. Hapus kapan saja: /curhat lalu /reset.";
+}
 
 // Pasang foto (kalau ada) pada giliran user terakhir
 function withImage(contents, image, text) {
@@ -162,7 +189,7 @@ async function mulaiModeTugas(u, mode, say) {
 }
 
 // ---------- Perintah ----------
-async function handleCommand(u, cmd, arg, say) {
+async function handleCommand(u, cmd, arg, say, ensureCb) {
   switch (cmd) {
     case "/start":
     case "/help":
@@ -185,13 +212,14 @@ async function handleCommand(u, cmd, arg, say) {
     case "/asisten": {
       const r = await switchMode(u, "asisten"); // tanpa keputusan: kalau curhat masih ada isinya, hanya mengembalikan needConfirm
       if (r.needConfirm) {
+        if (ensureCb) await ensureCb();
         await redis("SET", key(u, "exitcurhat"), "1", "EX", "300");
         await say(
           "Obrolan curhat akan dihapus kalau kamu keluar dari mode curhat. Lanjut?\n\n" +
-            `${EXIT.del}: obrolan curhat dihapus, tidak bisa dikembalikan.\n` +
-            `${EXIT.keep}: keluar, tapi obrolan curhat tetap tersimpan sampai kamu hapus sendiri.\n` +
-            `${EXIT.stay}: batal, tetap di mode curhat.`,
-          { reply_markup: EXIT_KEYBOARD }
+            "Hapus & keluar: dihapus, tidak bisa dikembalikan.\n" +
+            "Simpan dulu: keluar, tapi obrolan curhat tetap tersimpan sampai kamu hapus sendiri.\n" +
+            "Tetap curhat: batal.",
+          { reply_markup: EXIT_BUTTONS }
         );
         return;
       }
@@ -481,7 +509,8 @@ async function processTags(u, reply, userText = "") {
 module.exports = async (req, res) => {
   if (req.method !== "POST") return res.status(200).send("ok");
 
-  const msg = req.body && req.body.message;
+  const cq = req.body && req.body.callback_query;
+  const msg = (req.body && req.body.message) || (cq && cq.message);
   if (!msg) return res.status(200).end();
 
   // Pengguna ditentukan dari ?u=<id> (webhook per pengguna). Tanpa ?u = bot lama milik pemilik data lama.
@@ -497,6 +526,7 @@ module.exports = async (req, res) => {
   const say = (t, extra) => sendTelegram(u, chatId, t, extra);
 
   try {
+    if (cq && !bot.chatId) return res.status(200).end();
     // Kunci chat: pesan pertama harus /start <kode> dari tautan di Pengaturan web
     if (!bot.chatId) {
       const m = !bot.legacy && msg.text && msg.text.trim().match(/^\/start(?:@\w+)?\s+(\w+)$/);
@@ -509,6 +539,17 @@ module.exports = async (req, res) => {
       return res.status(200).end();
     }
     if (chatId !== String(bot.chatId)) return res.status(200).end();
+
+    // Tombol di bawah pesan (callback_query): saat ini hanya pilihan keluar dari mode curhat
+    if (cq) {
+      try { await tg(bot.token, "answerCallbackQuery", { callback_query_id: cq.id }); } catch {}
+      const m = String(cq.data || "").match(/^exit:(delete|keep|stay)$/);
+      if (m) {
+        const result = await resolveExit(u, m[1]);
+        await tg(bot.token, "editMessageText", { chat_id: chatId, message_id: msg.message_id, text: result }); // tombol hilang, tidak bisa ditekan dua kali
+      }
+      return res.status(200).end();
+    }
 
     // Tombol permanen mengirim teks biasa; ubah jadi perintah
     const map = {
@@ -531,24 +572,17 @@ module.exports = async (req, res) => {
 
     // Setelah /rekap atau /hapuscatatan: balasan angka = nomor entri yang dihapus (tidak diteruskan ke Gemini).
     // Pesan lain apa pun membatalkan mode ini.
-    // Jawaban atas pertanyaan "keluar dari mode curhat?" (diminta lewat /asisten atau tombol Mode Asisten)
-    if (isText && Object.values(EXIT).includes(text)) {
-      const waiting = await redis("GET", key(u, "exitcurhat"));
-      await redis("DEL", key(u, "exitcurhat"));
-      if (!waiting) {
-        await say("Pilihan tadi sudah kedaluwarsa. Kalau mau keluar dari mode curhat, ketik /asisten lagi.");
-      } else if (text === EXIT.stay) {
-        await say("Oke, kita lanjut. Aku masih di sini.");
-      } else if ((await getMode(u)) !== "curhat") {
-        await say("Kamu sudah tidak di mode curhat.");
-      } else {
-        const del = text === EXIT.del;
-        await switchMode(u, "asisten", del ? "delete" : "keep");
-        await say(del
-          ? "🗑️ Obrolan curhat dihapus. Sekarang di mode asisten. Ada yang perlu dibantu?"
-          : "💾 Obrolan curhat disimpan. Sekarang di mode asisten. Mau lanjut curhat, ketik /curhat. Hapus kapan saja: /curhat lalu /reset.");
+    // Jawaban ketikan untuk pertanyaan "keluar dari mode curhat?" (cadangan kalau tombol tidak dipakai).
+    // Kata biasa seperti "hapus" hanya dihitung kalau pertanyaannya memang sedang menunggu jawaban.
+    if (isText) {
+      let choice = null;
+      if (text === EXIT.del) choice = "delete";
+      else if (text === EXIT.keep) choice = "keep";
+      else if (text === EXIT.stay) choice = "stay";
+      else if (/^(hapus|simpan|batal|tetap)( dulu| curhat| & keluar)?$/i.test(text) && (await redis("GET", key(u, "exitcurhat")))) {
+        choice = { hapus: "delete", simpan: "keep", batal: "stay", tetap: "stay" }[text.toLowerCase().split(" ")[0]];
       }
-      return res.status(200).end();
+      if (choice) { await say(await resolveExit(u, choice)); return res.status(200).end(); }
     }
 
     if (isText) {
@@ -638,7 +672,7 @@ module.exports = async (req, res) => {
     // Perintah
     if (isText && text.startsWith("/")) {
       const [rawCmd, ...rest] = text.split(/\s+/);
-      await handleCommand(u, rawCmd.split("@")[0].toLowerCase(), rest.join(" ").trim(), say);
+      await handleCommand(u, rawCmd.split("@")[0].toLowerCase(), rest.join(" ").trim(), say, () => ensureCallbacks(u, bot, req));
       return res.status(200).end();
     }
 

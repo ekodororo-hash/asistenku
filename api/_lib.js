@@ -119,7 +119,7 @@ async function setupBot(u, tokenIn, baseUrl) {
   const wh = await tg(token, "setWebhook", {
     url: `${baseUrl}/api/telegram?u=${u}`,
     secret_token: secret,
-    allowed_updates: ["message"],
+    allowed_updates: ["message", "callback_query"],
     drop_pending_updates: true,
   });
   if (!wh.ok) throw new Error("Gagal mendaftarkan webhook: " + (wh.description || "tidak diketahui"));
@@ -1271,7 +1271,7 @@ const stripTags = (t) => String(t || "").replace(/\[\[[A-Z]+:[\s\S]*?\]\]/g, "")
 module.exports = {
   TZ, DAY, HOUR, HOURS, BTN,
   uid, key, MAX_KEYS, getBot, saveBot, setupBot, removeBot, relinkBot, botStatus, botUsers, listGeminiKeys, getModelCfg, saveModelCfg, listGeminiModels, keyState, quotaStatus, getKeyHistory, clearKeyHistory, testGeminiKey, addGeminiKey, renameGeminiKey, deleteGeminiKey, moveGeminiKey,
-  redis, sendTelegram, downloadTelegramFile, gemini, geminiRaw, geminiSearch, sourceLine, REMIND_INTENT, trimHist, appendModelToHist,
+  redis, tg, sendTelegram, downloadTelegramFile, gemini, geminiRaw, geminiSearch, sourceLine, REMIND_INTENT, trimHist, appendModelToHist,
   fmtWib, fmtTime, fmtDateShort, wib, startOfDayWib, nextRepeat, rupiah,
   cfgOn, getLocation, setLocation, getWeather, getNews,
   recapText, deleteExpenseNumber, loadContext, buildSystem, loadCurhatContext, buildCurhatSystem, stripTags,
