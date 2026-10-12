@@ -61,28 +61,47 @@ function withImage(contents, image, text) {
 const TOGGLES = { "/pagi": "pagi", "/checkin": "checkin", "/rekapauto": "rekapauto", "/salin": "mirror" };
 
 const START_TEXT =
-  "Halo! Aku asistan pribadi sekaligus teman ceritamu. Pakai tombol di bawah, atau langsung tulis, kirim foto, atau voice note.\n\n" +
-  "Contoh:\n" +
-  "- \"Ingatkan aku besok jam 8 bayar listrik\"\n" +
-  "- \"Ingatkan tiap Senin jam 9 rapat tim\"\n" +
-  "- \"makan siang 25rb\" (catat pengeluaran)\n" +
-  "- \"gajian 3jt\" (catat pemasukan)\n" +
-  "- \"catat: ide konten minggu depan\"\n" +
-  "- kirim foto struk, atau voice note\n\n" +
-  "Perintah:\n" +
-  "/pengingat  /hapus N\n" +
-  "/tugas  /tugasdone  /hapustugas (lalu balas nomor)\n" +
-  "/rekap (pengeluaran, lalu balas nomor untuk hapus)  /batal\n" +
-  "/masuk (pemasukan, lalu balas nomor untuk hapus)\n" +
+  "👋 Halo! Aku asisten pribadi sekaligus teman ceritamu.\n" +
+  "Tinggal tulis, kirim foto, atau voice note. Atau pakai tombol di bawah.\n\n" +
+  "💡 CONTOH\n" +
+  "• \"Ingatkan aku besok jam 8 bayar listrik\"\n" +
+  "• \"Ingatkan tiap Senin jam 9 rapat tim\"\n" +
+  "• \"makan siang 25rb\" → catat pengeluaran\n" +
+  "• \"gajian 3jt\" → catat pemasukan\n" +
+  "• \"catat: ide konten minggu depan\"\n" +
+  "• Kirim foto struk atau voice note\n\n" +
+  "⏰ PENGINGAT & TUGAS\n" +
+  "/pengingat → daftar pengingat\n" +
+  "/hapus N → hapus pengingat nomor N\n" +
+  "/tugas → daftar tugas\n" +
+  "/tugasdone → tandai tugas selesai\n" +
+  "/hapustugas → hapus tugas\n\n" +
+  "💸 UANG\n" +
+  "/rekap → pengeluaran bulan ini\n" +
+  "/masuk → pemasukan bulan ini\n" +
   "Hapus entri: balas nomornya saja (3) atau ketik \"hapus 3\" setelah /rekap atau /masuk.\n" +
-  "/catatan  /cari kata  /hapuscatatan (lalu balas nomor)\n" +
-  "/cuaca  /lokasi kota  /berita topik\n" +
-  "/memori  /lupakan  /atur\n" +
-  "/curhat  /asisten  /reset (hapus riwayat mode yang sedang aktif)\n\n" +
-  `Otomatis: ringkasan pagi, check-in malam, dan rekap uang mingguan. Atur di /atur.\n` +
-  "Aku mengingat hal-hal penting tentangmu supaya ngobrolnya nyambung. Lihat dengan /memori, hapus dengan /lupakan.\n\n" +
-  "Tugas, catatan, uang, dan obrolan mode asisten di sini sama persis dengan yang ada di web. Pesan yang kamu tulis di web juga disalin ke sini (matikan dengan /salin off).\n" +
-  "Mode curhat dipisah: riwayatnya sendiri, tidak membuat tugas/catatan/pengingat/uang, tidak masuk memori, dan tidak disalin dari web.";
+  "/batal → batalkan aksi yang sedang berjalan\n\n" +
+  "📝 CATATAN\n" +
+  "/catatan → daftar catatan\n" +
+  "/cari kata → cari catatan\n" +
+  "/hapuscatatan → hapus catatan\n\n" +
+  "🌤️ INFO\n" +
+  "/cuaca → cuaca di kotamu\n" +
+  "/lokasi kota → ganti kota\n" +
+  "/berita topik → berita terbaru\n\n" +
+  "🧠 MEMORI & PENGATURAN\n" +
+  "/memori → lihat yang kuingat tentangmu\n" +
+  "/lupakan → hapus memori\n" +
+  "/atur → atur notifikasi otomatis\n\n" +
+  "💬 MODE\n" +
+  "/asisten → mode asisten\n" +
+  "/curhat → mode curhat\n" +
+  "/reset → hapus riwayat mode yang sedang aktif\n\n" +
+  "🔔 OTOMATIS\n" +
+  "Ringkasan pagi, check-in malam, dan rekap uang mingguan. Atur lewat /atur.\n\n" +
+  "🔄 SINKRON DENGAN WEB\n" +
+  "Tugas, catatan, uang, dan obrolan mode asisten sama persis dengan di web. Pesan yang kamu tulis di web juga disalin ke sini (matikan dengan /salin off).\n\n" +
+  "🔒 Mode curhat dipisah: riwayatnya sendiri, tidak membuat tugas/catatan/pengingat/uang, tidak masuk memori, dan tidak disalin dari web.";
 
 // ---------- Hapus pengeluaran (dipakai /hapusbeli dan balasan angka setelah /rekap) ----------
 // Mengembalikan true kalau selesai (berhasil / memang kosong), false kalau nomor salah (pengguna boleh coba lagi).
