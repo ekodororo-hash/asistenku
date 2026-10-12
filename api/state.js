@@ -13,6 +13,7 @@ const {
   getMode, switchMode,
   getHist, clearHist, getBot,
   getReminders, addReminder, deleteReminderById,
+  linkStatus, makeLinkCode, useLinkCode, unlinkPartner, incomingTransfers, acceptTransfer, declineTransfer,
 } = require("./_lib");
 
 // Riwayat -> bentuk yang dipakai web
@@ -31,9 +32,10 @@ module.exports = async (req, res) => {
       // ?light=1: dipakai web untuk penyegaran berkala (tanpa key dan tanpa panggilan ke Telegram)
       const light = !!(req.query && req.query.light);
       const mode = await getMode(u);
-      const [tasks, notes, expenses, incomes, money, profile, hist, reminders, kstate, bot, rawBot, mcfg] = await Promise.all([
+      const [tasks, notes, expenses, incomes, money, profile, hist, reminders, kstate, bot, rawBot, mcfg, xferIn, link] = await Promise.all([
         getTasks(u), getNotes(u), getExpenses(u), getIncomes(u), moneySummary(u), getProfile(u), getHist(u, mode), getReminders(u),
         light ? null : keyState(u), light ? null : botStatus(u), light ? getBot(u).catch(() => null) : null, light ? null : getModelCfg(u),
+        incomingTransfers(u).catch(() => []), light ? null : linkStatus(u).catch(() => null),
       ]);
       const botLinked = light ? !!(rawBot && rawBot.chatId) : !!(bot && bot.linked);
       const messages = toMessages(hist); // riwayat milik mode yang sedang aktif
@@ -43,8 +45,8 @@ module.exports = async (req, res) => {
         expenses: expenses.slice(-100).reverse(),
         incomes: incomes.slice(-100).reverse(),
         money,
-        profile, mode, messages, reminders, botLinked,
-        ...(light ? {} : { geminiKeys: kstate.keys, keyHistoryCount: kstate.history.length, modelCfg: mcfg, maxKeys: MAX_KEYS, globalKey: !!process.env.GEMINI_API_KEY, bot }),
+        profile, mode, messages, reminders, botLinked, xferIn,
+        ...(light ? {} : { link, geminiKeys: kstate.keys, keyHistoryCount: kstate.history.length, modelCfg: mcfg, maxKeys: MAX_KEYS, globalKey: !!process.env.GEMINI_API_KEY, bot }),
       });
     } catch (e) {
       return res.status(500).json({ error: "Server error: " + e.message });
@@ -82,6 +84,22 @@ module.exports = async (req, res) => {
           result = await setupBot(u, p.token, `https://${host}`);
           break;
         }
+        case "linkStatus": result = await linkStatus(u); break;
+        case "makeLinkCode": result = await makeLinkCode(u); break;
+        case "useLinkCode": result = await useLinkCode(u, p.code); break;
+        case "unlinkPartner": result = await unlinkPartner(u); break;
+        case "acceptXfer": {
+          const r = await acceptTransfer(u, p.id);
+          if (r.error) throw Object.assign(new Error(r.error), { status: 400 });
+          result = { already: !!r.already, link: await linkStatus(u) };
+          break;
+        }
+        case "declineXfer": {
+          const r = await declineTransfer(u, p.id);
+          if (r.error) throw Object.assign(new Error(r.error), { status: 400 });
+          result = { link: await linkStatus(u) };
+          break;
+        }
         case "removeBot": result = await removeBot(u); break;
         case "relinkBot": result = await relinkBot(u); break;
         case "setMode": {
@@ -99,7 +117,7 @@ module.exports = async (req, res) => {
       }
       return res.status(200).json({ ok: true, result });
     } catch (e) {
-      return res.status(500).json({ error: "Server error: " + e.message });
+      return res.status(e.status || 500).json({ error: e.status ? e.message : "Server error: " + e.message });
     }
   }
 

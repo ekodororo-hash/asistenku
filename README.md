@@ -78,3 +78,14 @@ Data di Redis: `u:<id>:hist` (asisten), `u:<id>:hist:curhat` (curhat, ber-TTL), 
 ## Pasang di layar utama HP (PWA)
 
 Buka web di HP, lalu: Android (Chrome) menu ⋮ > Instal aplikasi / Tambahkan ke layar utama; iPhone (Safari) tombol Bagikan > Tambahkan ke Layar Utama. Aplikasi terbuka tanpa bar browser. `sw.js` sengaja tidak menyimpan cache, jadi data dan login tetap selalu terbaru; `manifest.json` dan ikon (`icon-192.png`, `icon-512.png`, `apple-touch-icon.png`) ada di root.
+
+## Hubungkan (kiriman uang antar pasangan)
+
+Dua akun bisa saling terhubung (Pengaturan > Hubungkan) khusus untuk kiriman uang, supaya "kasih istri 5jt" di akun suami dan "dapet 5jt dari suami" di akun istri tidak tercatat dobel. Tugas, catatan, pengeluaran harian, dan obrolan tetap terpisah.
+
+- **Cara menghubungkan:** satu pihak menekan **Buat kode** (6 karakter, sekali pakai, berlaku 10 menit), pihak lain memasukkannya di kolom **Punya kode?** lalu menekan **Hubungkan**. Salah satu bisa menekan **Putuskan** kapan saja. Satu akun hanya bisa terhubung ke satu pasangan.
+- **Kirim:** pesan seperti "kasih istri 5jt" dicatat sebagai pengeluaran pengirim (kategori `transfer`). Penerima mendapat kabar di Telegram dengan tombol **Catat / Tidak** (kalau belum memasang bot: kartu konfirmasi di tab Uang di web, dan di Pengaturan > Hubungkan). Pemasukan baru masuk ke akun penerima setelah dia mengonfirmasi, jadi nominal yang salah ketik tidak langsung mengubah datanya.
+- **Terima:** kalau penerima mengetik sendiri "dapet 5jt dari suami" dan kiriman itu masih menunggu konfirmasi, kiriman dicatat satu kali saja. Kalau sudah tercatat (nominal sama, dari pasangan yang sama, dalam 3 hari), bot bilang sudah tercatat dan bertanya "mau tambah lagi sebagai pemasukan terpisah?"; jawab ya / tidak.
+- **Tag Gemini baru:** `[[KIRIM: jumlah | keterangan]]` dan `[[PASANGAN_MASUK: jumlah | keterangan]]`, hanya dijelaskan ke Gemini kalau akunnya sudah terhubung. Tanpa hubungan, kiriman dicatat sebagai pengeluaran biasa.
+
+Data di Redis: `u:<id>:link` (pasangan), `linkcode:<kode>` dan `u:<id>:linkcode` (kode, TTL 10 menit), `xfer:<id>` (kiriman, TTL 7 hari), `u:<id>:xferin` (daftar kiriman masuk), `u:<id>:dupmasuk` (pertanyaan "tambah lagi?", TTL 5 menit). Tidak ada env var baru.

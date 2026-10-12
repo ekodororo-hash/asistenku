@@ -1153,10 +1153,10 @@ async function moneyContext(u) {
 
 // ---------- Konteks & prompt ----------
 async function loadContext(u) {
-  const [facts, rows, profile, tasks, notes, money] = await Promise.all([
+  const [facts, rows, profile, tasks, notes, money, partner] = await Promise.all([
     redis("LRANGE", key(u, "facts"), 0, -1),
     redis("ZRANGE", key(u, "reminders"), 0, 9, "WITHSCORES"),
-    getProfile(u), getTasks(u), getNotes(u), moneyContext(u),
+    getProfile(u), getTasks(u), getNotes(u), moneyContext(u), partnerContext(u).catch(() => ""),
   ]);
   const reminders = [];
   for (let i = 0; i < (rows || []).length; i += 2) {
@@ -1164,7 +1164,7 @@ async function loadContext(u) {
     try { it = JSON.parse(rows[i]); } catch {}
     reminders.push({ text: it.text || "?", ts: Number(rows[i + 1]), repeat: it.repeat });
   }
-  return { facts: facts || [], reminders, profile, tasks, notes, money };
+  return { facts: facts || [], reminders, profile, tasks, notes, money, partner };
 }
 
 const PERSONA = {
@@ -1241,7 +1241,7 @@ ${notes}
 Uang pengguna (jawab pertanyaan soal uang hanya dari data ini, jangan mengarang angka):
 ${ctx.money || "(tidak ada data)"}
 
-${COMMON}`;
+${ctx.partner ? ctx.partner + "\n\n" : ""}${COMMON}`;
 }
 
 // ---------- Mode curhat: prompt & konteks sendiri ----------
@@ -1276,6 +1276,236 @@ ${facts.length ? facts.map((f) => "- " + f).join("\n") : "(belum ada)"}
 ${CURHAT_RULES}`;
 }
 
+// ---------- Hubungkan akun (kiriman uang antar dua akun) ----------
+// Data di Redis:
+//   u:<id>:link      = {pid, ts}            pasangan yang terhubung (dua arah)
+//   linkcode:<KODE>  = id pembuat kode      sekali pakai, berlaku 10 menit
+//   u:<id>:linkcode  = kode aktif milik pembuat (supaya bisa ditampilkan lagi)
+//   xfer:<id>        = {id, from, to, amt, note, ts, status: pending|accepted|declined, incId}
+//   u:<penerima>:xferin = ZSET id kiriman (skor = waktu)
+//   u:<id>:dupmasuk  = pertanyaan "tambah lagi?" yang menunggu jawaban (5 menit)
+// Galat untuk pengguna (pesan tampil apa adanya, status 400)
+const userErr = (m) => Object.assign(new Error(m), { status: 400 });
+const LINK_CODE_TTL = 600;
+const XFER_TTL = 7 * 24 * 3600;
+const XFER_WINDOW = 3 * DAY; // kiriman dianggap sama kalau nominalnya sama dan masih dalam rentang ini
+const XFER_MAX_PENDING = 20;
+const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+async function usernameOf(u) { return (await redis("GET", "uid:" + u)) || "pasangan"; }
+async function getLink(u) {
+  const raw = await redis("GET", key(u, "link"));
+  try { return raw ? JSON.parse(raw) : null; } catch { return null; }
+}
+async function notifyUser(u, text, extra) {
+  try {
+    const bot = await getBot(u);
+    if (bot && bot.chatId) return await sendTelegram(u, String(bot.chatId), text, extra || {});
+  } catch {}
+  return false;
+}
+
+async function getXfer(id) {
+  const raw = await redis("GET", "xfer:" + id);
+  try { return raw ? JSON.parse(raw) : null; } catch { return null; }
+}
+async function saveXfer(x) { await redis("SET", "xfer:" + x.id, JSON.stringify(x), "EX", String(XFER_TTL)); }
+
+// Kiriman yang masuk ke u (terbaru dulu). onlyPending: hanya yang belum dijawab.
+async function xferList(u, onlyPending) {
+  const ids = (await redis("ZRANGE", key(u, "xferin"), -50, -1)) || [];
+  const out = [];
+  for (const id of ids) {
+    const x = await getXfer(id);
+    if (!x) { await redis("ZREM", key(u, "xferin"), id); continue; }
+    if (x.to === u && (!onlyPending || x.status === "pending")) out.push(x);
+  }
+  return out.sort((a, b) => b.ts - a.ts);
+}
+async function incomeStillThere(u, x) {
+  if (!x.incId) return false;
+  return (await incomesSince(u, x.accTs || x.ts)).some((e) => e.id === x.incId);
+}
+
+async function incomingTransfers(u) {
+  const l = await getLink(u);
+  if (!l) return [];
+  const name = await usernameOf(l.pid);
+  return (await xferList(u, true)).filter((x) => x.from === l.pid).map((x) => ({ id: x.id, amt: x.amt, note: x.note, ts: x.ts, from: name }));
+}
+
+async function linkStatus(u) {
+  const l = await getLink(u);
+  if (l) return { linked: true, partner: await usernameOf(l.pid), since: l.ts, incoming: await incomingTransfers(u) };
+  const code = await redis("GET", key(u, "linkcode"));
+  const ttl = code ? Number(await redis("TTL", key(u, "linkcode"))) || 0 : 0;
+  return { linked: false, code: code && ttl > 0 ? code : null, codeTtl: ttl > 0 ? ttl : 0 };
+}
+
+async function makeLinkCode(u) {
+  if (await getLink(u)) throw userErr("Akun ini sudah terhubung. Putuskan dulu kalau mau menghubungkan ke akun lain.");
+  const old = await redis("GET", key(u, "linkcode"));
+  if (old) await redis("DEL", "linkcode:" + old);
+  let code = "";
+  for (const b of crypto.randomBytes(6)) code += CODE_CHARS[b % CODE_CHARS.length];
+  await redis("SET", "linkcode:" + code, u, "EX", String(LINK_CODE_TTL));
+  await redis("SET", key(u, "linkcode"), code, "EX", String(LINK_CODE_TTL));
+  return linkStatus(u);
+}
+
+// Memasukkan kode dari pasangan = menyetujui hubungan (kode dibuat satu pihak, dimasukkan pihak lain)
+async function useLinkCode(u, input) {
+  const code = String(input || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (code.length !== 6) throw userErr("Kode terdiri dari 6 karakter.");
+  const rk = key(u, "rl:link");
+  const n = Number(await redis("INCR", rk));
+  if (n === 1) await redis("EXPIRE", rk, "900");
+  if (n > 10) throw userErr("Terlalu banyak percobaan. Coba lagi 15 menit lagi.");
+  if (await getLink(u)) throw userErr("Akun ini sudah terhubung. Putuskan dulu kalau mau menghubungkan ke akun lain.");
+  const o = await redis("GET", "linkcode:" + code);
+  if (!o) throw userErr("Kode tidak ditemukan atau sudah kedaluwarsa.");
+  if (o === u) throw userErr("Itu kodemu sendiri. Berikan kode ini ke pasanganmu, lalu dia yang memasukkannya.");
+  if (await getLink(o)) throw userErr("Pemilik kode sudah terhubung dengan akun lain.");
+  if (Number(await redis("DEL", "linkcode:" + code)) !== 1) throw userErr("Kode tidak ditemukan atau sudah kedaluwarsa."); // klaim atomik: sekali pakai
+  await redis("DEL", key(o, "linkcode"));
+  const ts = Date.now();
+  await redis("SET", key(u, "link"), JSON.stringify({ pid: o, ts }));
+  await redis("SET", key(o, "link"), JSON.stringify({ pid: u, ts }));
+  await notifyUser(o, "🔗 " + (await usernameOf(u)) + " sekarang terhubung denganmu. Kiriman uang antar kalian akan saling dikabari.");
+  return linkStatus(u);
+}
+
+async function unlinkPartner(u) {
+  const l = await getLink(u);
+  if (l) {
+    await redis("DEL", key(u, "link"), key(u, "dupmasuk"));
+    const back = await getLink(l.pid);
+    if (back && back.pid === u) await redis("DEL", key(l.pid, "link"), key(l.pid, "dupmasuk"));
+    await notifyUser(l.pid, "🔌 " + (await usernameOf(u)) + " memutus hubungan akun. Kiriman uang tidak lagi saling dikabari.");
+  }
+  return linkStatus(u);
+}
+
+// u mengirim uang ke pasangan: tercatat sebagai pengeluaran u, pasangan diminta konfirmasi (tidak otomatis masuk ke akunnya)
+async function sendTransfer(u, amt, note) {
+  const n = Math.round(Number(amt));
+  const l = await getLink(u);
+  if (!l || !Number.isFinite(n) || n <= 0 || n > 1e12) return null;
+  const pending = (await xferList(l.pid, true)).filter((x) => x.from === u);
+  if (pending.length >= XFER_MAX_PENDING) return { error: "Terlalu banyak kiriman yang belum dikonfirmasi pasanganmu. Tunggu dia menjawab dulu." };
+  const name = await usernameOf(l.pid);
+  const cleanNote = String(note || "").slice(0, 100);
+  const exp = await addExpense(u, n, "transfer", ("kirim ke " + name + (cleanNote ? " - " + cleanNote : "")).slice(0, 100));
+  const x = { id: uid(), from: u, to: l.pid, amt: n, note: cleanNote, ts: Date.now(), status: "pending", expId: exp ? exp.id : null };
+  await saveXfer(x);
+  await redis("ZADD", key(l.pid, "xferin"), String(x.ts), x.id);
+  await redis("ZREMRANGEBYSCORE", key(l.pid, "xferin"), "-inf", String(Date.now() - XFER_TTL * 1000));
+  const notified = await notifyUser(
+    l.pid,
+    "💸 " + (await usernameOf(u)) + " mengirim " + rupiah(n) + (cleanNote ? " (" + cleanNote + ")" : "") + ". Catat sebagai pemasukan?",
+    { reply_markup: { inline_keyboard: [[{ text: "✅ Catat", callback_data: "xf:ok:" + x.id }, { text: "❌ Tidak", callback_data: "xf:no:" + x.id }]] } }
+  );
+  return { x, name, notified };
+}
+
+// Catat kiriman sebagai pemasukan u (sekali saja). null = sudah/ sedang diproses.
+async function recordTransferIncome(u, x) {
+  const lock = "xferlock:" + x.id; // hanya mencegah dua permintaan bersamaan (klik ganda); dilepas setelah selesai
+  if ((await redis("SET", lock, "1", "NX", "EX", "15")) !== "OK") return null;
+  try {
+    const fromName = await usernameOf(x.from);
+    const inc = await addIncome(u, x.amt, "transfer", ("dari " + fromName + (x.note ? " - " + x.note : "")).slice(0, 100));
+    if (!inc) return null;
+    x.status = "accepted"; x.incId = inc.id; x.accTs = Date.now();
+    await saveXfer(x);
+    await notifyUser(x.from, "✅ " + (await usernameOf(u)) + " sudah mencatat kiriman " + rupiah(x.amt) + " sebagai pemasukan.");
+    return inc;
+  } finally {
+    await redis("DEL", lock);
+  }
+}
+
+async function acceptTransfer(u, id) {
+  const x = await getXfer(String(id || ""));
+  if (!x || x.to !== u) return { error: "Kiriman tidak ditemukan atau sudah kedaluwarsa." };
+  const l = await getLink(u);
+  if (!l || l.pid !== x.from) return { error: "Akun ini sudah tidak terhubung dengan pengirim." };
+  const name = await usernameOf(x.from);
+  if (x.status === "accepted" && (await incomeStillThere(u, x))) return { already: true, x, name };
+  const inc = await recordTransferIncome(u, x);
+  return inc ? { x, inc, name } : { already: true, x, name };
+}
+
+async function declineTransfer(u, id) {
+  const x = await getXfer(String(id || ""));
+  if (!x || x.to !== u) return { error: "Kiriman tidak ditemukan atau sudah kedaluwarsa." };
+  if (x.status !== "pending") return { already: true, x };
+  x.status = "declined";
+  await saveXfer(x);
+  await notifyUser(x.from, "❌ " + (await usernameOf(u)) + " tidak mencatat kiriman " + rupiah(x.amt) + " (mungkin nominalnya beda). Pengeluaranmu tetap tercatat; kalau salah, hapus lewat /rekap.");
+  return { x };
+}
+
+// u bilang "dapat Rp X dari pasangan": cocokkan dengan kiriman yang sudah dikabari supaya tidak dobel.
+async function handlePartnerIncome(u, amt, note) {
+  const n = Math.round(Number(amt));
+  if (!Number.isFinite(n) || n <= 0 || n > 1e12) return null;
+  const l = await getLink(u);
+  const name = l ? await usernameOf(l.pid) : "pasangan";
+  const desc = ("dari " + name + (note ? " - " + note : "")).slice(0, 100);
+  if (l) {
+    const cands = (await xferList(u, false)).filter((x) => x.from === l.pid && x.amt === n && x.ts >= Date.now() - XFER_WINDOW);
+    let open = null, done = null;
+    for (const x of cands) {
+      const recorded = x.status === "accepted" && (await incomeStillThere(u, x));
+      if (recorded) done = done || x; else open = open || x;
+    }
+    if (open) {
+      const inc = await recordTransferIncome(u, open);
+      return inc
+        ? "💵 Pemasukan dicatat: " + rupiah(n) + " dari " + name + ". Ini cocok dengan kiriman " + name + " tadi, jadi tidak dicatat dobel."
+        : "ℹ️ Kiriman " + rupiah(n) + " dari " + name + " sedang diproses, jadi tidak kucatat dobel.";
+    }
+    if (done) {
+      await redis("SET", key(u, "dupmasuk"), JSON.stringify({ amt: n, desc }), "EX", "300");
+      return "ℹ️ Itu sudah tercatat tadi: " + rupiah(n) + " dari " + name + " (" + fmtDateShort(done.accTs || done.ts) + "). Mau tambah lagi sebagai pemasukan terpisah? (ya / tidak)";
+    }
+  }
+  const inc = await addIncome(u, n, "transfer", desc);
+  return inc ? "💵 Pemasukan dicatat: " + rupiah(inc.amt) + " (transfer) - " + desc : null;
+}
+
+// Jawaban "ya / tidak" untuk pertanyaan "tambah lagi?". null = pesan ini bukan jawaban, lanjut seperti biasa.
+async function answerDupMasuk(u, text) {
+  const raw = await redis("GET", key(u, "dupmasuk"));
+  if (!raw) return null;
+  await redis("DEL", key(u, "dupmasuk"));
+  let d = null;
+  try { d = JSON.parse(raw); } catch {}
+  const t = String(text || "").trim().toLowerCase().replace(/[.!\s]+$/, "");
+  if (d && /^(ya|iya|iy|y|yup|yap|ok|oke|boleh|gas|tambah|tambahkan|lanjut)$/.test(t)) {
+    const inc = await addIncome(u, d.amt, "transfer", d.desc);
+    return inc ? "💵 Sudah ditambahkan: " + rupiah(inc.amt) + " (" + d.desc + "). Mau menambah lagi? Ketik saja pemasukannya." : null;
+  }
+  if (/^(tidak|ga|gak|nggak|enggak|engga|g|n|no|batal|jangan|skip|cukup)$/.test(t)) return "Oke, tidak kutambah.";
+  return null;
+}
+
+// Petunjuk untuk Gemini soal pasangan (tag KIRIM / PASANGAN_MASUK hanya muncul kalau akun sudah terhubung)
+async function partnerContext(u) {
+  const l = await getLink(u);
+  if (!l) {
+    return "Pasangan: belum ada akun pasangan yang terhubung. Kalau pengguna mencatat uang ke/dari pasangan, catat seperti biasa (BELI / MASUK). Boleh sebut SEKALI dan singkat bahwa di Pengaturan > Hubungkan, akun pasangan bisa dihubungkan supaya kiriman uang tidak tercatat dobel; jangan diulang kalau sudah pernah kamu sebut di obrolan.";
+  }
+  const name = await usernameOf(l.pid);
+  return `Pasangan terhubung: @${name}. Kalau pengguna menyebut suami/istri/pasangan/ayah/bunda atau nama itu, yang dimaksud dia.
+- Pengguna MENGIRIM uang ke pasangan (mis. "kasih istri 5jt", "transfer ke suami 200rb"): [[KIRIM: 5000000 | keterangan singkat]]
+  Sistem mencatatnya sebagai pengeluaran pengguna dan mengabari pasangan untuk konfirmasi. Jangan buat BELI untuk ini.
+- Pengguna MENERIMA uang dari pasangan (mis. "dapet 5jt dari suami", "istri transfer 1jt"): [[PASANGAN_MASUK: 5000000 | keterangan singkat]]
+  Pakai ini, bukan MASUK. Sistem mengecek apakah kiriman itu sudah tercatat supaya tidak dobel. Format angka sama seperti BELI.
+- Untuk dua tag di atas, JANGAN menulis kalimat "sudah dicatat" atau menanyakan "mau tambah lagi" sendiri: sistem yang menulis hasilnya di baris bawah balasanmu.`;
+}
+
 // Buang tag [[...]] kalau model nekat menulisnya; di mode curhat tag tidak pernah diproses
 const stripTags = (t) => String(t || "").replace(/\[\[[A-Z_]+:[\s\S]*?\]\]/g, "").trim();
 
@@ -1294,4 +1524,5 @@ module.exports = {
   getMode, setMode, switchMode, takeCurhatExpiredNotice, CURHAT_TTL,
   getHist, saveHist, hasHist, clearHist,
   getReminders, addReminder, deleteReminderById, deleteReminderNumber, DELETE_INTENT,
+  getLink, linkStatus, makeLinkCode, useLinkCode, unlinkPartner, incomingTransfers, sendTransfer, acceptTransfer, declineTransfer, handlePartnerIncome, answerDupMasuk, partnerContext,
 };

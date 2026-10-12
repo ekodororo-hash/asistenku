@@ -281,6 +281,7 @@
         <input id="expNote" placeholder="Keterangan">
         <button id="expAddBtn">+</button>
       </div>
+      <div id="xferBox"></div>
       <div class="card" id="recap"></div>
       <div id="exps"></div>
     </div>
@@ -356,6 +357,7 @@ let tasks = [];
 let notes = [];
 let expenses = [];
 let incomes = [];
+let xferIn = []; // kiriman uang dari pasangan yang menunggu konfirmasi
 let money = null;
 let moneyType = "out";
 const OUT_CATS = ["makan", "transport", "belanja", "tagihan", "hiburan", "kesehatan", "lainnya"];
@@ -546,7 +548,38 @@ function renderNotes() {
 
 /* ---------- Pengeluaran ---------- */
 const rpSigned = (n) => (n < 0 ? "-" : "") + rupiah(Math.abs(n));
+function renderXfer() {
+  const box = $("xferBox");
+  if (!box) return;
+  box.innerHTML = "";
+  (xferIn || []).forEach((x) => {
+    const c = el("div", "card");
+    c.appendChild(el("div", "", "💸 " + x.from + " mengirim " + rupiah(x.amt) + (x.note ? " (" + x.note + ")" : "") + ". Catat sebagai pemasukanmu?"));
+    const row = el("div", "");
+    row.style.cssText = "display:flex;gap:8px;margin-top:8px";
+    const mk = (txt, accept, primary) => {
+      const b = el("button", primary ? "primary" : "", txt);
+      b.style.flex = "1";
+      b.onclick = async () => {
+        b.disabled = true;
+        try {
+          await api("/api/state", { method: "POST", body: JSON.stringify({ op: accept ? "acceptXfer" : "declineXfer", id: x.id }) });
+          const d = await api("/api/state?light=1");
+          expenses = d.expenses || []; incomes = d.incomes || []; money = d.money || null; xferIn = d.xferIn || [];
+          renderMoney();
+        } catch (err) { alert(err.message); b.disabled = false; }
+      };
+      return b;
+    };
+    row.append(mk("Catat", true, true), mk("Tidak", false, false));
+    c.appendChild(row);
+    box.appendChild(c);
+  });
+  const tb = document.querySelector('.tabs button[data-tab="money"]');
+  if (tb) tb.textContent = (xferIn || []).length ? "Uang •" : "Uang";
+}
 function renderMoney() {
+  renderXfer();
   const sum = (a) => a.reduce((t, e) => t + e.amt, 0);
   const te = sum(expenses), ti = sum(incomes), net = ti - te;
   const by = {};
@@ -750,6 +783,7 @@ async function send(text) {
     messages.push({ role: "model", text: d.reply || "(dicatat)", ts: gotAt });
     if (d.tasks) { tasks = d.tasks; renderTasks(); }
     if (d.notes) { notes = d.notes; renderNotes(); }
+    if (d.xferIn) xferIn = d.xferIn;
     if (d.expenses) { expenses = d.expenses; incomes = d.incomes || incomes; money = d.money || money; renderMoney(); }
     if (d.reminders) { reminders = d.reminders; renderReminders(); }
     showQuota(d.quota);
@@ -892,6 +926,7 @@ async function loadState() {
   notes = d.notes || [];
   expenses = d.expenses || [];
   incomes = d.incomes || [];
+  xferIn = d.xferIn || [];
   money = d.money || null;
   profile = d.profile || profile;
   mode = d.mode || "asisten";
@@ -908,7 +943,7 @@ async function refreshFromServer() {
     const d = await api("/api/state?light=1");
     if (busy) return; // pesan sedang dikirim, jangan timpa
     const before = sig(messages), oldMode = mode;
-    tasks = d.tasks || []; notes = d.notes || []; expenses = d.expenses || []; incomes = d.incomes || []; money = d.money || null;
+    tasks = d.tasks || []; notes = d.notes || []; expenses = d.expenses || []; incomes = d.incomes || []; money = d.money || null; xferIn = d.xferIn || [];
     reminders = d.reminders || []; botLinked = d.botLinked !== false;
     mode = d.mode || "asisten"; messages = d.messages || [];
     if (mode !== oldMode) renderMode();

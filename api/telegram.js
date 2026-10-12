@@ -5,6 +5,7 @@ const {
   recapText, deleteExpenseNumber, incomeListText, deleteIncomeNumber, loadContext, buildSystem,
   getTasks, addTask, toggleTask, deleteTask, unlinkTaskReminder, parseWib, fmtDue,
   addNote, addExpense, addIncome, setSaldo, fmtDateShort,
+  sendTransfer, acceptTransfer, declineTransfer, handlePartnerIncome, answerDupMasuk,
   getMode, switchMode, takeCurhatExpiredNotice, getHist, saveHist, clearHist, loadCurhatContext, buildCurhatSystem, stripTags,
 } = require("./_lib");
 const { getOwnerId, safeEq } = require("./_auth");
@@ -488,6 +489,24 @@ async function processTags(u, reply, userText = "") {
     if (e) notes.push("💵 Pemasukan dicatat: " + rupiah(e.amt) + " (" + e.cat + ")" + (e.note ? " - " + e.note : ""));
   }
 
+  // Kirim uang ke pasangan (pasangan diminta konfirmasi) dan terima uang dari pasangan (dicocokkan supaya tidak dobel)
+  for (const m of reply.matchAll(/\[\[KIRIM:\s*([^|\]]+?)\s*(?:\|\s*([^\]]*?)\s*)?\]\]/g)) {
+    const amt = Number(String(m[1]).replace(/[^\d]/g, ""));
+    const note = (m[2] || "").trim();
+    const r = await sendTransfer(u, amt, note);
+    if (r && r.error) notes.push("⚠️ " + r.error);
+    else if (r) notes.push("💸 Dicatat: " + rupiah(r.x.amt) + " ke " + r.name + (r.notified ? ". Sudah kukabari " + r.name + " di Telegram." : ". " + r.name + " akan melihatnya di web (tab Uang) untuk konfirmasi."));
+    else { // belum terhubung / nominal tidak valid: catat sebagai pengeluaran biasa
+      const e = await addExpense(u, amt, "transfer", note || "kirim uang");
+      if (e) notes.push("💰 Dicatat: " + rupiah(e.amt) + " (" + e.cat + ")" + (e.note ? " - " + e.note : ""));
+    }
+  }
+  for (const m of reply.matchAll(/\[\[PASANGAN_MASUK:\s*([^|\]]+?)\s*(?:\|\s*([^\]]*?)\s*)?\]\]/g)) {
+    const amt = Number(String(m[1]).replace(/[^\d]/g, ""));
+    const line = await handlePartnerIncome(u, amt, (m[2] || "").trim());
+    if (line) notes.push(line);
+  }
+
   // Saldo
   for (const m of reply.matchAll(/\[\[SALDO:\s*([^\]]+?)\s*\]\]/g)) {
     const sd = await setSaldo(u, Number(String(m[1]).replace(/[^\d]/g, "")));
@@ -510,7 +529,7 @@ async function processTags(u, reply, userText = "") {
     }
   }
 
-  const clean = reply.replace(/\[\[(TASK|REMIND|INGAT|BELI|MASUK|CATAT|SALDO|HAPUS_PENGINGAT):[\s\S]*?\]\]/g, "").trim();
+  const clean = reply.replace(/\[\[(TASK|REMIND|INGAT|BELI|MASUK|KIRIM|PASANGAN_MASUK|CATAT|SALDO|HAPUS_PENGINGAT):[\s\S]*?\]\]/g, "").trim();
   return { clean, notes };
 }
 
@@ -552,6 +571,19 @@ module.exports = async (req, res) => {
     // Tombol di bawah pesan (callback_query): saat ini hanya pilihan keluar dari mode curhat
     if (cq) {
       try { await tg(bot.token, "answerCallbackQuery", { callback_query_id: cq.id }); } catch {}
+      const xm = String(cq.data || "").match(/^xf:(ok|no):([a-z0-9]{6,30})$/);
+      if (xm) { // konfirmasi kiriman uang dari pasangan
+        let out;
+        if (xm[1] === "ok") {
+          const r = await acceptTransfer(u, xm[2]);
+          out = r.error ? "⚠️ " + r.error : r.already ? "Kiriman ini sudah dicatat sebelumnya." : "✅ Dicatat sebagai pemasukan: " + rupiah(r.x.amt) + " dari " + r.name + ".";
+        } else {
+          const r = await declineTransfer(u, xm[2]);
+          out = r.error ? "⚠️ " + r.error : "Oke, tidak dicatat.";
+        }
+        await tg(bot.token, "editMessageText", { chat_id: chatId, message_id: msg.message_id, text: out }); // tombol hilang, tidak bisa ditekan dua kali
+        return res.status(200).end();
+      }
       const m = String(cq.data || "").match(/^exit:(delete|keep|stay)$/);
       if (m) {
         const result = await resolveExit(u, m[1]);
@@ -688,6 +720,12 @@ module.exports = async (req, res) => {
     // Mode aktif menentukan: riwayat mana yang dipakai, prompt, dan apakah tag/memori diproses
     const mode = await getMode(u);
     if (mode !== "curhat") { const n = await takeCurhatExpiredNotice(u); if (n) await say(n); } // curhat kedaluwarsa sendiri
+
+    // Jawaban "ya / tidak" untuk pertanyaan "mau tambah lagi sebagai pemasukan terpisah?" (hanya di mode asisten)
+    if (mode !== "curhat" && isText && !image && !text.startsWith("/")) {
+      const dupReply = await answerDupMasuk(u, text);
+      if (dupReply) { await say(dupReply); return res.status(200).end(); }
+    }
 
     // "catat: ..." disimpan langsung tanpa Gemini (tidak berlaku di mode curhat: tidak ada yang tercatat otomatis)
     const cm = mode !== "curhat" && !image && text.match(/^catat(?:\s*:\s*|\s+)([\s\S]+)$/i);

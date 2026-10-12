@@ -7,6 +7,7 @@ const {
   getMode, takeCurhatExpiredNotice, getHist, saveHist, getProfile, gemini, loadCurhatContext, buildCurhatSystem, stripTags,
   getTasks, addTask, getNotes, addNote, getExpenses, addExpense,
   getReminders, addReminder, getBot, sendTelegram, cfgOn, quotaStatus, setSaldo, moneyContext, parseWib, addIncome, getIncomes, moneySummary,
+  partnerContext, incomingTransfers, sendTransfer, handlePartnerIncome, answerDupMasuk,
 } = require("./_lib");
 
 const REPEAT_LABEL = { harian: "tiap hari", mingguan: "tiap minggu", bulanan: "tiap bulan" };
@@ -26,7 +27,7 @@ Kalau pengguna terlihat sedang curhat atau emosional, berubah jadi pendengar yan
 - Dukung hubungannya dengan teman dan keluarga; jangan membuat dia bergantung hanya padamu.`,
 };
 
-function buildSystem(mode, { profile, taskList, noteList, moneyText, remindText, botLinked }) {
+function buildSystem(mode, { profile, taskList, noteList, moneyText, remindText, botLinked, partnerText }) {
   return `${mode === "curhat" ? PERSONA.curhat : PERSONA.asisten}
 Nama kamu: ${profile.assistantName || "Asisten"}.
 Pengguna bernama: ${profile.name || "(belum diisi)"}.
@@ -46,6 +47,7 @@ Pengingat mendatang:
 ${remindText}
 Bot Telegram pengguna: ${botLinked ? "sudah terhubung (pengingat dikirim ke sana)" : "BELUM terhubung. Pengingat tetap tersimpan tapi baru terkirim setelah bot dihubungkan di Pengaturan; ingatkan pengguna soal ini saat membuat pengingat."}
 
+${partnerText ? partnerText + "\n" : ""}
 Aturan:
 - Tulis teks biasa, tanpa markdown (tanpa * atau #). Emoji boleh secukupnya.
 - Jangan memberi diagnosis medis.
@@ -108,6 +110,24 @@ async function processTags(u, reply, userText = "") {
     if (e) added.push("💵 Pemasukan dicatat: " + rupiah(e.amt) + " (" + e.cat + ")" + (e.note ? " - " + e.note : ""));
   }
 
+  // Kirim uang ke pasangan (pasangan diminta konfirmasi) dan terima uang dari pasangan (dicocokkan supaya tidak dobel)
+  for (const m of reply.matchAll(/\[\[KIRIM:\s*([^|\]]+?)\s*(?:\|\s*([^\]]*?)\s*)?\]\]/g)) {
+    const amt = Number(String(m[1]).replace(/[^\d]/g, ""));
+    const note = (m[2] || "").trim();
+    const r = await sendTransfer(u, amt, note);
+    if (r && r.error) added.push("⚠️ " + r.error);
+    else if (r) added.push("💸 Dicatat: " + rupiah(r.x.amt) + " ke " + r.name + (r.notified ? ". Sudah kukabari " + r.name + " di Telegram." : ". " + r.name + " akan melihatnya di web (tab Uang) untuk konfirmasi."));
+    else { // belum terhubung / nominal tidak valid: catat sebagai pengeluaran biasa
+      const e = await addExpense(u, amt, "transfer", note || "kirim uang");
+      if (e) added.push("💰 Dicatat: " + rupiah(e.amt) + " (" + e.cat + ")" + (e.note ? " - " + e.note : ""));
+    }
+  }
+  for (const m of reply.matchAll(/\[\[PASANGAN_MASUK:\s*([^|\]]+?)\s*(?:\|\s*([^\]]*?)\s*)?\]\]/g)) {
+    const amt = Number(String(m[1]).replace(/[^\d]/g, ""));
+    const line = await handlePartnerIncome(u, amt, (m[2] || "").trim());
+    if (line) added.push(line);
+  }
+
   for (const m of reply.matchAll(/\[\[SALDO:\s*([^\]]+?)\s*\]\]/g)) {
     const sd = await setSaldo(u, Number(String(m[1]).replace(/[^\d]/g, "")));
     if (sd) added.push("💵 Saldo dicatat: " + rupiah(sd.amt));
@@ -122,7 +142,7 @@ async function processTags(u, reply, userText = "") {
     }
   }
 
-  const clean = reply.replace(/\[\[(TASK|REMIND|CATAT|BELI|MASUK|SALDO|HAPUS_PENGINGAT):[\s\S]*?\]\]/g, "").trim();
+  const clean = reply.replace(/\[\[(TASK|REMIND|CATAT|BELI|MASUK|KIRIM|PASANGAN_MASUK|SALDO|HAPUS_PENGINGAT):[\s\S]*?\]\]/g, "").trim();
   return { clean, added };
 }
 
@@ -174,7 +194,20 @@ module.exports = async (req, res) => {
       ? notes.slice(-20).map((n) => "- " + n.text).join("\n")
       : "(kosong)";
 
-    const system = buildSystem(mode, { profile, taskList, noteList, moneyText: await moneyContext(u), remindText, botLinked: !!(bot && bot.chatId) });
+    // Jawaban "ya / tidak" untuk pertanyaan "mau tambah lagi sebagai pemasukan terpisah?"
+    const dupReply = await answerDupMasuk(u, text);
+    if (dupReply) {
+      const t = Date.now();
+      await saveHist(u, [...hist, { role: "user", parts: [{ text }], ts: t }, { role: "model", parts: [{ text: dupReply }], ts: t }], "asisten");
+      const [fTasks, fNotes, fExpenses, fReminders, fQuota, fIncomes, fMoney, fXfer] = await Promise.all([getTasks(u), getNotes(u), getExpenses(u), getReminders(u), quotaStatus(u), getIncomes(u), moneySummary(u), incomingTransfers(u)]);
+      return res.status(200).json({
+        reply: [expiredNotice, dupReply].filter(Boolean).join("\n\n"), added: [], quota: fQuota,
+        tasks: fTasks, reminders: fReminders, notes: fNotes.slice(-100).reverse(), expenses: fExpenses.slice(-100).reverse(),
+        incomes: fIncomes.slice(-100).reverse(), money: fMoney, xferIn: fXfer,
+      });
+    }
+
+    const system = buildSystem(mode, { profile, taskList, noteList, moneyText: await moneyContext(u), remindText, botLinked: !!(bot && bot.chatId), partnerText: await partnerContext(u).catch(() => "") });
 
     const userTurn = { role: "user", parts: [{ text }], ts: Date.now() };
     const contents = trimHist([...hist, userTurn]);
@@ -195,8 +228,9 @@ module.exports = async (req, res) => {
     }
 
     const [freshTasks, freshNotes, freshExpenses, freshReminders, quota, freshIncomes, money] = await Promise.all([getTasks(u), getNotes(u), getExpenses(u), getReminders(u), quotaStatus(u), getIncomes(u), moneySummary(u)]);
+    const xferIn = await incomingTransfers(u).catch(() => []);
     return res.status(200).json({
-      reply: shown, added, quota,
+      reply: shown, added, quota, xferIn,
       tasks: freshTasks,
       reminders: freshReminders,
       notes: freshNotes.slice(-100).reverse(),

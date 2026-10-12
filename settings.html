@@ -162,6 +162,12 @@
     <p class="msg" id="botMsg"></p>
   </section>
 
+  <section id="secLink">
+    <h2>Hubungkan</h2>
+    <div id="linkBox"></div>
+    <p class="msg" id="linkMsg"></p>
+  </section>
+
   <section id="secAccount">
     <h2>Akun</h2>
     <p class="who" id="who" style="color:var(--muted)"></p>
@@ -194,6 +200,7 @@ const op = (name, extra) => api("/api/state", { method: "POST", body: JSON.strin
 function say(id, text, kind) { const m = $(id); m.textContent = text || ""; m.className = "msg" + (kind ? " " + kind : ""); }
 
 let profile = {}, geminiKeys = [], histCount = 0, maxKeys = 5, globalKey = false, botState = { installed: false };
+let linkState = { linked: false };
 
 /* ---------- Profil ---------- */
 $("profileSave").onclick = async () => {
@@ -504,6 +511,91 @@ async function botOp(name, extra, btnEl) {
   catch (e) { say("botMsg", e.message, "err"); if (btnEl) btnEl.disabled = false; }
 }
 
+/* ---------- Hubungkan (kiriman uang antar akun pasangan) ---------- */
+const escH = (t) => String(t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const rp = (n) => "Rp" + Math.round(n).toLocaleString("id-ID");
+let linkTimer = null;
+function renderLink() {
+  const box = $("linkBox");
+  box.innerHTML = "";
+  clearInterval(linkTimer);
+  const p = (html) => { const e = document.createElement("p"); e.className = "hint"; e.innerHTML = html; box.appendChild(e); return e; };
+  const btn = (txt, fn, cls) => { const b = document.createElement("button"); b.textContent = txt; if (cls) b.className = cls; b.onclick = () => fn(b); return b; };
+
+  if (linkState.linked) {
+    p("Terhubung dengan <b>@" + escH(linkState.partner) + "</b> sejak " + new Date(linkState.since).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" }) +
+      ".<br>Kiriman uang antar kalian saling dikabari. Tugas, catatan, pengeluaran, dan obrolan tetap terpisah.");
+    (linkState.incoming || []).forEach((x) => {
+      const it = document.createElement("div");
+      it.className = "item";
+      const main = document.createElement("div");
+      main.className = "kmain";
+      main.innerHTML = "💸 <b>@" + escH(x.from) + "</b> mengirim <b>" + rp(x.amt) + "</b>" + (x.note ? " (" + escH(x.note) + ")" : "") + "<span class=\"ksub\">Catat sebagai pemasukanmu?</span>";
+      const bt = document.createElement("div");
+      bt.className = "kbtns";
+      bt.append(btn("Catat", (b) => linkOp("acceptXfer", { id: x.id }, b), "primary"), btn("Tidak", (b) => linkOp("declineXfer", { id: x.id }, b)));
+      it.append(main, bt);
+      box.appendChild(it);
+    });
+    const row = document.createElement("div");
+    row.className = "actions";
+    row.appendChild(btn("Putuskan", (b) => { if (confirm("Putuskan hubungan dengan @" + linkState.partner + "? Kiriman uang tidak lagi saling dikabari.")) linkOp("unlinkPartner", {}, b); }, "danger"));
+    box.appendChild(row);
+    return;
+  }
+
+  p("Hubungkan akunmu dengan akun pasangan supaya kiriman uang (mis. <i>kasih istri 5jt</i>) tidak tercatat dobel. Yang dibagi hanya kabar kiriman uang; tugas, catatan, dan pengeluaran tetap terpisah. Kalian harus sama-sama setuju, dan bisa diputus kapan saja.");
+
+  if (linkState.code) {
+    const deadline = Date.now() + linkState.codeTtl * 1000;
+    const c = document.createElement("div");
+    c.style.cssText = "font:700 28px ui-monospace,Menlo,Consolas,monospace;letter-spacing:6px;text-align:center;padding:14px;border:1px dashed var(--line);border-radius:12px;background:var(--bg);user-select:all;-webkit-user-select:all";
+    c.textContent = linkState.code;
+    box.appendChild(c);
+    const left = p("");
+    const tick = () => {
+      const s = Math.max(0, Math.round((deadline - Date.now()) / 1000));
+      left.innerHTML = "Berikan kode ini ke pasanganmu, lalu dia memasukkannya di kolom <b>Punya kode?</b> di akunnya. Berlaku " + Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0") + ", sekali pakai.";
+      if (s <= 0) { clearInterval(linkTimer); load(); }
+    };
+    tick();
+    let n = 0;
+    linkTimer = setInterval(async () => {
+      tick();
+      if (++n % 4 === 0 && !document.hidden) { // cek apakah pasangan sudah memasukkan kode
+        try { const st = await op("linkStatus"); if (st.linked) { linkState = st; renderLink(); } } catch {}
+      }
+    }, 1000);
+  }
+  const mk = document.createElement("div");
+  mk.className = "actions";
+  mk.style.marginTop = "0";
+  mk.appendChild(btn(linkState.code ? "Buat kode baru" : "Buat kode", (b) => linkOp("makeLinkCode", {}, b), "primary"));
+  box.appendChild(mk);
+
+  const lab = document.createElement("label");
+  lab.textContent = "Punya kode?";
+  box.appendChild(lab);
+  const row = document.createElement("div");
+  row.className = "row";
+  const inp = document.createElement("input");
+  inp.placeholder = "Kode 6 karakter dari pasangan"; inp.autocomplete = "off"; inp.autocapitalize = "characters"; inp.maxLength = 12;
+  const go = btn("Hubungkan", (b) => linkOp("useLinkCode", { code: inp.value }, b), "primary");
+  inp.addEventListener("keydown", (e) => { if (e.key === "Enter") go.click(); });
+  row.append(inp, go);
+  box.appendChild(row);
+}
+async function linkOp(name, extra, btnEl) {
+  say("linkMsg", "");
+  if (btnEl) btnEl.disabled = true;
+  try {
+    const r = await op(name, extra);
+    linkState = r && r.link ? r.link : r;
+    renderLink();
+    if (name === "useLinkCode") say("linkMsg", "Terhubung.", "ok");
+  } catch (e) { say("linkMsg", e.message, "err"); if (btnEl) btnEl.disabled = false; }
+}
+
 /* ---------- Ikon mata & kekuatan password ---------- */
 PW.eye($("keyInput"));
 PW.eye($("pwOld"));
@@ -533,7 +625,8 @@ async function load() {
   $("pNotes").value = profile.notes || "";
   geminiKeys = d.geminiKeys || []; histCount = d.keyHistoryCount || 0; renderModel(d.modelCfg || {}); maxKeys = d.maxKeys || 5; globalKey = !!d.globalKey;
   botState = d.bot || { installed: false };
-  renderKeys(); renderHistLink(); renderBot();
+  linkState = d.link || { linked: false };
+  renderKeys(); renderHistLink(); renderBot(); renderLink();
 }
 load().catch((e) => { if (e.message !== "Belum login") say("profileMsg", "Gagal memuat: " + e.message, "err"); });
 api("/api/auth").then((d) => { $("who").textContent = "Masuk sebagai " + d.user.username; }).catch(() => {});
