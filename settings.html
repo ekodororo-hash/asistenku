@@ -285,7 +285,7 @@ function renderKeys() {
       const v = prompt("Nama untuk key …" + k.last4 + " (kosongkan untuk menghapus nama):", k.name || "");
       if (v !== null) keyOp("renameKey", { id: k.id, name: v });
     });
-    mk("✕ Hapus", "Hapus", () => { if (confirm("Hapus key " + (k.name ? k.name + " (…" + k.last4 + ")" : "…" + k.last4) + "?")) keyOp("deleteKey", { id: k.id }); }, false, "danger");
+    mk("Hapus", "Hapus", () => { if (confirm("Hapus key " + (k.name ? k.name + " (…" + k.last4 + ")" : "…" + k.last4) + "?")) keyOp("deleteKey", { id: k.id }); }, false, "danger");
     box.appendChild(row);
   });
   $("keyCount").textContent = "(" + geminiKeys.length + "/" + maxKeys + ")";
