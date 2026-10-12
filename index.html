@@ -147,8 +147,8 @@
   <button id="tasksToggle" title="Panel">☰ Panel</button>
   <h1 id="title">Asisten Pribadi</h1>
   <div class="hbtns">
-    <button id="modeBtn" title="Ganti mode">💬 Curhat</button>
-    <button id="clearBtn" title="Hapus riwayat obrolan">Reset</button>
+    <button id="modeBtn" title="Ganti mode">Curhat</button>
+    <button id="clearBtn" title="Mulai obrolan baru">Chat baru</button>
     <a href="/settings.html" class="btn" title="Pengaturan" aria-label="Pengaturan">⚙️<span class="lbl">&nbsp;Pengaturan</span></a>
   </div>
 </header>
@@ -356,7 +356,7 @@ function renderChat() {
 
 function renderMode() {
   document.body.dataset.mode = mode;
-  $("modeBtn").textContent = mode === "curhat" ? "🤖 Asisten" : "💬 Curhat";
+  $("modeBtn").textContent = mode === "curhat" ? "Asisten" : "Curhat";
 }
 
 /* ---------- Tugas ---------- */
@@ -735,7 +735,7 @@ if (window.visualViewport) {
 }
 
 $("clearBtn").onclick = async () => {
-  if (!confirm("Hapus semua riwayat obrolan? Ini juga akan menghapus riwayat di bot Telegram, karena datanya sama.")) return;
+  if (!confirm("Mulai obrolan baru? Riwayat obrolan dihapus (di bot Telegram juga, karena datanya sama). Tugas, catatan, uang, dan pengingat tetap aman.")) return;
   try {
     await api("/api/state", { method: "POST", body: JSON.stringify({ op: "resetHist" }) });
     messages = []; renderChat();
