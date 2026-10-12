@@ -6,13 +6,19 @@
 <meta name="theme-color" content="#4f46e5">
 <title>Asisten Pribadi</title>
 <style>
-  :root { --bg:#f6f7fb; --card:#fff; --ink:#1d2433; --muted:#6b7385; --accent:#4f46e5; --line:#e4e7ef; --me:#4f46e5; }
+  :root { --bg:#f6f7fb; --outer:#e8eaf3; --card:#fff; --ink:#1d2433; --muted:#6b7385; --accent:#4f46e5; --line:#e4e7ef; --me:#4f46e5; }
   @media (prefers-color-scheme: dark) {
-    :root { --bg:#0f1220; --card:#181c2e; --ink:#e8eaf3; --muted:#9aa1b5; --line:#2a3050; }
+    :root { --bg:#0f1220; --outer:#080a14; --card:#181c2e; --ink:#e8eaf3; --muted:#9aa1b5; --line:#2a3050; }
   }
   * { box-sizing:border-box; }
   html { -webkit-text-size-adjust:100%; }
-  body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--ink); height:100dvh; display:flex; flex-direction:column; }
+  body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--outer); color:var(--ink); height:100dvh; display:flex; justify-content:center; }
+  #app { width:100%; max-width:1040px; height:100%; display:flex; flex-direction:column; background:var(--bg); min-height:0; }
+  @media (min-width:761px) {
+    body { padding:20px; }
+    #app { border:1px solid var(--line); border-radius:20px; overflow:hidden; box-shadow:0 10px 40px #1d24331a; }
+    .msg { max-width:78%; }
+  }
   header { display:flex; align-items:center; gap:8px; padding:12px 16px; background:var(--card); border-bottom:2px solid var(--line); }
   body[data-mode="curhat"] header { border-bottom-color:var(--accent); }
   header h1 { font-size:17px; margin:0; flex:1; }
@@ -31,7 +37,7 @@
   #form { display:flex; gap:8px; padding:12px 16px; background:var(--card); border-top:1px solid var(--line); }
   textarea { flex:1; resize:none; font:inherit; padding:10px 12px; border-radius:12px; border:1px solid var(--line); background:var(--bg); color:var(--ink); max-height:120px; }
 
-  aside { width:330px; background:var(--card); border-left:1px solid var(--line); padding:14px; overflow-y:auto; }
+  aside { order:-1; width:330px; background:var(--card); border-right:1px solid var(--line); padding:14px; overflow-y:auto; }
   aside h2 { font-size:15px; margin:0 0 10px; }
   .tabs { display:flex; gap:4px; margin-bottom:12px; }
   .tabs button { flex:1; padding:6px 4px; font-size:13px; }
@@ -67,8 +73,8 @@
     #form { padding:10px 12px; padding-bottom:max(10px, env(safe-area-inset-bottom)); }
     textarea, input, select, .addrow input, .addrow select, .full, dialog input, dialog textarea { font-size:16px; } /* cegah zoom otomatis di iOS */
     #sendBtn { min-height:44px; padding:0 16px; }
-    aside { position:fixed; top:0; right:0; bottom:0; width:min(90vw,360px); padding-top:max(14px, env(safe-area-inset-top)); transform:translateX(100%); transition:transform .22s ease; z-index:20; box-shadow:-8px 0 24px #0004; }
-    aside.open { transform:none; }
+    aside { position:fixed; top:0; left:0; bottom:0; width:min(90vw,360px); padding-top:max(14px, env(safe-area-inset-top)); transform:translateX(-100%); transition:transform .22s ease, box-shadow .22s ease; z-index:20; box-shadow:none; }
+    aside.open { transform:none; box-shadow:8px 0 24px #0004; }
     #tasksToggle, #closeSide { display:inline-block; }
     #backdrop { position:fixed; inset:0; background:#0006; z-index:15; }
     #backdrop.show { display:block; }
@@ -82,9 +88,10 @@
 </style>
 </head>
 <body data-mode="asisten">
+<div id="app">
 <header>
+  <button id="tasksToggle">☰ Panel</button>
   <h1 id="title">Asisten Pribadi</h1>
-  <button id="tasksToggle">Panel</button>
   <button id="modeBtn">💬 Curhat</button>
   <button id="settingsBtn">Profil</button>
   <button id="clearBtn">Reset</button>
@@ -101,7 +108,7 @@
       <button data-q="Beri aku 3 ide makan malam hemat dan cepat.">Ide makan malam</button>
     </div>
     <form id="form">
-      <textarea id="input" rows="1" placeholder="Tulis pesan... (Enter kirim, Shift+Enter baris baru)"></textarea>
+      <textarea id="input" rows="1" placeholder="Tulis pesan..."></textarea>
       <button class="primary" id="sendBtn">Kirim</button>
     </form>
   </section>
@@ -167,6 +174,7 @@
     </div>
   </aside>
 </main>
+</div>
 
 <dialog id="dlg">
   <form method="dialog" id="profileForm">
