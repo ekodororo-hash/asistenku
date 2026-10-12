@@ -74,3 +74,7 @@ Riwayat dilihat di halaman terpisah `/riwayat.html` (tautannya di bawah daftar k
 Asisten dan curhat punya riwayat obrolan sendiri; curhat tidak membuat tugas/catatan/pengingat/uang, tidak menyimpan memori, tidak memakai pencarian, dan tidak disalin ke Telegram. Keluar dari curhat menampilkan pilihan Hapus / Simpan dulu / Tetap curhat, dan riwayat curhat yang tidak disimpan terhapus sendiri setelah 6 jam tanpa dipakai. Detail di `TELEGRAM.md` (bagian Mode curhat).
 
 Data di Redis: `u:<id>:hist` (asisten), `u:<id>:hist:curhat` (curhat, ber-TTL), `u:<id>:curhatkeep` (penanda "Simpan dulu"), `u:<id>:exitcurhat` (pertanyaan keluar curhat yang menunggu jawaban, 5 menit). Riwayat lama (`u:<id>:hist`) otomatis dianggap milik mode asisten.
+
+## Pasang di layar utama HP (PWA)
+
+Buka web di HP, lalu: Android (Chrome) menu ⋮ > Instal aplikasi / Tambahkan ke layar utama; iPhone (Safari) tombol Bagikan > Tambahkan ke Layar Utama. Aplikasi terbuka tanpa bar browser. `sw.js` sengaja tidak menyimpan cache, jadi data dan login tetap selalu terbaru; `manifest.json` dan ikon (`icon-192.png`, `icon-512.png`, `apple-touch-icon.png`) ada di root.

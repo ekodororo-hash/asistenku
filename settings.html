@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#4f46e5">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" type="image/png" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Asistenku">
 <title>Pengaturan · Asisten Pribadi</title>
 <style>
   * { -webkit-tap-highlight-color:transparent; }
@@ -62,6 +68,11 @@
   code { font-family:ui-monospace,Menlo,Consolas,monospace; background:var(--bg); padding:1px 5px; border-radius:6px; }
   details.guide { border:1px solid var(--line); border-radius:12px; padding:10px 12px; margin:0 0 12px; background:var(--bg); }
   details.guide summary { cursor:pointer; font-size:14px; font-weight:600; }
+  details.guide summary { display:flex; align-items:center; gap:8px; list-style:none; }
+  details.guide summary::-webkit-details-marker { display:none; }
+  details.guide summary::after { content:""; flex:none; margin-left:auto; margin-right:4px; width:7px; height:7px; border-right:2px solid var(--muted); border-bottom:2px solid var(--muted); transform:translateY(-2px) rotate(45deg); transition:transform .2s; }
+  details.guide[open] summary::after { transform:translateY(2px) rotate(-135deg); }
+  details.guide summary .ic { width:18px; height:18px; flex:none; color:var(--accent); }
   details.guide ol, details.guide ul { margin:8px 0 0; padding-left:20px; font-size:13px; line-height:1.6; color:var(--muted); }
   details.guide li { margin:3px 0; }
   details.guide p { margin:8px 0 0; font-size:13px; line-height:1.5; color:var(--muted); }
@@ -104,7 +115,7 @@
     <p class="hint">Maksimal 5. Dicoba berurutan; kalau kena limit otomatis lompat ke key berikutnya. <span id="globalKeyNote"></span></p>
     <p class="hint">Catatan privasi: pada key tier gratis, Google dapat memakai isi chat untuk meningkatkan modelnya. Jangan masukkan data sensitif milik orang lain.</p>
     <details class="guide">
-      <summary>Cara mendapat API key Gemini (gratis)</summary>
+      <summary><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg><span>Cara mendapat API key Gemini (gratis)</span></summary>
       <ol>
         <li>Buka <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> dan masuk dengan akun Google.</li>
         <li>Klik <b>Create API key</b>, lalu pilih atau buat project.</li>
@@ -129,7 +140,7 @@
     <label for="mdlMain">Model Gemini</label>
     <p class="hint" style="margin:0 0 8px">Kosongkan untuk memakai bawaan server (<span id="mdlDefault"></span>). Ketuk kolom untuk memilih dari daftar.</p>
     <details class="guide" style="margin:0 0 10px">
-      <summary>ⓘ Cara kerja model cadangan</summary>
+      <summary><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg><span>Cara kerja model cadangan</span></summary>
       <ul>
         <li>Model cadangan dipakai otomatis kalau model utama kena limit di semua key, atau tidak ditemukan.</li>
         <li>Saran: utama Flash-Lite, cadangan Flash.</li>
