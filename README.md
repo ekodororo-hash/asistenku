@@ -34,7 +34,6 @@ vercel dev
 Buat `.env` berisi `GEMINI_API_KEY=isi_key_kamu` (jangan di-commit).
 
 ## Catatan
-- Data web tersimpan di browser (localStorage); data bot Telegram di Redis. Keduanya tidak sinkron.
 - Paket gratis Gemini punya batas permintaan; kalau error 429, tunggu sebentar.
 - Error "model not found": isi `GEMINI_MODEL` dengan nama model yang benar.
 - Jangan membagikan API key, token bot, dan akun Upstash.
