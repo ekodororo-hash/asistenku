@@ -1,10 +1,12 @@
 // Dipanggil tiap menit oleh cron-job.org: /api/cron?key=CRON_SECRET
 // Tugasnya: kirim pengingat yang jatuh tempo, ringkasan pagi, check-in malam, dan rekap mingguan.
 const {
-  DAY, HOURS, redis, key, getBot, botUsers, sendTelegram, gemini, appendModelToHist,
+  DAY, HOURS, redis, key, getBot, botUsers, sendTelegram, gemini: geminiBase, appendModelToHist,
   fmtWib, fmtTime, wib, startOfDayWib, nextRepeat,
   cfgOn, getWeather, recapText, loadContext, buildSystem,
 } = require("./_lib");
+
+const gemini = (u, system, contents) => geminiBase(u, system, contents, "otomatis"); // riwayat key menandai sumbernya
 
 const REPEAT_LABEL = { harian: "tiap hari", mingguan: "tiap minggu", bulanan: "tiap bulan" };
 

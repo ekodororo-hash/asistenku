@@ -61,3 +61,9 @@ Tiap akun memasang bot sendiri di Pengaturan: tempel token dari @BotFather, serv
 Cron (`/api/cron`) sekarang berjalan untuk semua pengguna yang bot-nya sudah terhubung, memakai bot dan API key Gemini masing-masing.
 
 Env `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TELEGRAM_WEBHOOK_SECRET` hanya dipakai sebagai bot lama pemilik sampai dia memasang bot sendiri; setelah itu boleh dihapus. Yang tetap dipakai: `CRON_SECRET`, `INVITE_CODE`, `SESSION_SECRET`, `OWNER_USERNAME`, dan (opsional) `GEMINI_API_KEY`.
+
+## Status key & riwayat pemakaian
+
+Tiap key di Pengaturan punya status (Belum digunakan, Berfungsi, Kena limit, Tidak valid, Error), waktu "terakhir digunakan", dan tombol **Uji** (permintaan kecil sungguhan, jeda 5 detik per key). Riwayat pemakaian mencatat waktu, key (4 karakter terakhir), sumber (Web/Telegram/Otomatis/Uji), dan hasil. Isi pesan tidak disimpan.
+
+Riwayat dihapus saat menulis: setiap entri baru memicu penghapusan entri lebih tua dari 1 hari dan sisa di atas 50 entri (tanpa cron). UI menampilkan 20 terbaru, sisanya lewat "Lihat semua". Data di Redis: `u:<id>:gstat` (status per key) dan `u:<id>:ghist` (riwayat).

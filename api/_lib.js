@@ -239,9 +239,90 @@ async function saveKeyRecords(u, list) {
   await redis("SET", key(u, "gkeys"), JSON.stringify(list));
 }
 
+// Status per key + riwayat pemakaian (hapus saat menulis: umur maks. 1 hari, maks. 50 entri)
+const HIST_MAX = 50;
+const HIST_TTL = DAY;
+const COOLDOWN_SEC = 60;
+const HIST_SHOW = 20; // jumlah yang ditampilkan awal di UI
+
+async function loadKeyStats(u) {
+  const rows = await redis("HGETALL", key(u, "gstat"));
+  const out = {};
+  for (let i = 0; i < (rows || []).length; i += 2) {
+    try { out[rows[i]] = JSON.parse(rows[i + 1]); } catch {}
+  }
+  return out;
+}
+
 // Daftar untuk UI: tanpa nilai key utuh
 async function listGeminiKeys(u) {
-  return (await loadKeyRecords(u)).map((k) => ({ id: k.id, last4: k.last4 }));
+  const [list, st] = await Promise.all([loadKeyRecords(u), loadKeyStats(u)]);
+  return list.map((k) => {
+    const s = st[k.id] || {};
+    return { id: k.id, last4: k.last4, status: s.status || "unused", lastUsed: s.lastUsed || null, until: s.until || null, error: s.error || "" };
+  });
+}
+
+// limit = 429 (pulih sendiri), invalid = key salah/dicabut, error = lainnya (mis. gangguan server Google)
+function classifyGemini(status, msg) {
+  if (status === 429) return "limit";
+  if (status === 401 || status === 403 || (status === 400 && /api key|api_key/i.test(msg || ""))) return "invalid";
+  return "error";
+}
+
+// Catat satu pemakaian: perbarui status key + tambah riwayat, lalu hapus entri lama (hapus saat menulis)
+async function recordKeyUse(u, c, outcome) {
+  try {
+    const now = Date.now();
+    const status = outcome.ok ? "ok" : classifyGemini(outcome.http, outcome.message);
+    const error = outcome.ok ? "" : String(outcome.message || "").replace(/\s+/g, " ").slice(0, 120);
+    if (c.id) {
+      await redis("HSET", key(u, "gstat"), c.id, JSON.stringify({
+        status, lastUsed: now, error,
+        until: status === "limit" ? now + COOLDOWN_SEC * 1000 : null,
+      }));
+    }
+    await redis("ZADD", key(u, "ghist"), now, JSON.stringify({
+      id: uid(), ts: now, k: c.id ? c.last4 : "server", src: outcome.src || "web", st: status, err: error,
+    }));
+    await redis("ZREMRANGEBYSCORE", key(u, "ghist"), "-inf", now - HIST_TTL); // buang yang lebih tua dari 1 hari
+    await redis("ZREMRANGEBYRANK", key(u, "ghist"), 0, -(HIST_MAX + 1));      // sisakan 50 terbaru
+  } catch {} // pencatatan tidak boleh menggagalkan chat
+}
+
+async function getKeyHistory(u) {
+  const rows = await redis("ZREVRANGE", key(u, "ghist"), 0, HIST_MAX - 1);
+  const min = Date.now() - HIST_TTL; // sembunyikan yang sudah lewat 1 hari walau belum sempat terhapus
+  return (rows || []).map((r) => { try { return JSON.parse(r); } catch { return null; } }).filter((x) => x && x.ts >= min);
+}
+
+async function clearKeyHistory(u) {
+  await redis("DEL", key(u, "ghist"));
+}
+
+// Satu paket untuk UI Pengaturan
+async function keyState(u) {
+  const [keys, history] = await Promise.all([listGeminiKeys(u), getKeyHistory(u)]);
+  return { keys, history };
+}
+
+// Uji satu key dengan permintaan kecil sungguhan (status hasilnya langsung tercatat)
+async function testGeminiKey(u, id) {
+  const list = await loadKeyRecords(u);
+  const rec = list.find((x) => x.id === id);
+  if (!rec) throw new Error("Key tidak ditemukan.");
+  const gate = await redis("SET", key(u, "gtest:" + id), "1", "NX", "EX", "5");
+  if (gate !== "OK") throw new Error("Tunggu beberapa detik sebelum menguji lagi.");
+  const model = process.env.GEMINI_MODEL || "gemini-flash-latest";
+  const r = await fetch(`${GEMINI_BASE}/models/${model}:generateContent`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-goog-api-key": decrypt(rec.enc) },
+    body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: "hi" }] }], generationConfig: { maxOutputTokens: 5 } }),
+  });
+  const data = await r.json().catch(() => ({}));
+  await recordKeyUse(u, { id, last4: rec.last4 }, { ok: r.ok, http: r.status, message: data?.error?.message, src: "uji" });
+  if (r.status === 429) await redis("SET", key(u, "gcool:" + id), "1", "EX", String(COOLDOWN_SEC));
+  return keyState(u);
 }
 
 async function checkGeminiKey(k) {
@@ -259,31 +340,32 @@ async function addGeminiKey(u, value) {
   if (!(await checkGeminiKey(k))) throw new Error("API key ditolak Google. Cek lagi key-nya.");
   list.push({ id: uid(), enc: encrypt(k), last4: k.slice(-4) });
   await saveKeyRecords(u, list);
-  return listGeminiKeys(u);
+  return keyState(u);
 }
 
 async function deleteGeminiKey(u, id) {
   const list = await loadKeyRecords(u);
   await saveKeyRecords(u, list.filter((x) => x.id !== id));
   await redis("DEL", key(u, "gcool:" + id));
-  return listGeminiKeys(u);
+  await redis("HDEL", key(u, "gstat"), id);
+  return keyState(u);
 }
 
 async function moveGeminiKey(u, id, dir) {
   const list = await loadKeyRecords(u);
   const i = list.findIndex((x) => x.id === id);
   const j = i + (dir === "up" ? -1 : 1);
-  if (i < 0 || j < 0 || j >= list.length) return listGeminiKeys(u);
+  if (i < 0 || j < 0 || j >= list.length) return keyState(u);
   [list[i], list[j]] = [list[j], list[i]];
   await saveKeyRecords(u, list);
-  return listGeminiKeys(u);
+  return keyState(u);
 }
 
 // Urutan: key pengguna 1..5, lalu GEMINI_API_KEY global sebagai cadangan terakhir
 async function geminiCandidates(u) {
   const out = [];
   for (const r of await loadKeyRecords(u)) {
-    try { out.push({ id: r.id, key: decrypt(r.enc) }); } catch {}
+    try { out.push({ id: r.id, last4: r.last4, key: decrypt(r.enc) }); } catch {}
   }
   if (process.env.GEMINI_API_KEY) out.push({ id: null, key: process.env.GEMINI_API_KEY });
   return out;
@@ -292,7 +374,7 @@ async function geminiCandidates(u) {
 // Error yang layak dicoba dengan key berikutnya
 const rotatable = (status) => status === 429 || status === 403 || status === 401 || status === 400 || status >= 500;
 
-async function geminiRaw(u, body) {
+async function geminiRaw(u, body, src) {
   const model = process.env.GEMINI_MODEL || "gemini-flash-latest";
   const cands = await geminiCandidates(u);
   if (!cands.length) {
@@ -313,6 +395,7 @@ async function geminiRaw(u, body) {
       body: JSON.stringify(body),
     });
     const data = await r.json().catch(() => ({}));
+    await recordKeyUse(u, c, { ok: r.ok, http: r.status, message: data?.error?.message, src });
     if (r.ok) return data;
     lastErr = new Error(data?.error?.message || "Gagal memanggil Gemini");
     lastErr.status = r.status === 429 ? 429 : 502; // jangan 401: web mengira sesi habis
@@ -322,10 +405,10 @@ async function geminiRaw(u, body) {
   throw lastErr;
 }
 
-async function gemini(u, system, contents) {
+async function gemini(u, system, contents, src = "telegram") {
   const body = { contents };
   if (system) body.systemInstruction = { parts: [{ text: system }] };
-  const data = await geminiRaw(u, body);
+  const data = await geminiRaw(u, body, src);
   return (data.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("");
 }
 
@@ -727,7 +810,7 @@ ${COMMON}`;
 
 module.exports = {
   TZ, DAY, HOUR, HOURS, BTN,
-  uid, key, MAX_KEYS, getBot, saveBot, setupBot, removeBot, relinkBot, botStatus, botUsers, listGeminiKeys, addGeminiKey, deleteGeminiKey, moveGeminiKey,
+  uid, key, MAX_KEYS, getBot, saveBot, setupBot, removeBot, relinkBot, botStatus, botUsers, listGeminiKeys, keyState, getKeyHistory, clearKeyHistory, testGeminiKey, HIST_SHOW, addGeminiKey, deleteGeminiKey, moveGeminiKey,
   redis, sendTelegram, downloadTelegramFile, gemini, geminiRaw, trimHist, appendModelToHist,
   fmtWib, fmtTime, fmtDateShort, wib, startOfDayWib, nextRepeat, rupiah,
   cfgOn, getLocation, setLocation, getWeather, getNews,

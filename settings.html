@@ -35,12 +35,21 @@
   .msg.ok { color:var(--ok); }
   .item { display:flex; align-items:center; gap:6px; padding:8px 0; border-bottom:1px solid var(--line); }
   .item:last-of-type { border-bottom:none; }
-  .item span { flex:1; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:14px; }
+  .item > span { flex:1; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:14px; }
+  .item .kmain { flex:1; min-width:0; }
+  .item .klabel { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:14px; margin-right:6px; }
+  .ksub { display:block; font-size:12px; color:var(--muted); margin-top:4px; word-break:break-word; }
+  .hrow { padding:6px 0; border-bottom:1px solid var(--line); font-size:13px; color:var(--ink); }
+  .hrow:last-child { border-bottom:none; }
+  .herr { color:var(--muted); font-size:12px; margin-top:2px; word-break:break-word; }
   .item button { padding:6px 10px; min-width:36px; }
   .status { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; border:1px solid var(--line); }
   .status::before { content:""; display:inline-block; width:7px; height:7px; border-radius:50%; background:currentColor; margin-right:6px; vertical-align:1px; }
   .status.on { color:var(--ok); border-color:var(--ok); }
   .status.wait { color:var(--muted); }
+  .status.ok { color:var(--ok); border-color:var(--ok); }
+  .status.limit { color:#b7791f; border-color:#b7791f; }
+  .status.invalid { color:var(--err); border-color:var(--err); }
   .who { font-size:14px; margin:0 0 4px; }
   code { font-family:ui-monospace,Menlo,Consolas,monospace; background:var(--bg); padding:1px 5px; border-radius:6px; }
   details.guide { border:1px solid var(--line); border-radius:12px; padding:10px 12px; margin:0 0 12px; background:var(--bg); }
@@ -95,6 +104,14 @@
       <button id="keyAddBtn">Tambah</button>
     </div>
     <p class="msg" id="keyMsg"></p>
+    <details class="guide" id="histBox" style="margin:12px 0 0">
+      <summary id="histTitle">Riwayat pemakaian</summary>
+      <div id="histList"></div>
+      <div class="actions">
+        <button id="histMore" style="display:none"></button>
+        <button id="histClear" class="danger">Hapus riwayat</button>
+      </div>
+    </details>
   </section>
 
   <section id="secBot">
@@ -134,7 +151,7 @@ async function api(path, opts = {}) {
 const op = (name, extra) => api("/api/state", { method: "POST", body: JSON.stringify({ op: name, ...extra }) }).then((d) => d.result);
 function say(id, text, kind) { const m = $(id); m.textContent = text || ""; m.className = "msg" + (kind ? " " + kind : ""); }
 
-let profile = {}, geminiKeys = [], maxKeys = 5, globalKey = false, botState = { installed: false };
+let profile = {}, geminiKeys = [], keyHistory = [], histShow = 20, histAll = false, maxKeys = 5, globalKey = false, botState = { installed: false };
 
 /* ---------- Profil ---------- */
 $("profileSave").onclick = async () => {
@@ -145,19 +162,55 @@ $("profileSave").onclick = async () => {
 };
 
 /* ---------- API key Gemini ---------- */
+const STATUS = { unused: ["Belum digunakan", "wait"], ok: ["Berfungsi", "ok"], limit: ["Kena limit", "limit"], invalid: ["Tidak valid", "invalid"], error: ["Error", "invalid"] };
+function statusOf(k) {
+  if (k.status === "limit" && k.until && k.until <= Date.now()) return ["Siap dicoba lagi", "wait"]; // cooldown sudah lewat
+  return STATUS[k.status] || STATUS.unused;
+}
+function ago(ts) {
+  const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (s < 60) return "baru saja";
+  const m = Math.round(s / 60); if (m < 60) return m + " menit lalu";
+  const h = Math.round(m / 60); if (h < 24) return h + " jam lalu";
+  return Math.round(h / 24) + " hari lalu";
+}
+function badge(label, cls) {
+  const e = document.createElement("span");
+  e.className = "status " + cls; e.textContent = label;
+  return e;
+}
 function renderKeys() {
   const box = $("keyList");
   box.innerHTML = "";
   geminiKeys.forEach((k, i) => {
     const row = document.createElement("div");
     row.className = "item";
+    const main = document.createElement("div");
+    main.className = "kmain";
     const label = document.createElement("span");
+    label.className = "klabel";
     label.textContent = (i + 1) + ". •••• " + k.last4;
-    row.appendChild(label);
+    main.appendChild(label);
+    const [stLabel, stCls] = statusOf(k);
+    main.appendChild(badge(stLabel, stCls));
+    const sub = document.createElement("span");
+    sub.className = "ksub";
+    sub.textContent = (k.lastUsed ? "Terakhir digunakan " + ago(k.lastUsed) : "Belum pernah digunakan") +
+      ((k.status === "invalid" || k.status === "error") && k.error ? " · " + k.error : "");
+    main.appendChild(sub);
+    row.appendChild(main);
     const mk = (txt, title, fn, disabled) => {
       const b = document.createElement("button");
       b.textContent = txt; b.title = title; b.disabled = !!disabled; b.onclick = fn; row.appendChild(b);
     };
+    mk("Uji", "Uji key ini", async () => {
+      say("keyMsg", "Menguji key …" + k.last4 + "...");
+      if (await keyOp("testKey", { id: k.id })) {
+        const n = geminiKeys.find((x) => x.id === k.id) || {};
+        const [t, c] = statusOf(n);
+        say("keyMsg", "Key …" + k.last4 + ": " + t + (n.error ? " (" + n.error + ")" : "") + ".", c === "ok" ? "ok" : c === "wait" ? "" : "err");
+      }
+    });
     mk("↑", "Naikkan", () => keyOp("moveKey", { id: k.id, dir: "up" }), i === 0);
     mk("↓", "Turunkan", () => keyOp("moveKey", { id: k.id, dir: "down" }), i === geminiKeys.length - 1);
     mk("✕", "Hapus", () => { if (confirm("Hapus key …" + k.last4 + "?")) keyOp("deleteKey", { id: k.id }); });
@@ -167,9 +220,42 @@ function renderKeys() {
   $("keyAddRow").style.display = geminiKeys.length >= maxKeys ? "none" : "flex";
   $("globalKeyNote").textContent = globalKey ? "Key bawaan server jadi cadangan terakhir." : "";
 }
+
+/* ---------- Riwayat pemakaian key ---------- */
+const SRC = { web: "Web", telegram: "Telegram", otomatis: "Otomatis", uji: "Uji" };
+function renderHist() {
+  const box = $("histList");
+  box.innerHTML = "";
+  $("histTitle").textContent = "Riwayat pemakaian (" + keyHistory.length + ")";
+  if (!keyHistory.length) {
+    const p = document.createElement("p");
+    p.className = "hint"; p.style.marginTop = "8px";
+    p.textContent = "Belum ada riwayat. Riwayat dihapus otomatis setelah 1 hari dan maksimal 50 entri.";
+    box.appendChild(p);
+  }
+  const today = new Date().toDateString();
+  (histAll ? keyHistory : keyHistory.slice(0, histShow)).forEach((h) => {
+    const d = new Date(h.ts);
+    const time = d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+    const row = document.createElement("div");
+    row.className = "hrow";
+    row.appendChild(document.createTextNode((d.toDateString() === today ? "" : "kemarin ") + time + " · " + (h.k === "server" ? "key server" : "•••• " + h.k) + " · " + (SRC[h.src] || h.src) + " "));
+    const [t, c] = STATUS[h.st] || STATUS.error;
+    row.appendChild(badge(t, c));
+    if (h.err) { const e = document.createElement("div"); e.className = "herr"; e.textContent = h.err; row.appendChild(e); }
+    box.appendChild(row);
+  });
+  const more = $("histMore");
+  more.style.display = keyHistory.length > histShow ? "" : "none";
+  more.textContent = histAll ? "Tampilkan lebih sedikit" : "Lihat semua (" + keyHistory.length + ")";
+  $("histClear").style.display = keyHistory.length ? "" : "none";
+}
+$("histMore").onclick = () => { histAll = !histAll; renderHist(); };
+$("histClear").onclick = () => { if (confirm("Hapus semua riwayat pemakaian key?")) keyOp("clearKeyHistory"); };
+
 async function keyOp(name, extra) {
   say("keyMsg", "");
-  try { geminiKeys = await op(name, extra); renderKeys(); return true; }
+  try { const r = await op(name, extra); geminiKeys = r.keys; keyHistory = r.history; renderKeys(); renderHist(); return true; }
   catch (e) { say("keyMsg", e.message, "err"); return false; }
 }
 $("keyInput").addEventListener("keydown", (e) => { if (e.key === "Enter") $("keyAddBtn").click(); });
@@ -277,9 +363,9 @@ async function load() {
   $("pName").value = profile.name || "";
   $("pAssistant").value = profile.assistantName || "Asisten";
   $("pNotes").value = profile.notes || "";
-  geminiKeys = d.geminiKeys || []; maxKeys = d.maxKeys || 5; globalKey = !!d.globalKey;
+  geminiKeys = d.geminiKeys || []; keyHistory = d.keyHistory || []; histShow = d.histShow || 20; maxKeys = d.maxKeys || 5; globalKey = !!d.globalKey;
   botState = d.bot || { installed: false };
-  renderKeys(); renderBot();
+  renderKeys(); renderHist(); renderBot();
 }
 load().catch((e) => { if (e.message !== "Belum login") say("profileMsg", "Gagal memuat: " + e.message, "err"); });
 api("/api/auth").then((d) => { $("who").textContent = "Masuk sebagai " + d.user.username; }).catch(() => {});

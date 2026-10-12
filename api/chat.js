@@ -132,7 +132,7 @@ module.exports = async (req, res) => {
     const userTurn = { role: "user", parts: [{ text }], ts: Date.now() };
     const contents = trimHist([...hist, userTurn]);
 
-    const data = await geminiRaw(u, { systemInstruction: { parts: [{ text: system }] }, contents });
+    const data = await geminiRaw(u, { systemInstruction: { parts: [{ text: system }] }, contents }, "web");
     const raw = (data.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("");
     const { clean, added } = await processTags(u, raw);
     const reply = clean || (added.length ? "" : "(tidak ada jawaban)");
