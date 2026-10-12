@@ -808,6 +808,17 @@ async function getReminders(u) {
   }
   return out;
 }
+// Pengingat berulang dengan teks dan pola sama (mis. pesan "ulangi" dari pengguna) menggantikan yang lama, bukan menambah dobel
+async function dropDuplicateReminders(u, text, rule) {
+  if (!rule) return;
+  const norm = (x) => String(x || "").trim().toLowerCase();
+  const rows = await redis("ZRANGE", key(u, "reminders"), 0, -1);
+  for (const member of rows || []) {
+    let it = {};
+    try { it = JSON.parse(member); } catch { continue; }
+    if (!it.tid && it.repeat === rule && norm(it.text) === norm(text)) await redis("ZREM", key(u, "reminders"), member);
+  }
+}
 async function addReminder(u, text, ts, repeat, tid, until) {
   const t = String(text || "").trim().slice(0, 200);
   const when = Number(ts);
@@ -816,6 +827,7 @@ async function addReminder(u, text, ts, repeat, tid, until) {
   const rule = parseRepeat(repeat);
   if (rule) item.repeat = rule;
   if (rule && Number.isFinite(Number(until)) && Number(until) > when) item.until = Number(until);
+  if (!tid) await dropDuplicateReminders(u, t, rule);
   if (tid) item.tid = tid;
   await redis("ZADD", key(u, "reminders"), when, JSON.stringify(item));
   return { id: item.id, text: item.text, ts: when, repeat: item.repeat || null, until: item.until || null };
@@ -1610,6 +1622,6 @@ module.exports = {
   getProfile, saveProfile,
   getMode, setMode, switchMode, takeCurhatExpiredNotice, CURHAT_TTL,
   getHist, saveHist, hasHist, clearHist,
-  getReminders, addReminder, deleteReminderById, deleteReminderNumber, DELETE_INTENT,
+  getReminders, addReminder, dropDuplicateReminders, deleteReminderById, deleteReminderNumber, DELETE_INTENT,
   mentionsAmount, getLink, linkStatus, makeLinkCode, useLinkCode, unlinkPartner, incomingTransfers, sendTransfer, acceptTransfer, declineTransfer, handlePartnerIncome, answerDupMasuk, partnerContext,
 };

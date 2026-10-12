@@ -1,7 +1,7 @@
 // Webhook bot Telegram: /api/telegram
 const {
   HOURS, BTN, redis, tg, key, getBot, saveBot, sendTelegram, downloadTelegramFile, gemini, geminiSearch, sourceLine, REMIND_INTENT, DELETE_INTENT, deleteReminderNumber, trimHist,
-  fmtWib, fmtTime, wib, rupiah, parseRepeat, repeatLabel, cfgOn, getLocation, setLocation, getWeather, getNews,
+  fmtWib, fmtTime, wib, rupiah, parseRepeat, repeatLabel, dropDuplicateReminders, cfgOn, getLocation, setLocation, getWeather, getNews,
   recapText, deleteExpenseNumber, incomeListText, deleteIncomeNumber, loadContext, buildSystem,
   getTasks, addTask, toggleTask, deleteTask, unlinkTaskReminder, parseWib, fmtDue,
   addNote, addExpense, addIncome, setSaldo, addOutsideMoney, fmtDateShort, mentionsAmount,
@@ -511,6 +511,7 @@ async function processTags(u, reply, userText = "", hasImage = false) {
     const item = { id: Math.random().toString(36).slice(2, 10), text: label };
     if (repeat) item.repeat = repeat;
     if (repeat && Number.isFinite(until) && until > ts) item.until = until;
+    await dropDuplicateReminders(u, label, repeat);
     await redis("ZADD", key(u, "reminders"), ts, JSON.stringify(item));
     notes.push("⏰ Pengingat diset: " + label + (repeat ? " (" + repeatLabel(repeat) + (item.until ? " sampai " + fmtWib(item.until) : "") + ")" : "") + "\n" + fmtWib(ts));
   }
