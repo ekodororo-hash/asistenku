@@ -87,48 +87,34 @@ async function aturView(u) {
   return { text, reply_markup: { inline_keyboard } };
 }
 
+// Pesan singkat untuk /start (dan setelah connect) — detail perintah dipindah ke /help biar gak kepanjangan
 const START_TEXT =
-  "👋 Halo! Aku asisten pribadi sekaligus teman ceritamu.\n" +
-  "Tinggal tulis, kirim foto, atau voice note. Atau pakai tombol di bawah.\n\n" +
-  "💡 CONTOH\n" +
-  "• Ingatkan aku besok jam 8 bayar listrik\n" +
-  "• Ingatkan tiap Senin jam 9 rapat tim\n" +
+  "👋 Halo! Aku asisten pribadi sekaligus teman cerita.\n" +
+  "Tulis bebas, kirim foto struk, atau voice note — aku yang urus.\n\n" +
+  "Contoh:\n" +
+  "• besok jam 8 bayar listrik → jadi pengingat\n" +
   "• makan siang 25rb → catat pengeluaran\n" +
-  "• gajian 3jt → catat pemasukan\n" +
-  "• catat: ide konten minggu depan\n" +
-  "• Kirim foto struk atau voice note\n\n" +
-  "⏰ PENGINGAT & TUGAS\n" +
-  "/pengingat → daftar pengingat\n" +
-  "/hapus 2 → hapus pengingat nomor 2 (nomor dilihat di /pengingat)\n" +
-  "/tugas → daftar tugas\n" +
-  "/tugasdone → tandai tugas selesai\n" +
-  "/hapustugas → hapus tugas\n\n" +
-  "💸 UANG\n" +
-  "/rekap → pengeluaran bulan ini\n" +
-  "/masuk → pemasukan bulan ini\n" +
-  "Mau hapus entri? Buka /rekap atau /masuk, lalu balas dengan nomor entri di daftar, misalnya 3.\n" +
-  "/batal → batalkan aksi yang sedang berjalan\n\n" +
-  "📝 CATATAN\n" +
-  "/catatan → daftar catatan\n" +
-  "/cari kata → cari catatan\n" +
-  "/hapuscatatan → hapus catatan\n\n" +
-  "🌤️ INFO\n" +
-  "/cuaca → cuaca di kotamu\n" +
-  "/lokasi kota → ganti kota\n" +
-  "/berita topik → berita terbaru\n\n" +
-  "🧠 MEMORI & PENGATURAN\n" +
-  "/memori → lihat yang kuingat tentangmu\n" +
-  "/lupakan → hapus memori\n" +
-  "/atur → atur notifikasi otomatis\n\n" +
-  "💬 MODE\n" +
-  "/asisten → mode asisten\n" +
-  "/curhat → mode curhat\n" +
-  "/reset → hapus riwayat mode yang sedang aktif\n\n" +
-  "🔔 OTOMATIS\n" +
-  "Ringkasan pagi, check-in malam, dan rekap uang mingguan. Atur lewat /atur.\n\n" +
-  "🔄 SINKRON DENGAN WEB\n" +
-  "Tugas, catatan, uang, dan obrolan mode asisten sama persis dengan di web. Pesan yang kamu tulis di web juga disalin ke sini (matikan dengan /salin off).\n\n" +
-  "🔒 Mode curhat dipisah: riwayatnya sendiri, tidak membuat tugas/catatan/pengingat/uang, tidak masuk memori, dan tidak disalin dari web.";
+  "• catat: ide konten minggu depan\n\n" +
+  "Lihat semua perintah: /help";
+
+// Daftar lengkap perintah, untuk /help
+const HELP_TEXT =
+  "📋 SEMUA PERINTAH\n\n" +
+  "⏰ Pengingat & tugas\n" +
+  "/pengingat · /hapus <no> · /tugas · /tugasdone · /hapustugas\n\n" +
+  "💸 Uang\n" +
+  "/rekap · /masuk — balas nomor di daftar buat hapus entri\n" +
+  "/batal — batalkan aksi yang sedang jalan\n\n" +
+  "📝 Catatan\n" +
+  "/catatan · /cari <kata> · /hapuscatatan\n\n" +
+  "🌤️ Info\n" +
+  "/cuaca · /lokasi <kota> · /berita <topik>\n\n" +
+  "🧠 Memori & pengaturan\n" +
+  "/memori · /lupakan · /atur (notifikasi otomatis, tombol toggle)\n\n" +
+  "💬 Mode\n" +
+  "/asisten · /curhat · /reset\n\n" +
+  "🔄 Sinkron web: tugas, catatan, uang & obrolan asisten sama kayak di web (matikan: /salin off)\n" +
+  "🔒 Curhat terpisah: riwayat sendiri, tidak masuk tugas/catatan/memori, tidak sinkron ke web.";
 
 // ---------- Hapus pengeluaran (dipakai /hapusbeli dan balasan angka setelah /rekap) ----------
 // Mengembalikan true kalau selesai (berhasil / memang kosong), false kalau nomor salah (pengguna boleh coba lagi).
@@ -239,8 +225,11 @@ async function mulaiModeTugas(u, mode, say) {
 async function handleCommand(u, cmd, arg, say, ensureCb) {
   switch (cmd) {
     case "/start":
-    case "/help":
       await say(START_TEXT);
+      return;
+
+    case "/help":
+      await say(HELP_TEXT);
       return;
 
     case "/curhat": {
