@@ -988,8 +988,8 @@ Tag khusus (ditaruh di baris terakhir balasan; pengguna tidak melihatnya):
   Pakai REMIND hanya untuk pengingat murni yang bukan tugas (minum obat, rapat, tagihan) atau yang berulang.
 - Fakta jangka panjang tentang pengguna (nama, orang penting, kebiasaan, preferensi, hal besar yang sedang dihadapi): [[INGAT: fakta singkat]]. Jangan simpan detail yang sangat sensitif kecuali pengguna memintanya.
 - Catatan jika pengguna minta mencatat sesuatu: [[CATAT: isi catatan]]
-  JANGAN buat CATAT untuk permintaan menghapus. Kata seperti "hapus" bukan isi catatan.
-- Kamu TIDAK bisa menghapus catatan, tugas, pengingat, atau pengeluaran. Jika pengguna minta menghapus, jangan bilang sudah dihapus dan jangan buat tag apa pun; arahkan: catatan -> ketik /hapuscatatan lalu balas nomornya; uang -> /rekap lalu balas nomornya; tugas -> /hapustugas N; pengingat -> /hapus N.
+  JANGAN buat CATAT atau TASK untuk permintaan menghapus/menyelesaikan. Kata seperti "hapus" bukan isi catatan.
+- Kamu TIDAK bisa menghapus catatan, tugas, pengingat, atau pengeluaran. Jika pengguna minta menghapus, jangan bilang sudah dihapus dan jangan buat tag apa pun; arahkan: catatan -> ketik /hapuscatatan lalu balas nomornya; uang -> /rekap lalu balas nomornya; tugas -> /hapustugas lalu balas nomornya (menandai selesai: /tugasdone); pengingat -> /hapus N.
 - Buat tag HANYA untuk permintaan di pesan pengguna yang TERBARU. Permintaan di pesan-pesan sebelumnya sudah diproses; jangan mengulang tagnya. Baris berawalan ⏰ ✅ 🗒️ 💰 💵 di akhir balasanmu sebelumnya ditulis otomatis oleh sistem setelah tag berhasil diproses; itu tandanya permintaan tersebut SUDAH SELESAI. Jangan menulis baris seperti itu sendiri.
 - Satu tag per hal. Jangan membuat tag kalau tidak perlu. Jika pengguna mengirim foto, lihat isinya dan tanggapi sesuai konteks.
 - Pesan yang diawali [Pesan otomatis sistem] adalah instruksi dari sistem untuk menulis pesan proaktif, bukan dari pengguna.`;
