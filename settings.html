@@ -280,6 +280,14 @@ function updateQuota() {
   };
   $("mdlQuota").textContent = [line("Utama", $("mdlMain").value.trim() || def), line("Cadangan", $("mdlFb").value.trim())].filter(Boolean).join("\n");
 }
+// Urutan: kelompok kuota, lalu nama persis (bukan alias -latest), lalu stabil (bukan preview), lalu versi terbaru
+function verOf(m) { const v = parseFloat((String(m).match(/gemini-(\d+(?:\.\d+)?)/) || [])[1]); return isNaN(v) ? 0 : v; }
+function modelSort(a, b) {
+  const f = (m) => [modelInfo(m).rank, /latest/i.test(m) ? 1 : 0, /preview|exp/i.test(m) ? 1 : 0, -verOf(m)];
+  const x = f(a), y = f(b);
+  for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i] - y[i];
+  return b.localeCompare(a);
+}
 let modelNames = [];
 async function loadModelList() {
   if (modelsLoaded) return;
@@ -287,7 +295,7 @@ async function loadModelList() {
   try {
     const list = await op("listModels");
     modelNames = list.filter((m) => modelInfo(m).tier !== "khusus")
-      .sort((a, b) => modelInfo(a).rank - modelInfo(b).rank || b.localeCompare(a));
+      .sort(modelSort);
     $("mdlList").innerHTML = "";
     modelNames.forEach((m) => {
       const o = document.createElement("option");
