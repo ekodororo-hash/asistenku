@@ -25,13 +25,24 @@ const START_TEXT =
   "Perintah:\n" +
   "/pengingat  /hapus N\n" +
   "/tugas  /tugasdone N  /hapustugas N\n" +
-  "/rekap  /hapusbeli N\n" +
+  "/rekap (lalu balas nomor untuk hapus)  /batal\n" +
   "/catatan  /cari kata  /hapuscatatan N\n" +
   "/cuaca  /lokasi kota  /berita topik\n" +
   "/memori  /lupakan  /atur\n\n" +
   `Otomatis: ringkasan pagi, check-in malam, dan rekap pengeluaran mingguan. Atur di /atur.\n` +
   "Aku mengingat hal-hal penting tentangmu supaya ngobrolnya nyambung. Lihat dengan /memori, hapus dengan /lupakan.\n\n" +
   "Tugas, catatan, uang, dan obrolan di sini sama persis dengan yang ada di web. Pesan yang kamu tulis di web juga disalin ke sini (matikan dengan /salin off).";
+
+// ---------- Hapus pengeluaran (dipakai /hapusbeli dan balasan angka setelah /rekap) ----------
+// Mengembalikan true kalau selesai (berhasil / memang kosong), false kalau nomor salah (pengguna boleh coba lagi).
+async function hapusBeli(u, n, say) {
+  const r = await deleteExpenseNumber(u, n);
+  if (r.empty) { await say("Tidak ada pengeluaran bulan ini yang bisa dihapus."); return true; }
+  if (r.range) { await say(`Nomor ${n} tidak ada. Bulan ini ada ${r.range} entri; balas dengan nomor yang tertera di daftar.`); return false; }
+  if (r.fail) { await say("Gagal menghapus entri."); return true; }
+  await say(`🗑️ Dihapus: ${r.item.note || r.item.cat || "?"} (${rupiah(r.item.amt || 0)})`);
+  return true;
+}
 
 // ---------- Perintah ----------
 async function handleCommand(u, cmd, arg, say) {
@@ -149,18 +160,23 @@ async function handleCommand(u, cmd, arg, say) {
       catch (e) { await say("Gagal mengambil berita: " + e.message); }
       return;
 
-    case "/rekap":
-      await say((await recapText(u)).text);
+    case "/rekap": {
+      const r = await recapText(u, true);
+      await say(r.text);
+      // 3 menit ke depan, balasan angka = nomor entri yang mau dihapus
+      if (r.monthCount) await redis("SET", key(u, "pending"), "hapusbeli", "EX", "180");
+      return;
+    }
+
+    case "/batal":
+      await redis("DEL", key(u, "pending"));
+      await say("Oke, dibatalkan.");
       return;
 
     case "/hapusbeli": {
       const n = arg ? parseInt(arg, 10) : 0;
-      if (arg && (!n || n < 1)) { await say("Pakai: /hapusbeli <nomor>. Lihat nomornya di /rekap (tombol 💰 Uang). Tanpa nomor menghapus yang terakhir."); return; }
-      const r = await deleteExpenseNumber(u, n);
-      if (r.empty) { await say("Tidak ada pengeluaran bulan ini yang bisa dihapus."); return; }
-      if (r.range) { await say(`Nomor tidak ada. Bulan ini ada ${r.range} entri; lihat nomornya di /rekap.`); return; }
-      if (r.fail) { await say("Gagal menghapus entri."); return; }
-      await say(`Dihapus: ${r.item.note || r.item.cat || "?"} (${rupiah(r.item.amt || 0)})`);
+      if (arg && (!n || n < 1)) { await say("Pakai: /hapusbeli <nomor>, contoh: /hapusbeli 2. Lihat nomornya di /rekap. Tanpa nomor menghapus entri terakhir."); return; }
+      await hapusBeli(u, n, say);
       return;
     }
 
@@ -349,6 +365,17 @@ module.exports = async (req, res) => {
     const isText = !!msg.text;
     if (isText && map[text]) text = map[text];
     if (isText && text === BTN.plan) text = PLAN_PROMPT;
+
+    // Setelah /rekap: balasan angka = pilih nomor pengeluaran yang dihapus (tidak diteruskan ke Gemini).
+    // Pesan lain apa pun membatalkan mode ini.
+    if (isText) {
+      const isNum = /^[1-9]\d{0,2}$/.test(text);
+      if (isNum && (await redis("GET", key(u, "pending"))) === "hapusbeli") {
+        if (await hapusBeli(u, parseInt(text, 10), say)) await redis("DEL", key(u, "pending"));
+        return res.status(200).end();
+      }
+      if (!isNum && text !== "/rekap" && text !== "/batal") await redis("DEL", key(u, "pending"));
+    }
 
     let image = null;
     let voice = false;

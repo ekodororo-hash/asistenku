@@ -845,7 +845,7 @@ function breakdown(list) {
   return { total, lines };
 }
 
-async function recapText(u) {
+async function recapText(u, interactive = false) {
   const now = Date.now();
   const w = wib(now);
   const weekStart = startOfDayWib(now) - ((w.weekday + 6) % 7) * DAY; // Senin
@@ -854,7 +854,7 @@ async function recapText(u) {
   const week = all.filter((e) => e.ts >= weekStart);
   const month = all.filter((e) => e.ts >= monthStart);
   if (!month.length) {
-    return { text: "Belum ada pengeluaran tercatat bulan ini. Coba ketik: makan siang 25rb", weekCount: 0 };
+    return { text: "Belum ada pengeluaran tercatat bulan ini. Coba ketik: makan siang 25rb", weekCount: 0, monthCount: 0 };
   }
   const bw = breakdown(week), bm = breakdown(month);
   const base = Math.max(0, month.length - 8); // nomor = urutan di bulan ini, dipakai /hapusbeli N
@@ -863,8 +863,11 @@ async function recapText(u) {
     `💰 Pengeluaran\n\n` +
     `Minggu ini: ${rupiah(bw.total)} (${week.length} transaksi)\n${bw.lines.join("\n") || "  -"}\n\n` +
     `Bulan ini: ${rupiah(bm.total)} (${month.length} transaksi)\n${bm.lines.join("\n")}\n\n` +
-    `Terakhir:\n${last.join("\n")}\n\nSalah catat? /hapusbeli N menghapus entri bernomor N (tanpa nomor: entri terakhir).`;
-  return { text, weekCount: week.length };
+    `Terakhir:\n${last.join("\n")}\n\n` +
+    (interactive
+      ? "Ada yang salah catat? Balas dengan nomornya saja (contoh: 2) untuk menghapus entri itu. Batal: /batal"
+      : "Salah catat? Ketik /rekap, lalu balas dengan nomor entri yang mau dihapus.");
+  return { text, weekCount: week.length, monthCount: month.length };
 }
 
 // Hapus pengeluaran bulan ini berdasarkan nomor di daftar /rekap (n kosong = yang terakhir)
