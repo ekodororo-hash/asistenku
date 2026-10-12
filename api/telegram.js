@@ -4,7 +4,7 @@ const {
   fmtWib, wib, rupiah, cfgOn, getLocation, setLocation, getWeather, getNews,
   recapText, deleteExpenseNumber, loadContext, buildSystem,
   getTasks, addTask, toggleTask, deleteTask, unlinkTaskReminder, parseWib, fmtDue,
-  addNote, addExpense, setSaldo,
+  addNote, addExpense, setSaldo, fmtDateShort,
 } = require("./_lib");
 const { getOwnerId, safeEq } = require("./_auth");
 
@@ -26,7 +26,7 @@ const START_TEXT =
   "/pengingat  /hapus N\n" +
   "/tugas  /tugasdone N  /hapustugas N\n" +
   "/rekap (lalu balas nomor untuk hapus)  /batal\n" +
-  "/catatan  /cari kata  /hapuscatatan N\n" +
+  "/catatan  /cari kata  /hapuscatatan (lalu balas nomor)\n" +
   "/cuaca  /lokasi kota  /berita topik\n" +
   "/memori  /lupakan  /atur\n\n" +
   `Otomatis: ringkasan pagi, check-in malam, dan rekap pengeluaran mingguan. Atur di /atur.\n` +
@@ -42,6 +42,47 @@ async function hapusBeli(u, n, say) {
   if (r.fail) { await say("Gagal menghapus entri."); return true; }
   await say(`🗑️ Dihapus: ${r.item.note || r.item.cat || "?"} (${rupiah(r.item.amt || 0)})`);
   return true;
+}
+
+
+// ---------- Catatan: daftar rapi + hapus (dipakai /catatan, /hapuscatatan, dan balasan angka) ----------
+async function noteListText(u, interactive) {
+  const all = await redis("LRANGE", key(u, "notes"), 0, -1);
+  if (!all || !all.length) return { text: "Belum ada catatan. Tulis: catat: isi catatanmu", count: 0 };
+  const start = Math.max(0, all.length - 10);
+  const lines = all.slice(start).map((r, i) => {
+    let n = {};
+    try { n = JSON.parse(r); } catch {}
+    return `  ${start + i + 1}. ${n.ts ? fmtDateShort(n.ts) + ": " : ""}${n.text || "?"}`;
+  });
+  const text =
+    `🗒️ Catatan (${all.length} total)\n\n` +
+    (start > 0 ? `Terakhir (10 dari ${all.length}):\n` : "Daftar:\n") +
+    lines.join("\n") + "\n\n" +
+    (interactive
+      ? "Balas dengan nomornya saja (contoh: 2) untuk menghapus catatan itu. Batal: /batal"
+      : "Hapus: ketik /hapuscatatan lalu balas nomornya.  Cari: /cari kata");
+  return { text, count: all.length };
+}
+
+// true = selesai (berhasil / kosong), false = nomor salah (boleh coba lagi)
+async function hapusCatatan(u, n, say) {
+  const all = await redis("LRANGE", key(u, "notes"), 0, -1);
+  if (!all || !all.length) { await say("Belum ada catatan yang bisa dihapus."); return true; }
+  if (!n || n < 1 || n > all.length) { await say(`Nomor ${n || "?"} tidak ada. Ada ${all.length} catatan; balas dengan nomor yang tertera di daftar.`); return false; }
+  const raw = all[n - 1];
+  let it = {};
+  try { it = JSON.parse(raw); } catch {}
+  const ok = Number(await redis("LREM", key(u, "notes"), "1", raw)) > 0; // atomik, entri lain tidak tersentuh
+  await say(ok ? `🗑️ Dihapus: ${it.text || "?"}` : "Gagal menghapus catatan.");
+  return true;
+}
+
+// Mulai mode hapus catatan: tampilkan daftar, 3 menit ke depan balasan angka = nomor yang dihapus
+async function mulaiHapusCatatan(u, say) {
+  const r = await noteListText(u, true);
+  await say(r.text);
+  if (r.count) await redis("SET", key(u, "pending"), "hapuscatatan", "EX", "180");
 }
 
 // ---------- Perintah ----------
@@ -182,15 +223,8 @@ async function handleCommand(u, cmd, arg, say) {
     }
 
     case "/catatan": {
-      const all = await redis("LRANGE", key(u, "notes"), 0, -1);
-      if (!all || !all.length) { await say("Belum ada catatan. Tulis: catat: isi catatanmu"); return; }
-      const start = Math.max(0, all.length - 10);
-      const lines = all.slice(start).map((r, i) => {
-        let n = {};
-        try { n = JSON.parse(r); } catch {}
-        return `${start + i + 1}. ${n.text}`;
-      });
-      await say(`Catatan terakhir (${all.length} total):\n\n` + lines.join("\n") + "\n\nCari: /cari kata  Hapus: /hapuscatatan N");
+      const r = await noteListText(u, false);
+      await say(r.text);
       return;
     }
 
@@ -220,11 +254,10 @@ async function handleCommand(u, cmd, arg, say) {
     }
 
     case "/hapuscatatan": {
-      const n = parseInt(arg, 10);
-      const all = await redis("LRANGE", key(u, "notes"), 0, -1);
-      if (!n || n < 1 || !all || n > all.length) { await say("Pakai: /hapuscatatan <nomor>. Lihat nomornya di /catatan."); return; }
-      await redis("LREM", key(u, "notes"), "1", all[n - 1]); // atomik, entri lain tidak tersentuh
-      await say("Catatan dihapus.");
+      const n = arg ? parseInt(arg, 10) : 0;
+      if (!arg) { await mulaiHapusCatatan(u, say); return; } // tanpa nomor: tampilkan daftar, lalu balas nomornya
+      if (!n || n < 1) { await say("Pakai: /hapuscatatan <nomor>, atau ketik /hapuscatatan saja lalu balas nomornya."); return; }
+      await hapusCatatan(u, n, say);
       return;
     }
 
@@ -314,6 +347,7 @@ async function processTags(u, reply) {
 
   // Catatan
   for (const m of reply.matchAll(/\[\[CATAT:\s*([^\]]+?)\s*\]\]/g)) {
+    if (/^(hapus|buang|delete)(\s+(catatan|note))?(\s+\d+)?$/i.test(m[1].trim())) continue; // itu perintah hapus, bukan isi catatan
     const n = await addNote(u, m[1]);
     if (n) notes.push("🗒️ Dicatat: " + n.text);
   }
@@ -374,15 +408,25 @@ module.exports = async (req, res) => {
     if (isText && map[text]) text = map[text];
     if (isText && text === BTN.plan) text = PLAN_PROMPT;
 
-    // Setelah /rekap: balasan angka = pilih nomor pengeluaran yang dihapus (tidak diteruskan ke Gemini).
+    // Setelah /rekap atau /hapuscatatan: balasan angka = nomor entri yang dihapus (tidak diteruskan ke Gemini).
     // Pesan lain apa pun membatalkan mode ini.
     if (isText) {
       const isNum = /^[1-9]\d{0,2}$/.test(text);
-      if (isNum && (await redis("GET", key(u, "pending"))) === "hapusbeli") {
-        if (await hapusBeli(u, parseInt(text, 10), say)) await redis("DEL", key(u, "pending"));
+      const pend = isNum ? await redis("GET", key(u, "pending")) : null;
+      if (isNum && (pend === "hapusbeli" || pend === "hapuscatatan")) {
+        const done = pend === "hapusbeli" ? await hapusBeli(u, parseInt(text, 10), say) : await hapusCatatan(u, parseInt(text, 10), say);
+        if (done) await redis("DEL", key(u, "pending"));
         return res.status(200).end();
       }
-      if (!isNum && text !== "/rekap" && text !== "/batal") await redis("DEL", key(u, "pending"));
+      if (!isNum && text !== "/rekap" && text !== "/batal" && text !== "/hapuscatatan") await redis("DEL", key(u, "pending"));
+
+      // "hapus catatan" / "hapus catatan 2" ditangani langsung, tanpa Gemini (Gemini tidak bisa menghapus)
+      const hm = text.match(/^(?:hapus|buang|delete)\s+(?:catatan|note)(?:\s+(?:nomor|no\.?|ke)?\s*(\d{1,3}))?\s*$/i);
+      if (hm) {
+        if (hm[1]) await hapusCatatan(u, parseInt(hm[1], 10), say);
+        else await mulaiHapusCatatan(u, say);
+        return res.status(200).end();
+      }
     }
 
     let image = null;
