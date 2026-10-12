@@ -4,7 +4,7 @@ const {
   fmtWib, wib, rupiah, cfgOn, getLocation, setLocation, getWeather, getNews,
   recapText, deleteExpenseNumber, loadContext, buildSystem,
   getTasks, addTask, toggleTask, deleteTask,
-  addNote, addExpense,
+  addNote, addExpense, setSaldo,
 } = require("./_lib");
 const { getOwnerId, safeEq } = require("./_auth");
 
@@ -304,13 +304,19 @@ async function processTags(u, reply) {
     if (e) notes.push("💰 Dicatat: " + rupiah(e.amt) + " (" + e.cat + ")" + (e.note ? " - " + e.note : ""));
   }
 
+  // Saldo
+  for (const m of reply.matchAll(/\[\[SALDO:\s*([^\]]+?)\s*\]\]/g)) {
+    const sd = await setSaldo(u, Number(String(m[1]).replace(/[^\d]/g, "")));
+    if (sd) notes.push("💵 Saldo dicatat: " + rupiah(sd.amt));
+  }
+
   // Catatan
   for (const m of reply.matchAll(/\[\[CATAT:\s*([^\]]+?)\s*\]\]/g)) {
     const n = await addNote(u, m[1]);
     if (n) notes.push("🗒️ Dicatat: " + n.text);
   }
 
-  const clean = reply.replace(/\[\[(TASK|REMIND|INGAT|BELI|CATAT):[\s\S]*?\]\]/g, "").trim();
+  const clean = reply.replace(/\[\[(TASK|REMIND|INGAT|BELI|CATAT|SALDO):[\s\S]*?\]\]/g, "").trim();
   return { clean, notes };
 }
 

@@ -6,7 +6,7 @@ const {
   trimHist, geminiRaw, fmtWib, rupiah,
   getMode, getHist, saveHist, getProfile,
   getTasks, addTask, getNotes, addNote, getExpenses, addExpense,
-  getReminders, addReminder, getBot, sendTelegram, cfgOn, quotaStatus,
+  getReminders, addReminder, getBot, sendTelegram, cfgOn, quotaStatus, setSaldo, moneyContext,
 } = require("./_lib");
 
 const REPEAT_LABEL = { harian: "tiap hari", mingguan: "tiap minggu", bulanan: "tiap bulan" };
@@ -59,6 +59,7 @@ Tag khusus (taruh di baris terakhir balasan; pengguna tidak melihatnya):
 - Catatan jika pengguna minta mencatat sesuatu: [[CATAT: isi catatan]]
 - Pengeluaran yang sudah terjadi (mis. "makan siang 25rb", "beli bensin 50 ribu"): [[BELI: 25000 | makan | makan siang]]
   Jumlah rupiah angka bulat tanpa titik ("25rb" = 25000, "1,5jt" = 1500000). Kategori satu kata: makan, transport, belanja, tagihan, hiburan, kesehatan, lainnya.
+- Saldo/uang yang dimiliki pengguna sekarang (mis. \"uangku sekarang 500rb\"): [[SALDO: 500000]]. Angka bulat tanpa titik. Sisa uang = saldo dikurangi pengeluaran tercatat setelahnya (sudah dihitung di data uang di atas; jangan menebak kalau saldo belum diketahui).
 - Satu tag per hal, boleh lebih dari satu. Jangan membuat tag kalau pengguna tidak memintanya.
 - Data ini juga dipakai lewat bot Telegram pengguna (tugas, catatan, uang, pengingat, riwayat obrolan sama persis).`;
 }
@@ -88,7 +89,12 @@ async function processTags(u, reply) {
     if (e) added.push("💰 Dicatat: " + rupiah(e.amt) + " (" + e.cat + ")" + (e.note ? " - " + e.note : ""));
   }
 
-  const clean = reply.replace(/\[\[(TASK|REMIND|CATAT|BELI):[\s\S]*?\]\]/g, "").trim();
+  for (const m of reply.matchAll(/\[\[SALDO:\s*([^\]]+?)\s*\]\]/g)) {
+    const sd = await setSaldo(u, Number(String(m[1]).replace(/[^\d]/g, "")));
+    if (sd) added.push("💵 Saldo dicatat: " + rupiah(sd.amt));
+  }
+
+  const clean = reply.replace(/\[\[(TASK|REMIND|CATAT|BELI|SALDO):[\s\S]*?\]\]/g, "").trim();
   return { clean, added };
 }
 
@@ -127,7 +133,7 @@ module.exports = async (req, res) => {
       ? notes.slice(-20).map((n) => "- " + n.text).join("\n")
       : "(kosong)";
 
-    const system = buildSystem(mode, { profile, taskList, noteList, moneyText: moneyText(expenses), remindText, botLinked: !!(bot && bot.chatId) });
+    const system = buildSystem(mode, { profile, taskList, noteList, moneyText: await moneyContext(u), remindText, botLinked: !!(bot && bot.chatId) });
 
     const userTurn = { role: "user", parts: [{ text }], ts: Date.now() };
     const contents = trimHist([...hist, userTurn]);

@@ -881,11 +881,46 @@ async function deleteExpenseNumber(u, n) {
   return (await deleteExpenseById(u, item.id)) ? { item } : { fail: true };
 }
 
+// ---------- Saldo & ringkasan uang untuk Gemini ----------
+// Aplikasi hanya mencatat pengeluaran. Saldo = angka terakhir yang disebut pengguna; sisa = saldo - pengeluaran sejak itu.
+async function getSaldo(u) {
+  const raw = await redis("GET", key(u, "saldo"));
+  try { return raw ? JSON.parse(raw) : null; } catch { return null; }
+}
+async function setSaldo(u, amt) {
+  const n = Math.round(Number(amt));
+  if (!Number.isFinite(n) || n < 0 || n > 1e12) return null;
+  const item = { amt: n, ts: Date.now() };
+  await redis("SET", key(u, "saldo"), JSON.stringify(item));
+  return item;
+}
+async function moneyContext(u) {
+  const [month, saldo] = await Promise.all([getExpenses(u), getSaldo(u)]);
+  let out;
+  if (!month.length) out = "Belum ada pengeluaran tercatat bulan ini.";
+  else {
+    const b = breakdown(month);
+    const cats = b.lines.map((l) => l.replace(/^\s*-\s*/, "")).join(", ");
+    const last = month.slice(-5).map((e) => (e.note || e.cat) + " " + rupiah(e.amt)).join("; ");
+    out = `Bulan ini total ${rupiah(b.total)} (${month.length} transaksi). Per kategori: ${cats}. Terakhir: ${last}.`;
+  }
+  if (saldo) {
+    const since = (await expensesSince(u, saldo.ts)).reduce((s, e) => s + e.amt, 0);
+    out += `\nSaldo yang diberitahu pengguna: ${rupiah(saldo.amt)} (dicatat ${fmtWib(saldo.ts)}). ` +
+      `Pengeluaran tercatat sejak itu: ${rupiah(since)}. Perkiraan sisa uang: ${rupiah(saldo.amt - since)} ` +
+      `(pemasukan baru tidak tercatat; kalau pengguna menyebut saldo terbaru, catat ulang dengan tag SALDO).`;
+  } else {
+    out += "\nSaldo/pemasukan pengguna BELUM diketahui. Jangan menebak sisa uang; kalau ditanya, minta pengguna menyebut uangnya sekarang, lalu catat dengan tag SALDO.";
+  }
+  return out;
+}
+
 // ---------- Konteks & prompt ----------
 async function loadContext(u) {
-  const [facts, rows] = await Promise.all([
+  const [facts, rows, profile, tasks, notes, money] = await Promise.all([
     redis("LRANGE", key(u, "facts"), 0, -1),
     redis("ZRANGE", key(u, "reminders"), 0, 9, "WITHSCORES"),
+    getProfile(u), getTasks(u), getNotes(u), moneyContext(u),
   ]);
   const reminders = [];
   for (let i = 0; i < (rows || []).length; i += 2) {
@@ -893,7 +928,7 @@ async function loadContext(u) {
     try { it = JSON.parse(rows[i]); } catch {}
     reminders.push({ text: it.text || "?", ts: Number(rows[i + 1]), repeat: it.repeat });
   }
-  return { facts: facts || [], reminders };
+  return { facts: facts || [], reminders, profile, tasks, notes, money };
 }
 
 const PERSONA = {
@@ -920,6 +955,7 @@ Tag khusus (ditaruh di baris terakhir balasan; pengguna tidak melihatnya):
   Pengingat berulang: tambahkan bagian ketiga harian / mingguan / bulanan, contoh [[REMIND: 2026-10-13T09:00:00+07:00 | rapat tim | mingguan]]. Waktu = kemunculan pertama.
 - Pengeluaran yang sudah terjadi (mis. "makan siang 25rb", "beli bensin 50 ribu", atau foto struk/nota): [[BELI: 25000 | makan | makan siang]]
   Jumlah rupiah angka bulat tanpa titik ("25rb" = 25000, "1,5jt" = 1500000). Kategori satu kata: makan, transport, belanja, tagihan, hiburan, kesehatan, lainnya. Untuk struk cukup satu tag berisi total.
+- Saldo/uang yang dimiliki pengguna sekarang (mis. \"uangku sekarang 500rb\", \"saldo 1,2jt\"): [[SALDO: 500000]]. Angka bulat tanpa titik. Sisa uang dihitung dari saldo dikurangi pengeluaran yang tercatat setelahnya.
 - Tugas/checklist (hal yang perlu dikerjakan, BUKAN pengingat berwaktu): [[TASK: isi tugas singkat]]
 - Fakta jangka panjang tentang pengguna (nama, orang penting, kebiasaan, preferensi, hal besar yang sedang dihadapi): [[INGAT: fakta singkat]]. Jangan simpan detail yang sangat sensitif kecuali pengguna memintanya.
 - Catatan jika pengguna minta mencatat sesuatu: [[CATAT: isi catatan]]
@@ -927,6 +963,10 @@ Tag khusus (ditaruh di baris terakhir balasan; pengguna tidak melihatnya):
 - Pesan yang diawali [Pesan otomatis sistem] adalah instruksi dari sistem untuk menulis pesan proaktif, bukan dari pengguna.`;
 
 function buildSystem(mode, ctx) {
+  const tasks = (ctx.tasks || []).length
+    ? ctx.tasks.slice(-40).map((t, i) => `${i + 1}. ${t.done ? "[selesai]" : "[belum]"} ${t.text}`).join("\n")
+    : "(kosong)";
+  const notes = (ctx.notes || []).length ? ctx.notes.slice(-20).map((n) => "- " + n.text).join("\n") : "(kosong)";
   const persona = mode === "curhat" ? PERSONA.curhat : PERSONA.asisten;
   const rem = ctx.reminders.length
     ? ctx.reminders
@@ -937,11 +977,23 @@ function buildSystem(mode, ctx) {
 
 Waktu sekarang: ${fmtWib(Date.now())}. Zona waktu pengguna: WIB (UTC+07:00).
 
+Nama kamu: ${(ctx.profile && ctx.profile.assistantName) || "Asisten"}. Pengguna bernama: ${(ctx.profile && ctx.profile.name) || "(belum diisi)"}.
+Catatan tentang pengguna: ${(ctx.profile && ctx.profile.notes) || "(belum ada)"}.
+
 Yang kamu ingat tentang pengguna:
 ${ctx.facts.length ? ctx.facts.map((f) => "- " + f).join("\n") : "(belum ada)"}
 
 Pengingat mendatang pengguna:
 ${rem}
+
+Daftar tugas pengguna:
+${tasks}
+
+Catatan pengguna (terbaru):
+${notes}
+
+Uang pengguna (jawab pertanyaan soal uang hanya dari data ini, jangan mengarang angka):
+${ctx.money || "(tidak ada data)"}
 
 ${COMMON}`;
 }
@@ -955,7 +1007,7 @@ module.exports = {
   recapText, deleteExpenseNumber, loadContext, buildSystem,
   getTasks, addTask, toggleTask, deleteTask,
   getNotes, addNote, deleteNoteById,
-  getExpenses, addExpense, deleteExpenseById,
+  getExpenses, addExpense, deleteExpenseById, getSaldo, setSaldo, moneyContext,
   getProfile, saveProfile,
   getMode, setMode,
   getHist, saveHist,
