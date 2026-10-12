@@ -1,6 +1,6 @@
 // Webhook bot Telegram: /api/telegram
 const {
-  HOURS, BTN, redis, key, getBot, saveBot, sendTelegram, downloadTelegramFile, gemini, geminiSearch, sourceLine, trimHist,
+  HOURS, BTN, redis, key, getBot, saveBot, sendTelegram, downloadTelegramFile, gemini, geminiSearch, sourceLine, REMIND_INTENT, trimHist,
   fmtWib, wib, rupiah, cfgOn, getLocation, setLocation, getWeather, getNews,
   recapText, deleteExpenseNumber, loadContext, buildSystem,
   getTasks, addTask, toggleTask, deleteTask, unlinkTaskReminder, parseWib, fmtDue,
@@ -337,7 +337,8 @@ async function handleCommand(u, cmd, arg, say) {
 }
 
 // ---------- Tag dari Gemini ----------
-async function processTags(u, reply) {
+async function processTags(u, reply, userText = "") {
+  const remindOk = REMIND_INTENT.test(userText);
   const notes = [];
 
   // Tugas/checklist (boleh dengan jam -> otomatis jadi pengingat terhubung)
@@ -351,7 +352,7 @@ async function processTags(u, reply) {
   }
 
   // Pengingat (boleh berulang)
-  for (const m of reply.matchAll(/\[\[REMIND:\s*([^|\]]+?)\s*\|\s*([^|\]]+?)\s*(?:\|\s*(harian|mingguan|bulanan)\s*)?\]\]/gi)) {
+  for (const m of remindOk ? [...reply.matchAll(/\[\[REMIND:\s*([^|\]]+?)\s*\|\s*([^|\]]+?)\s*(?:\|\s*(harian|mingguan|bulanan)\s*)?\]\]/gi)] : []) {
     const ts = parseWib(m[1]);
     const label = m[2].trim();
     const repeat = m[3] ? m[3].toLowerCase() : null;
@@ -546,14 +547,14 @@ module.exports = async (req, res) => {
 
     const found = await geminiSearch(u, buildSystem(mode, ctx), contents);
     const raw = found.text;
-    const { clean, notes } = await processTags(u, raw);
+    const { clean, notes } = await processTags(u, raw, text);
     const reply = clean || (notes.length ? "" : "(tidak ada jawaban)");
 
     hist.push({ role: "model", parts: [{ text: [reply, ...notes].filter(Boolean).join("\n\n") || "(dicatat)" }], ts: Date.now() }); // sertakan hasil tag: tanda bahwa permintaan sudah selesai
     await redis("SET", key(u, "hist"), JSON.stringify(hist.slice(-30)));
 
     const echo = voice && mode !== "curhat" ? `🎙️ "${text}"\n\n` : "";
-    await say(echo + [reply, ...notes, sourceLine(found.sources)].filter(Boolean).join("\n\n"));
+    await say(echo + [reply, ...notes, sourceLine(found.sources, found.searchError)].filter(Boolean).join("\n\n"));
   } catch (e) {
     try { await say("Maaf, ada error: " + e.message); } catch {}
   }
