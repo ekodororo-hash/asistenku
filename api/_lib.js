@@ -337,7 +337,7 @@ async function appendModelToHist(u, text) {
   const raw = await redis("GET", key(u, "hist"));
   let hist = [];
   try { hist = raw ? JSON.parse(raw) : []; } catch {}
-  hist.push({ role: "model", parts: [{ text }] });
+  hist.push({ role: "model", parts: [{ text }], ts: Date.now() });
   await redis("SET", key(u, "hist"), JSON.stringify(hist.slice(-30)));
 }
 
@@ -684,7 +684,7 @@ ${COMMON}`;
 module.exports = {
   TZ, DAY, HOUR, HOURS, BTN,
   uid, key, MAX_KEYS, getBot, saveBot, setupBot, removeBot, relinkBot, botStatus, botUsers, listGeminiKeys, addGeminiKey, deleteGeminiKey, moveGeminiKey,
-  redis, sendTelegram, downloadTelegramFile, gemini, trimHist, appendModelToHist,
+  redis, sendTelegram, downloadTelegramFile, gemini, geminiRaw, trimHist, appendModelToHist,
   fmtWib, fmtTime, fmtDateShort, wib, startOfDayWib, nextRepeat, rupiah,
   cfgOn, getLocation, setLocation, getWeather, getNews,
   recapText, loadContext, buildSystem,

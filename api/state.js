@@ -25,6 +25,7 @@ module.exports = async (req, res) => {
       const messages = hist.map((h) => ({
         role: h.role === "user" ? "user" : "model",
         text: (h.parts || []).map((p) => p.text || "").join(""),
+        ts: h.ts || null,
       }));
       return res.status(200).json({
         tasks,

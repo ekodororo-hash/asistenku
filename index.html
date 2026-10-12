@@ -35,6 +35,7 @@
   .msg { max-width:85%; padding:10px 14px; border-radius:16px; white-space:pre-wrap; line-height:1.45; word-wrap:break-word; }
   .msg.user { align-self:flex-end; background:var(--me); color:#fff; border-bottom-right-radius:4px; }
   .msg.bot { align-self:flex-start; background:var(--card); border:1px solid var(--line); border-bottom-left-radius:4px; }
+  .msg .ts { font-size:11px; opacity:.65; text-align:right; margin-top:4px; line-height:1; }
   .msg.err { color:#d33; }
   .msg.note { align-self:center; background:transparent; border:1px dashed var(--line); color:var(--muted); font-size:13px; }
   .chips { display:flex; gap:8px; padding:0 16px 8px; overflow-x:auto; }
@@ -290,10 +291,31 @@ let city = load("city", "Jakarta");
 /* ---------- Chat ---------- */
 function renderTitle() { $("title").textContent = profile.assistantName || "Asisten Pribadi"; }
 
-function addBubble(role, text, cls) {
+function fmtClock(ts) {
+  if (!ts) return "";
+  const d = new Date(ts), now = new Date();
+  const time = d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", hour12: false }).replace(":", ".");
+  if (d.toDateString() === now.toDateString()) return time;
+  return d.toLocaleDateString("id-ID", { day: "numeric", month: "short" }) + " " + time;
+}
+
+function setBubble(d, text, ts) {
+  d.textContent = "";
+  const t = document.createElement("div");
+  t.textContent = text;
+  d.appendChild(t);
+  if (ts) {
+    const s = document.createElement("div");
+    s.className = "ts";
+    s.textContent = fmtClock(ts);
+    d.appendChild(s);
+  }
+}
+
+function addBubble(role, text, cls, ts) {
   const d = document.createElement("div");
   d.className = "msg " + (role === "user" ? "user" : "bot") + (cls ? " " + cls : "");
-  d.textContent = text;
+  setBubble(d, text, ts);
   $("chat").appendChild(d);
   $("chat").scrollTop = $("chat").scrollHeight;
   return d;
@@ -304,7 +326,7 @@ function renderChat() {
   if (!messages.length) {
     addBubble("bot", "Halo! Aku asistan pribadimu. Aku bisa bantu atur rencana, catat tugas dan catatan, mencatat pengeluaran, tulis pesan, atau jadi teman cerita.\n\nObrolan, tugas, catatan, dan uang di sini sama persis dengan bot Telegram-mu.\n\nCoba: \"makan siang 25rb\", \"catat: ide konten minggu depan\", atau \"tambah tugas bayar listrik besok\".");
   }
-  messages.forEach((m) => addBubble(m.role, m.text));
+  messages.forEach((m) => addBubble(m.role, m.text, "", m.ts));
 }
 
 function renderMode() {
@@ -543,21 +565,23 @@ async function send(text) {
   text = text.trim();
   if (!text || busy) return;
   busy = true; $("sendBtn").disabled = true;
-  messages.push({ role: "user", text });
-  addBubble("user", text);
+  const sentAt = Date.now();
+  messages.push({ role: "user", text, ts: sentAt });
+  addBubble("user", text, "", sentAt);
   $("input").value = "";
   autoGrow();
   const wait = addBubble("bot", "...");
   try {
     const d = await api("/api/chat", { method: "POST", body: JSON.stringify({ text }) });
     const shown = [d.reply, ...(d.added || [])].filter(Boolean).join("\n\n") || "(tidak ada jawaban)";
-    wait.textContent = shown;
-    messages.push({ role: "model", text: d.reply || "(dicatat)" });
+    const gotAt = Date.now();
+    setBubble(wait, shown, gotAt);
+    messages.push({ role: "model", text: d.reply || "(dicatat)", ts: gotAt });
     if (d.tasks) { tasks = d.tasks; renderTasks(); }
     if (d.notes) { notes = d.notes; renderNotes(); }
     if (d.expenses) { expenses = d.expenses; renderMoney(); }
   } catch (e) {
-    wait.textContent = "Error: " + e.message;
+    setBubble(wait, "Error: " + e.message);
     wait.classList.add("err");
     messages.pop();
   } finally {

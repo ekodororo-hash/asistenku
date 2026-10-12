@@ -108,7 +108,7 @@ module.exports = async (req, res) => {
 
     const system = buildSystem(mode, { profile, taskList, noteList, moneyText: moneyText(expenses) });
 
-    const userTurn = { role: "user", parts: [{ text }] };
+    const userTurn = { role: "user", parts: [{ text }], ts: Date.now() };
     const contents = trimHist([...hist, userTurn]);
 
     const data = await geminiRaw(u, { systemInstruction: { parts: [{ text: system }] }, contents });
@@ -116,7 +116,7 @@ module.exports = async (req, res) => {
     const { clean, added } = await processTags(u, raw);
     const reply = clean || (added.length ? "" : "(tidak ada jawaban)");
 
-    const newHist = [...hist, userTurn, { role: "model", parts: [{ text: reply || "(dicatat)" }] }];
+    const newHist = [...hist, userTurn, { role: "model", parts: [{ text: reply || "(dicatat)" }], ts: Date.now() }];
     await saveHist(u, newHist);
 
     const [freshTasks, freshNotes, freshExpenses] = await Promise.all([getTasks(u), getNotes(u), getExpenses(u)]);

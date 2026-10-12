@@ -391,7 +391,7 @@ module.exports = async (req, res) => {
 
     let hist = [];
     try { hist = rawHist ? JSON.parse(rawHist) : []; } catch {}
-    hist.push({ role: "user", parts: [{ text: image ? `[Foto] ${text}`.trim() : text }] });
+    hist.push({ role: "user", parts: [{ text: image ? `[Foto] ${text}`.trim() : text }], ts: Date.now() });
 
     const contents = trimHist(hist);
     if (image) {
@@ -408,7 +408,7 @@ module.exports = async (req, res) => {
     const { clean, notes } = await processTags(u, raw);
     const reply = clean || (notes.length ? "" : "(tidak ada jawaban)");
 
-    hist.push({ role: "model", parts: [{ text: reply || "(dicatat)" }] });
+    hist.push({ role: "model", parts: [{ text: reply || "(dicatat)" }], ts: Date.now() });
     await redis("SET", key(u, "hist"), JSON.stringify(hist.slice(-30)));
 
     const echo = voice && mode !== "curhat" ? `🎙️ "${text}"\n\n` : "";
