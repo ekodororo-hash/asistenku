@@ -58,10 +58,17 @@
   .msg.bot { align-self:flex-start; background:var(--card); border:1px solid var(--line); border-bottom-left-radius:4px; }
   .msg .ts { font-size:11px; opacity:.65; text-align:right; margin-top:4px; line-height:1; }
   .msg.err { color:#d33; }
+  /* indikator "sedang mengetik": tiga titik memantul, hilang otomatis saat teks pertama masuk */
+  .dots { display:flex; gap:5px; align-items:center; height:20px; }
+  .dots i { width:7px; height:7px; border-radius:50%; background:var(--muted); opacity:.5; animation:dotbounce 1.2s ease-in-out infinite; }
+  .dots i:nth-child(2) { animation-delay:.15s; }
+  .dots i:nth-child(3) { animation-delay:.3s; }
+  @keyframes dotbounce { 0%,60%,100% { transform:translateY(0); opacity:.4; } 30% { transform:translateY(-5px); opacity:1; } }
+  .msg.streaming > .dots::after { content:none; }
   .msg.streaming > div:first-child::after { content:"▍"; margin-left:2px; opacity:.55; animation:blink 1s steps(2,start) infinite; }
   @keyframes blink { to { visibility:hidden; } }
   /* satu baris cuaca di bawah header; ketuk untuk membuka detail di panel Info */
-  .wxbar { display:block; width:100%; text-align:left; border:0; border-bottom:1px solid var(--line); border-radius:0; background:var(--bg); color:var(--muted); font-size:13px; line-height:1.3; padding:6px 16px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .wxbar { display:block; width:100%; text-align:center; border:0; cursor:pointer; border-bottom:1px solid var(--line); border-radius:0; background:var(--bg); color:var(--muted); font-size:13px; line-height:1.3; padding:6px 16px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .wxbar[hidden] { display:none; }
   .wxbar b { color:var(--ink); font-weight:600; }
   .msg.note { align-self:center; background:transparent; border:1px dashed var(--line); color:var(--muted); font-size:13px; }
@@ -252,10 +259,10 @@
     <a href="/settings.html" class="btn" title="Pengaturan" aria-label="Pengaturan">⚙️<span class="lbl">&nbsp;Pengaturan</span></a>
   </div>
 </header>
-<button id="wxBar" class="wxbar" type="button" title="Ketuk untuk detail cuaca" hidden></button>
 
 <main>
   <section id="chatCol">
+    <button id="wxBar" class="wxbar" type="button" title="Ketuk untuk detail cuaca" hidden></button>
     <div id="curhatNote" class="curhatnote">🔒 Mode curhat: obrolan ini punya riwayat sendiri, tidak membuat tugas, catatan, pengingat, atau pengeluaran, tidak masuk memori, dan tidak disalin ke Telegram. Terhapus sendiri kalau lama tidak dipakai.</div>
     <div id="chat"></div>
     <div id="quotaBar" class="quota" hidden></div>
@@ -869,23 +876,33 @@ async function chatStream(text, bubble) {
   }
 
   const chat = $("chat");
-  let acc = "", final = null, done = null, buf = "", raf = 0;
+  // Teks yang datang dari server ditampilkan bertahap (efek ketik), jadi tetap terlihat mengalir
+  // walau Gemini mengirim jawaban pendek dalam satu potongan besar.
+  let acc = "", shownN = 0, final = null, done = null, buf = "", timer = 0, wake = null;
   const paint = () => {
-    raf = 0;
     const near = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 80;
-    setBubble(bubble, acc);
+    setBubble(bubble, acc.slice(0, shownN));
     if (near) chat.scrollTop = chat.scrollHeight;
   };
+  const tick = () => {
+    timer = 0;
+    if (document.hidden) shownN = acc.length; // tab di latar: timer diperlambat browser, tampilkan langsung
+    else {
+      shownN = Math.min(acc.length, shownN + Math.max(2, Math.ceil((acc.length - shownN) / 12)));
+      if (shownN < acc.length && /[\uD800-\uDBFF]/.test(acc[shownN - 1] || "")) shownN++; // jangan potong emoji
+    }
+    paint();
+    if (shownN < acc.length) timer = setTimeout(tick, 16);
+    else if (wake) { wake(); wake = null; }
+  };
+  const kick = () => { if (!timer && shownN < acc.length) timer = setTimeout(tick, 16); };
+  const drain = () => (shownN >= acc.length ? Promise.resolve() : new Promise((res) => { wake = res; kick(); }));
   bubble.classList.add("streaming");
   const handle = (line) => {
     if (!line.startsWith("data:")) return;
     let ev; try { ev = JSON.parse(line.slice(5)); } catch { return; }
-    if (ev.t === "delta") { acc += ev.text; if (!raf) raf = requestAnimationFrame(paint); }
-    else if (ev.t === "final") { // teks akhir (tanpa tag, plus catatan sistem): tampilkan segera, sebelum data panel selesai dimuat
-      final = ev.text;
-      if (raf) { cancelAnimationFrame(raf); raf = 0; }
-      bubble.classList.remove("streaming"); setBubble(bubble, final);
-    }
+    if (ev.t === "delta") { acc += ev.text; kick(); }
+    else if (ev.t === "final") final = ev.text; // teks akhir (tanpa tag, plus catatan sistem): dipasang setelah efek ketik selesai
     else if (ev.t === "done") done = ev;
     else if (ev.t === "error") throw new Error(ev.error || "Gagal");
   };
@@ -907,8 +924,11 @@ async function chatStream(text, bubble) {
     } else {
       feed(await r.text(), true); // browser lama tanpa stream: tampil sekaligus
     }
+    await drain();
+    bubble.classList.remove("streaming");
+    if (final != null) setBubble(bubble, final);
   } finally {
-    if (raf) cancelAnimationFrame(raf);
+    if (timer) clearTimeout(timer);
     bubble.classList.remove("streaming");
   }
   if (done) return done;
@@ -925,7 +945,13 @@ async function send(text) {
   addBubble("user", text, "", sentAt);
   $("input").value = "";
   autoGrow();
-  const wait = addBubble("bot", "...");
+  const wait = addBubble("bot", "");
+  wait.textContent = "";
+  const dots = document.createElement("div");
+  dots.className = "dots";
+  dots.innerHTML = "<i></i><i></i><i></i>";
+  wait.appendChild(dots);
+  $("chat").scrollTop = $("chat").scrollHeight;
   try {
     const d = await chatStream(text, wait);
     const shown = [d.reply, ...(d.added || [])].filter(Boolean).join("\n\n") || "(tidak ada jawaban)";

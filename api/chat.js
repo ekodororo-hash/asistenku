@@ -176,6 +176,7 @@ function makeOut(res) {
     res.setHeader("Cache-Control", "no-cache, no-transform");
     res.setHeader("X-Accel-Buffering", "no");
     if (res.flushHeaders) res.flushHeaders();
+    res.write(":" + " ".repeat(2048) + "\n\n"); // komentar SSE sebagai pengisi: memaksa proxy/CDN mulai meneruskan aliran
   };
   return {
     started: () => started,
