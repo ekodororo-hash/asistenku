@@ -670,13 +670,15 @@ async function addNote(u, text) {
   await redis("LTRIM", key(u, "notes"), -300, -1);
   return item;
 }
+// Hapus satu entri dengan LREM (atomik): tidak lagi "hapus semua lalu tulis ulang", jadi entri baru yang masuk bersamaan aman.
+async function removeFromList(k, pred) {
+  const rows = (await redis("LRANGE", k, 0, -1)) || [];
+  const raw = rows.find((r) => { try { return pred(JSON.parse(r)); } catch { return false; } });
+  if (raw === undefined) return false;
+  return Number(await redis("LREM", k, "1", raw)) > 0;
+}
 async function deleteNoteById(u, id) {
-  const all = await getNotes(u);
-  const next = all.filter((n) => n.id !== id);
-  if (next.length === all.length) return false;
-  await redis("DEL", key(u, "notes"));
-  if (next.length) await redis("RPUSH", key(u, "notes"), ...next.map((n) => JSON.stringify(n)));
-  return true;
+  return removeFromList(key(u, "notes"), (n) => n.id === id);
 }
 
 // ---------- Pengeluaran (dipakai bareng web & Telegram) ----------
@@ -692,13 +694,7 @@ async function getExpenses(u, monthKey) {
   return (rows || []).map((r) => { try { return JSON.parse(r); } catch { return null; } }).filter(Boolean);
 }
 async function deleteExpenseById(u, id, monthKey) {
-  const mk = monthKey || wib().monthKey;
-  const all = await getExpenses(u, mk);
-  const next = all.filter((e) => e.id !== id);
-  if (next.length === all.length) return false;
-  await redis("DEL", key(u, "exp:" + mk));
-  if (next.length) await redis("RPUSH", key(u, "exp:" + mk), ...next.map((e) => JSON.stringify(e)));
-  return true;
+  return removeFromList(key(u, "exp:" + (monthKey || wib().monthKey)), (e) => e.id === id);
 }
 
 // ---------- Pengingat (dipakai bareng web & Telegram; dikirim lewat Telegram oleh cron) ----------

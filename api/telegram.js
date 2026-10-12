@@ -223,9 +223,7 @@ async function handleCommand(u, cmd, arg, say) {
       const n = parseInt(arg, 10);
       const all = await redis("LRANGE", key(u, "notes"), 0, -1);
       if (!n || n < 1 || !all || n > all.length) { await say("Pakai: /hapuscatatan <nomor>. Lihat nomornya di /catatan."); return; }
-      const rest = all.filter((_, i) => i !== n - 1);
-      await redis("DEL", key(u, "notes"));
-      if (rest.length) await redis("RPUSH", key(u, "notes"), ...rest);
+      await redis("LREM", key(u, "notes"), "1", all[n - 1]); // atomik, entri lain tidak tersentuh
       await say("Catatan dihapus.");
       return;
     }
