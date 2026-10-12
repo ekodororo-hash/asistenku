@@ -68,6 +68,15 @@
   aside { order:-1; width:330px; background:var(--card); border-right:1px solid var(--line); padding:14px; overflow-y:auto; scrollbar-width:none; -ms-overflow-style:none; -webkit-overflow-scrolling:touch; }
   aside h2 { font-size:15px; margin:0 0 10px; }
   aside::-webkit-scrollbar, .hours::-webkit-scrollbar, .cats::-webkit-scrollbar { display:none; width:0; height:0; }
+  /* desktop: tampilkan scrollbar tipis (HP tetap tersembunyi) */
+  @media (min-width:761px) and (hover:hover) {
+    aside, aside .hours, aside .cats { scrollbar-width:thin; scrollbar-color:var(--muted) transparent; -ms-overflow-style:auto; }
+    aside::-webkit-scrollbar { display:block; width:8px; }
+    .hours::-webkit-scrollbar, .cats::-webkit-scrollbar { display:block; height:8px; width:auto; }
+    aside::-webkit-scrollbar-thumb, .hours::-webkit-scrollbar-thumb, .cats::-webkit-scrollbar-thumb { background:var(--muted); border-radius:8px; }
+    aside::-webkit-scrollbar-track, .hours::-webkit-scrollbar-track, .cats::-webkit-scrollbar-track { background:transparent; }
+    aside .hours, aside .cats { padding-bottom:8px; }
+  }
   .tabs { display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:6px; margin-bottom:14px; }
   .tabs button { min-width:0; padding:8px 1px; font-size:11px; line-height:1.2; border-radius:12px; white-space:nowrap; }
   @media (max-width:380px) { .tabs { gap:5px; } .tabs button { font-size:10.5px; } }
