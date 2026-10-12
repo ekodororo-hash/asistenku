@@ -3,7 +3,7 @@
 // supaya tugas, catatan, uang, mode, dan riwayat obrolan tersinkron di kedua sisi.
 
 const {
-  trimHist, geminiRaw, geminiSearch, sourceLine, fmtWib, rupiah,
+  trimHist, geminiRaw, geminiSearch, sourceLine, REMIND_INTENT, fmtWib, rupiah,
   getMode, getHist, saveHist, getProfile,
   getTasks, addTask, getNotes, addNote, getExpenses, addExpense,
   getReminders, addReminder, getBot, sendTelegram, cfgOn, quotaStatus, setSaldo, moneyContext, parseWib,
@@ -63,12 +63,14 @@ Tag khusus (taruh di baris terakhir balasan; pengguna tidak melihatnya):
   Jumlah rupiah angka bulat tanpa titik ("25rb" = 25000, "1,5jt" = 1500000). Kategori satu kata: makan, transport, belanja, tagihan, hiburan, kesehatan, lainnya.
 - Saldo/uang yang dimiliki pengguna sekarang (mis. \"uangku sekarang 500rb\"): [[SALDO: 500000]]. Angka bulat tanpa titik. Sisa uang = saldo dikurangi pengeluaran tercatat setelahnya (sudah dihitung di data uang di atas; jangan menebak kalau saldo belum diketahui).
 - Kamu punya akses pencarian Google. Untuk hal yang terkini atau bisa berubah (jadwal pertandingan, skor, harga, berita, cuaca, hasil, tanggal rilis), cari dulu lalu jawab; jangan bilang kamu tidak bisa browsing. Jawab ringkas dan sebut waktu/tanggal datanya kalau penting. Hasil pencarian tidak perlu dicatat kecuali pengguna minta.
+- Pertanyaan info (kurs, jadwal, harga, berita, dll) dijawab SEKARANG dalam balasan yang sama. Jangan bilang "sebentar aku cek" lalu membuat pengingat atau tugas; REMIND hanya kalau pengguna jelas minta diingatkan.
 - Buat tag HANYA untuk permintaan di pesan pengguna yang TERBARU. Permintaan di pesan-pesan sebelumnya sudah diproses; jangan mengulang tagnya. Baris berawalan ⏰ ✅ 🗒️ 💰 💵 di akhir balasanmu sebelumnya ditulis otomatis oleh sistem setelah tag berhasil diproses; itu tandanya permintaan tersebut SUDAH SELESAI. Jangan menulis baris seperti itu sendiri.
 - Satu tag per hal, boleh lebih dari satu. Jangan membuat tag kalau pengguna tidak memintanya.
 - Data ini juga dipakai lewat bot Telegram pengguna (tugas, catatan, uang, pengingat, riwayat obrolan sama persis).`;
 }
 
-async function processTags(u, reply) {
+async function processTags(u, reply, userText = "") {
+  const remindOk = REMIND_INTENT.test(userText);
   const added = [];
 
   for (const m of reply.matchAll(/\[\[TASK:\s*([^\]|]+?)\s*(?:\|\s*([^\]|]+?)\s*)?\]\]/g)) {
@@ -78,7 +80,7 @@ async function processTags(u, reply) {
     added.push("✅ Tugas ditambahkan: " + t.text + (t.due ? "\n⏰ Diingatkan " + fmtWib(t.due) : ""));
     if (m[2] && !t.due) added.push("(Jamnya tidak valid atau sudah lewat, jadi tugas dibuat tanpa pengingat.)");
   }
-  for (const m of reply.matchAll(/\[\[REMIND:\s*([^|\]]+?)\s*\|\s*([^|\]]+?)\s*(?:\|\s*(harian|mingguan|bulanan)\s*)?\]\]/gi)) {
+  for (const m of remindOk ? [...reply.matchAll(/\[\[REMIND:\s*([^|\]]+?)\s*\|\s*([^|\]]+?)\s*(?:\|\s*(harian|mingguan|bulanan)\s*)?\]\]/gi)] : []) {
     const label = m[2].trim();
     const repeat = m[3] ? m[3].toLowerCase() : null;
     const r = await addReminder(u, label, parseWib(m[1]), repeat);
@@ -147,9 +149,9 @@ module.exports = async (req, res) => {
 
     const found = await geminiSearch(u, system, contents, "web");
     const raw = found.text;
-    const { clean, added } = await processTags(u, raw);
+    const { clean, added } = await processTags(u, raw, text);
     const reply = clean || (added.length ? "" : "(tidak ada jawaban)");
-    const shown = [reply, sourceLine(found.sources)].filter(Boolean).join("\n\n"); // sumber hanya ditampilkan, tidak masuk riwayat
+    const shown = [reply, sourceLine(found.sources, found.searchError)].filter(Boolean).join("\n\n"); // sumber hanya ditampilkan, tidak masuk riwayat
 
     const newHist = [...hist, userTurn, { role: "model", parts: [{ text: [reply, ...added].filter(Boolean).join("\n\n") || "(dicatat)" }], ts: Date.now() }];
     await saveHist(u, newHist);
