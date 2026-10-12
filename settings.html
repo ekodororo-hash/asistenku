@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#4f46e5">
 <title>Pengaturan · Asisten Pribadi</title>
 <style>
-  :root { --bg:#f6f7fb; --card:#fff; --ink:#1d2433; --muted:#6b7385; --accent:#4f46e5; --line:#e4e7ef; --err:#d33; --ok:#2a9d4b; }
+  :root { color-scheme: light dark; --bg:#f6f7fb; --card:#fff; --ink:#1d2433; --muted:#6b7385; --accent:#4f46e5; --line:#e4e7ef; --err:#d33; --ok:#2a9d4b; }
   @media (prefers-color-scheme: dark) {
     :root { --bg:#0f1220; --card:#181c2e; --ink:#e8eaf3; --muted:#9aa1b5; --line:#2a3050; }
   }
@@ -19,6 +19,8 @@
   button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
   button.danger { color:var(--err); border-color:var(--err); }
   button:disabled { opacity:.5; cursor:default; }
+  a.btn, a.btn:visited, a.btn:hover { color:var(--ink); }
+  #histLink, #keyAddBtn { color:var(--ink); background:var(--card); border-color:var(--accent); font-weight:600; }
   main { max-width:640px; margin:0 auto; padding:16px; padding-bottom:max(32px, env(safe-area-inset-bottom)); display:flex; flex-direction:column; gap:14px; }
   section { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; }
   section h2 { font-size:16px; margin:0 0 4px; display:flex; align-items:baseline; gap:8px; }
