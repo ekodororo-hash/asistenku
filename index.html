@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#4f46e5">
+<title>Asisten Pribadi</title>
+<style>
+  :root { --bg:#f6f7fb; --card:#fff; --ink:#1d2433; --muted:#6b7385; --accent:#4f46e5; --line:#e4e7ef; --me:#4f46e5; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0f1220; --card:#181c2e; --ink:#e8eaf3; --muted:#9aa1b5; --line:#2a3050; }
+  }
+  * { box-sizing:border-box; }
+  html { -webkit-text-size-adjust:100%; }
+  body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--ink); height:100dvh; display:flex; flex-direction:column; }
+  header { display:flex; align-items:center; gap:8px; padding:12px 16px; background:var(--card); border-bottom:2px solid var(--line); }
+  body[data-mode="curhat"] header { border-bottom-color:var(--accent); }
+  header h1 { font-size:17px; margin:0; flex:1; }
+  button { font:inherit; cursor:pointer; border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:10px; padding:8px 12px; touch-action:manipulation; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  main { flex:1; display:flex; min-height:0; }
+  #chatCol { flex:1; display:flex; flex-direction:column; min-width:0; }
+  #chat { flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:10px; }
+  .msg { max-width:85%; padding:10px 14px; border-radius:16px; white-space:pre-wrap; line-height:1.45; word-wrap:break-word; }
+  .msg.user { align-self:flex-end; background:var(--me); color:#fff; border-bottom-right-radius:4px; }
+  .msg.bot { align-self:flex-start; background:var(--card); border:1px solid var(--line); border-bottom-left-radius:4px; }
+  .msg.err { color:#d33; }
+  .msg.note { align-self:center; background:transparent; border:1px dashed var(--line); color:var(--muted); font-size:13px; }
+  .chips { display:flex; gap:8px; padding:0 16px 8px; overflow-x:auto; }
+  .chips button { white-space:nowrap; font-size:13px; padding:6px 10px; }
+  #form { display:flex; gap:8px; padding:12px 16px; background:var(--card); border-top:1px solid var(--line); }
+  textarea { flex:1; resize:none; font:inherit; padding:10px 12px; border-radius:12px; border:1px solid var(--line); background:var(--bg); color:var(--ink); max-height:120px; }
+
+  aside { width:330px; background:var(--card); border-left:1px solid var(--line); padding:14px; overflow-y:auto; }
+  aside h2 { font-size:15px; margin:0 0 10px; }
+  .tabs { display:flex; gap:4px; margin-bottom:12px; }
+  .tabs button { flex:1; padding:6px 4px; font-size:13px; }
+  .tabs button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .pane { display:none; }
+  .pane.on { display:block; }
+  .addrow { display:flex; gap:6px; margin-bottom:8px; }
+  .addrow input, .addrow select, .full { flex:1; min-width:0; padding:8px; border-radius:10px; border:1px solid var(--line); background:var(--bg); color:var(--ink); font:inherit; }
+  .full { width:100%; margin-bottom:8px; }
+  .muted { color:var(--muted); font-size:14px; }
+  .card { border:1px solid var(--line); border-radius:12px; padding:10px; margin-bottom:10px; font-size:14px; line-height:1.5; white-space:pre-line; }
+  .task { display:flex; align-items:flex-start; gap:8px; padding:8px 0; border-bottom:1px solid var(--line); }
+  .task span { flex:1; font-size:14px; word-break:break-word; }
+  .task.done span { text-decoration:line-through; color:var(--muted); }
+  .task button { padding:2px 8px; font-size:12px; }
+  .news a { display:block; padding:8px 0; border-bottom:1px solid var(--line); color:var(--ink); text-decoration:none; font-size:14px; line-height:1.4; }
+  .side-head { display:flex; align-items:center; justify-content:space-between; }
+  #tasksToggle, #closeSide, #backdrop { display:none; }
+
+  dialog { border:1px solid var(--line); border-radius:16px; background:var(--card); color:var(--ink); width:min(92vw,420px); }
+  dialog label { display:block; margin:10px 0 4px; font-size:13px; color:var(--muted); }
+  dialog input, dialog textarea { width:100%; border:1px solid var(--line); border-radius:10px; padding:8px; background:var(--bg); color:var(--ink); font:inherit; }
+
+  @media (max-width:760px) {
+    header { padding:10px 12px; padding-top:max(10px, env(safe-area-inset-top)); gap:6px; }
+    header h1 { font-size:16px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    header button { padding:8px 10px; font-size:13px; min-height:40px; }
+    #chat { padding:12px; gap:8px; }
+    .msg { max-width:92%; font-size:15px; }
+    .chips { padding:0 12px 8px; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+    .chips::-webkit-scrollbar { display:none; }
+    .chips button { min-height:36px; }
+    #form { padding:10px 12px; padding-bottom:max(10px, env(safe-area-inset-bottom)); }
+    textarea, input, select, .addrow input, .addrow select, .full, dialog input, dialog textarea { font-size:16px; } /* cegah zoom otomatis di iOS */
+    #sendBtn { min-height:44px; padding:0 16px; }
+    aside { position:fixed; top:0; right:0; bottom:0; width:min(90vw,360px); padding-top:max(14px, env(safe-area-inset-top)); transform:translateX(100%); transition:transform .22s ease; z-index:20; box-shadow:-8px 0 24px #0004; }
+    aside.open { transform:none; }
+    #tasksToggle, #closeSide { display:inline-block; }
+    #backdrop { position:fixed; inset:0; background:#0006; z-index:15; }
+    #backdrop.show { display:block; }
+    .tabs button { min-height:38px; }
+    .addrow button { min-width:44px; min-height:40px; }
+    .task { padding:12px 0; }
+    .task input[type=checkbox] { width:20px; height:20px; }
+    .task button { min-width:36px; min-height:36px; }
+    dialog { width:92vw; max-height:90dvh; overflow-y:auto; }
+  }
+</style>
+</head>
+<body data-mode="asisten">
+<header>
+  <h1 id="title">Asisten Pribadi</h1>
+  <button id="tasksToggle">Panel</button>
+  <button id="modeBtn">💬 Curhat</button>
+  <button id="settingsBtn">Profil</button>
+  <button id="clearBtn">Reset</button>
+</header>
+
+<main>
+  <section id="chatCol">
+    <div id="chat"></div>
+    <div class="chips">
+      <button data-q="Bantu aku susun rencana hari ini berdasarkan daftar tugasku.">Rencana hari ini</button>
+      <button data-q="Tugas mana yang sebaiknya kukerjakan dulu? Urutkan berdasarkan prioritas.">Prioritas tugas</button>
+      <button data-q="Ringkas pengeluaranku bulan ini dan beri saran hemat yang realistis.">Rekap uang</button>
+      <button data-q="Bantu tulis pesan WhatsApp yang sopan untuk ">Tulis pesan</button>
+      <button data-q="Beri aku 3 ide makan malam hemat dan cepat.">Ide makan malam</button>
+    </div>
+    <form id="form">
+      <textarea id="input" rows="1" placeholder="Tulis pesan... (Enter kirim, Shift+Enter baris baru)"></textarea>
+      <button class="primary" id="sendBtn">Kirim</button>
+    </form>
+  </section>
+
+  <div id="backdrop"></div>
+  <aside id="side">
+    <div class="side-head">
+      <h2>Panel</h2>
+      <button id="closeSide">Tutup</button>
+    </div>
+
+    <div class="tabs">
+      <button data-tab="tasks">Tugas</button>
+      <button data-tab="notes">Catatan</button>
+      <button data-tab="money">Uang</button>
+      <button data-tab="info">Info</button>
+    </div>
+
+    <div class="pane" id="pane-tasks">
+      <div class="addrow">
+        <input id="taskInput" placeholder="Tambah tugas...">
+        <button id="taskAddBtn">+</button>
+      </div>
+      <div id="tasks"></div>
+    </div>
+
+    <div class="pane" id="pane-notes">
+      <div class="addrow">
+        <input id="noteInput" placeholder="Tulis catatan...">
+        <button id="noteAddBtn">+</button>
+      </div>
+      <input class="full" id="noteSearch" placeholder="Cari catatan...">
+      <div id="notes"></div>
+    </div>
+
+    <div class="pane" id="pane-money">
+      <div class="addrow">
+        <input id="expAmt" type="number" inputmode="numeric" min="0" placeholder="Jumlah (Rp)">
+        <select id="expCat">
+          <option>makan</option><option>transport</option><option>belanja</option>
+          <option>tagihan</option><option>hiburan</option><option>kesehatan</option><option>lainnya</option>
+        </select>
+      </div>
+      <div class="addrow">
+        <input id="expNote" placeholder="Keterangan">
+        <button id="expAddBtn">+</button>
+      </div>
+      <div class="card" id="recap"></div>
+      <div id="exps"></div>
+    </div>
+
+    <div class="pane" id="pane-info">
+      <div class="addrow">
+        <input id="cityInput" placeholder="Kota">
+        <button id="cityBtn">Cuaca</button>
+      </div>
+      <div class="card" id="weather">Belum dimuat.</div>
+      <div class="addrow">
+        <input id="topicInput" placeholder="Topik berita (kosong = terkini)">
+        <button id="newsBtn">Cari</button>
+      </div>
+      <div class="news" id="news"></div>
+    </div>
+  </aside>
+</main>
+
+<dialog id="dlg">
+  <form method="dialog" id="profileForm">
+    <h3 style="margin-top:0">Profil</h3>
+    <label>Nama kamu</label>
+    <input id="pName">
+    <label>Nama asisten</label>
+    <input id="pAssistant" placeholder="mis. Nara">
+    <label>Catatan tentang kamu (jadwal rutin, kebiasaan, preferensi)</label>
+    <textarea id="pNotes" rows="4"></textarea>
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:14px">
+      <button value="cancel">Batal</button>
+      <button class="primary" value="save">Simpan</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
+const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const rupiah = (n) => "Rp" + Math.round(n).toLocaleString("id-ID");
+const fmtDate = (ts) => new Date(ts).toLocaleDateString("id-ID", { day: "numeric", month: "short" });
+
+let messages = load("messages", []);
+let tasks = load("tasks", []);
+let notes = load("notes", []);
+let expenses = load("expenses", []);
+let profile = load("profile", { name: "", assistantName: "Asisten", notes: "" });
+let mode = load("mode", "asisten");
+let city = load("city", "Jakarta");
+let busy = false;
+let infoLoaded = false;
+
+/* ---------- Chat ---------- */
+function renderTitle() { $("title").textContent = profile.assistantName || "Asisten Pribadi"; }
+
+function addBubble(role, text, cls) {
+  const d = document.createElement("div");
+  d.className = "msg " + (role === "user" ? "user" : "bot") + (cls ? " " + cls : "");
+  d.textContent = text;
+  $("chat").appendChild(d);
+  $("chat").scrollTop = $("chat").scrollHeight;
+  return d;
+}
+
+function renderChat() {
+  $("chat").innerHTML = "";
+  if (!messages.length) {
+    addBubble("bot", "Halo! Aku asistan pribadimu. Aku bisa bantu atur rencana, catat tugas dan catatan, mencatat pengeluaran, tulis pesan, atau jadi teman cerita.\n\nCoba: \"makan siang 25rb\", \"catat: ide konten minggu depan\", atau \"tambah tugas bayar listrik besok\".");
+  }
+  messages.forEach((m) => addBubble(m.role, m.text));
+}
+
+function renderMode() {
+  document.body.dataset.mode = mode;
+  $("modeBtn").textContent = mode === "curhat" ? "🤖 Asisten" : "💬 Curhat";
+}
+
+/* ---------- Tugas ---------- */
+function renderTasks() {
+  const box = $("tasks");
+  box.innerHTML = "";
+  if (!tasks.length) { box.innerHTML = '<p class="muted">Belum ada tugas.</p>'; return; }
+  tasks.forEach((t, i) => {
+    const row = document.createElement("div");
+    row.className = "task" + (t.done ? " done" : "");
+    const cb = document.createElement("input");
+    cb.type = "checkbox"; cb.checked = t.done;
+    cb.onchange = () => { t.done = cb.checked; save("tasks", tasks); renderTasks(); };
+    const sp = document.createElement("span"); sp.textContent = t.text;
+    const del = document.createElement("button"); del.textContent = "x";
+    del.onclick = () => { tasks.splice(i, 1); save("tasks", tasks); renderTasks(); };
+    row.append(cb, sp, del);
+    box.appendChild(row);
+  });
+}
+
+function addTask(text) {
+  text = String(text).trim();
+  if (!text) return;
+  tasks.push({ text: text.slice(0, 300), done: false });
+  save("tasks", tasks);
+  renderTasks();
+}
+
+/* ---------- Baris umum (catatan, pengeluaran) ---------- */
+function makeRow(text, sub, onDel) {
+  const row = document.createElement("div");
+  row.className = "task";
+  const sp = document.createElement("span");
+  sp.textContent = text;
+  if (sub) {
+    const s = document.createElement("small");
+    s.textContent = sub;
+    s.style.cssText = "display:block;color:var(--muted)";
+    sp.appendChild(s);
+  }
+  const del = document.createElement("button");
+  del.textContent = "x";
+  del.onclick = onDel;
+  row.append(sp, del);
+  return row;
+}
+
+/* ---------- Catatan ---------- */
+function addNote(text) {
+  text = String(text).trim();
+  if (!text) return;
+  notes.push({ id: uid(), ts: Date.now(), text: text.slice(0, 1000) });
+  notes = notes.slice(-300);
+  save("notes", notes);
+  renderNotes();
+}
+
+function renderNotes() {
+  const q = $("noteSearch").value.trim().toLowerCase();
+  const box = $("notes");
+  box.innerHTML = "";
+  const list = notes.filter((n) => !q || n.text.toLowerCase().includes(q)).slice().reverse();
+  if (!list.length) { box.innerHTML = '<p class="muted">' + (q ? "Tidak ada yang cocok." : "Belum ada catatan.") + "</p>"; return; }
+  list.forEach((n) => {
+    box.appendChild(makeRow(n.text, fmtDate(n.ts), () => {
+      notes = notes.filter((x) => x.id !== n.id);
+      save("notes", notes);
+      renderNotes();
+    }));
+  });
+}
+
+/* ---------- Pengeluaran ---------- */
+function monthExpenses() {
+  const d = new Date();
+  const start = new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+  return expenses.filter((e) => e.ts >= start);
+}
+
+function addExpense(amt, cat, note) {
+  amt = Number(amt);
+  if (!Number.isFinite(amt) || amt <= 0 || amt > 1e10) return false;
+  expenses.push({ id: uid(), ts: Date.now(), amt, cat: String(cat || "lainnya").toLowerCase().slice(0, 20), note: String(note || "").slice(0, 100) });
+  expenses = expenses.slice(-500);
+  save("expenses", expenses);
+  renderMoney();
+  return true;
+}
+
+function renderMoney() {
+  const month = monthExpenses();
+  const total = month.reduce((s, e) => s + e.amt, 0);
+  const by = {};
+  month.forEach((e) => { by[e.cat] = (by[e.cat] || 0) + e.amt; });
+  const lines = Object.entries(by).sort((a, b) => b[1] - a[1]).map(([c, v]) => c + ": " + rupiah(v));
+  $("recap").textContent = month.length
+    ? "Bulan ini: " + rupiah(total) + " (" + month.length + " transaksi)\n" + lines.join("\n")
+    : "Belum ada pengeluaran bulan ini.";
+  const box = $("exps");
+  box.innerHTML = "";
+  expenses.slice(-15).reverse().forEach((e) => {
+    box.appendChild(makeRow(
+      (e.note || e.cat) + " - " + rupiah(e.amt),
+      fmtDate(e.ts) + " · " + e.cat,
+      () => { expenses = expenses.filter((x) => x.id !== e.id); save("expenses", expenses); renderMoney(); }
+    ));
+  });
+}
+
+function moneySummary() {
+  const month = monthExpenses();
+  if (!month.length) return "";
+  const total = month.reduce((s, e) => s + e.amt, 0);
+  const by = {};
+  month.forEach((e) => { by[e.cat] = (by[e.cat] || 0) + e.amt; });
+  const cats = Object.entries(by).sort((a, b) => b[1] - a[1]).map(([c, v]) => c + " " + rupiah(v)).join(", ");
+  const last = month.slice(-5).map((e) => (e.note || e.cat) + " " + rupiah(e.amt)).join("; ");
+  return "Bulan ini total " + rupiah(total) + ". Per kategori: " + cats + ". Terakhir: " + last + ".";
+}
+
+/* ---------- Info: cuaca & berita ---------- */
+async function loadWeather() {
+  $("weather").textContent = "Memuat cuaca...";
+  try {
+    const r = await fetch("/api/info?type=weather&city=" + encodeURIComponent(city));
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || "Gagal");
+    $("weather").textContent = d.text;
+  } catch (e) {
+    $("weather").textContent = "Gagal memuat cuaca: " + e.message;
+  }
+}
+
+async function loadNews(topic) {
+  const box = $("news");
+  box.innerHTML = '<p class="muted">Memuat berita...</p>';
+  try {
+    const r = await fetch("/api/info?type=news&topic=" + encodeURIComponent(topic || ""));
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || "Gagal");
+    box.innerHTML = "";
+    if (!d.items.length) { box.innerHTML = '<p class="muted">Tidak ada berita ditemukan.</p>'; return; }
+    d.items.forEach((it) => {
+      const a = document.createElement("a");
+      a.textContent = it.title;
+      if (/^https:\/\//.test(it.link)) { a.href = it.link; a.target = "_blank"; a.rel = "noopener noreferrer"; }
+      box.appendChild(a);
+    });
+  } catch (e) {
+    box.innerHTML = "";
+    const p = document.createElement("p");
+    p.className = "muted";
+    p.textContent = "Gagal memuat berita: " + e.message;
+    box.appendChild(p);
+  }
+}
+
+function loadInfo() {
+  infoLoaded = true;
+  $("cityInput").value = city;
+  loadWeather();
+  loadNews($("topicInput").value.trim());
+}
+
+/* ---------- Tab panel ---------- */
+function showTab(t) {
+  document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === t));
+  document.querySelectorAll(".pane").forEach((p) => p.classList.toggle("on", p.id === "pane-" + t));
+  save("tab", t);
+  if (t === "info" && !infoLoaded) loadInfo();
+}
+
+function toggleSide(open) {
+  $("side").classList.toggle("open", open);
+  $("backdrop").classList.toggle("show", open);
+}
+
+/* ---------- Kirim pesan ---------- */
+function processTags(reply) {
+  const added = [];
+  for (const m of reply.matchAll(/\[\[TASK:\s*([^\]]+?)\s*\]\]/g)) {
+    addTask(m[1]);
+    added.push("✅ Tugas ditambahkan: " + m[1].trim());
+  }
+  for (const m of reply.matchAll(/\[\[CATAT:\s*([^\]]+?)\s*\]\]/g)) {
+    addNote(m[1]);
+    added.push("🗒️ Dicatat: " + m[1].trim());
+  }
+  for (const m of reply.matchAll(/\[\[BELI:\s*([^|\]]+?)\s*\|\s*([^|\]]+?)\s*\|\s*([^\]]*?)\s*\]\]/g)) {
+    const amt = Number(String(m[1]).replace(/[^\d]/g, ""));
+    if (addExpense(amt, m[2].trim(), m[3].trim())) {
+      added.push("💰 Dicatat: " + rupiah(amt) + " (" + m[2].trim().toLowerCase() + ")" + (m[3].trim() ? " - " + m[3].trim() : ""));
+    }
+  }
+  const clean = reply.replace(/\[\[(TASK|CATAT|BELI):[\s\S]*?\]\]/g, "").trim();
+  return { clean, added };
+}
+
+async function send(text) {
+  text = text.trim();
+  if (!text || busy) return;
+  busy = true; $("sendBtn").disabled = true;
+  messages.push({ role: "user", text });
+  addBubble("user", text);
+  $("input").value = "";
+  autoGrow();
+  const wait = addBubble("bot", "...");
+  try {
+    const r = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messages, profile, tasks, mode,
+        notes: notes.slice(-20).map((n) => n.text),
+        money: moneySummary(),
+        now: new Date().toLocaleString("id-ID", { dateStyle: "full", timeStyle: "short" }),
+      }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || "Gagal");
+    const { clean, added } = processTags(data.reply);
+    const shown = [clean, ...added].filter(Boolean).join("\n\n") || "(tidak ada jawaban)";
+    wait.textContent = shown;
+    messages.push({ role: "model", text: clean || "(dicatat)" });
+    messages = messages.slice(-60);
+    save("messages", messages);
+  } catch (e) {
+    wait.textContent = "Error: " + e.message;
+    wait.classList.add("err");
+    messages.pop();
+  } finally {
+    busy = false; $("sendBtn").disabled = false;
+    $("chat").scrollTop = $("chat").scrollHeight;
+  }
+}
+
+/* ---------- Event ---------- */
+$("form").onsubmit = (e) => { e.preventDefault(); send($("input").value); };
+$("input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send($("input").value); }
+});
+document.querySelectorAll(".chips button").forEach((b) => {
+  b.onclick = () => {
+    const q = b.dataset.q;
+    if (q.endsWith(" ")) { $("input").value = q; $("input").focus(); } else send(q);
+  };
+});
+
+document.querySelectorAll(".tabs button").forEach((b) => { b.onclick = () => showTab(b.dataset.tab); });
+
+const onEnter = (id, fn) => $(id).addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); fn(); } });
+
+const doAddTask = () => { addTask($("taskInput").value); $("taskInput").value = ""; };
+$("taskAddBtn").onclick = doAddTask; onEnter("taskInput", doAddTask);
+
+const doAddNote = () => { addNote($("noteInput").value); $("noteInput").value = ""; };
+$("noteAddBtn").onclick = doAddNote; onEnter("noteInput", doAddNote);
+$("noteSearch").addEventListener("input", renderNotes);
+
+const doAddExp = () => {
+  if (addExpense($("expAmt").value, $("expCat").value, $("expNote").value)) {
+    $("expAmt").value = ""; $("expNote").value = "";
+  }
+};
+$("expAddBtn").onclick = doAddExp; onEnter("expNote", doAddExp);
+
+const doCity = () => {
+  const c = $("cityInput").value.trim();
+  if (!c) return;
+  city = c; save("city", city); loadWeather();
+};
+$("cityBtn").onclick = doCity; onEnter("cityInput", doCity);
+
+const doNews = () => loadNews($("topicInput").value.trim());
+$("newsBtn").onclick = doNews; onEnter("topicInput", doNews);
+
+$("tasksToggle").onclick = () => toggleSide(!$("side").classList.contains("open"));
+$("closeSide").onclick = () => toggleSide(false);
+$("backdrop").onclick = () => toggleSide(false);
+
+$("modeBtn").onclick = () => {
+  mode = mode === "curhat" ? "asisten" : "curhat";
+  save("mode", mode);
+  renderMode();
+  addBubble("bot", mode === "curhat" ? "Mode curhat aktif. Cerita aja, aku dengerin." : "Kembali ke mode asisten.", "note");
+};
+
+// kolom ketik otomatis membesar
+function autoGrow() {
+  const t = $("input");
+  t.style.height = "auto";
+  t.style.height = Math.min(t.scrollHeight, 120) + "px";
+}
+$("input").addEventListener("input", autoGrow);
+
+// tetap di bagian bawah saat keyboard HP muncul
+if (window.visualViewport) {
+  visualViewport.addEventListener("resize", () => {
+    document.body.style.height = visualViewport.height + "px";
+    $("chat").scrollTop = $("chat").scrollHeight;
+  });
+}
+
+$("clearBtn").onclick = () => { if (confirm("Hapus semua riwayat chat?")) { messages = []; save("messages", messages); renderChat(); } };
+$("settingsBtn").onclick = () => {
+  $("pName").value = profile.name; $("pAssistant").value = profile.assistantName; $("pNotes").value = profile.notes;
+  $("dlg").showModal();
+};
+$("profileForm").addEventListener("submit", (e) => {
+  if (e.submitter && e.submitter.value === "save") {
+    profile = { name: $("pName").value.trim(), assistantName: $("pAssistant").value.trim() || "Asisten", notes: $("pNotes").value.trim() };
+    save("profile", profile); renderTitle();
+  }
+});
+
+renderTitle(); renderMode(); renderChat();
+renderTasks(); renderNotes(); renderMoney();
+showTab(load("tab", "tasks"));
+</script>
+</body>
+</html>
