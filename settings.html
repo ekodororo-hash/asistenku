@@ -16,11 +16,10 @@
   header { position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:10px; padding:12px 16px; padding-top:max(12px, env(safe-area-inset-top)); background:var(--card); border-bottom:1px solid var(--line); }
   header h1 { font-size:17px; margin:0; flex:1; }
   button, a.btn { font:inherit; cursor:pointer; border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:10px; padding:8px 14px; touch-action:manipulation; text-decoration:none; display:inline-flex; align-items:center; justify-content:center; line-height:1.2; }
-  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  button.primary, a.btn.primary, a.btn.primary:visited, a.btn.primary:hover { background:var(--accent); color:#fff; border-color:var(--accent); }
   button.danger { color:var(--err); border-color:var(--err); }
   button:disabled { opacity:.5; cursor:default; }
-  a.btn, a.btn:visited, a.btn:hover { color:var(--ink); }
-  #histLink, #keyAddBtn { color:var(--ink); background:var(--card); border-color:var(--accent); font-weight:600; }
+  a.btn:not(.primary), a.btn:not(.primary):visited, a.btn:not(.primary):hover { color:var(--ink); }
   main { max-width:640px; margin:0 auto; padding:16px; padding-bottom:max(32px, env(safe-area-inset-bottom)); display:flex; flex-direction:column; gap:14px; }
   section { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; }
   section h2 { font-size:16px; margin:0 0 4px; display:flex; align-items:baseline; gap:8px; }
@@ -110,7 +109,7 @@
     <div class="row" id="keyAddRow" style="margin-top:8px">
       <input id="keyName" autocomplete="off" maxlength="40" placeholder="Nama key (opsional), mis. Gmail utama">
       <input id="keyInput" type="password" autocomplete="off" placeholder="Tempel API key Gemini">
-      <button id="keyAddBtn">Tambah</button>
+      <button class="primary" id="keyAddBtn">Tambah</button>
     </div>
     <p class="msg" id="keyMsg"></p>
     <hr>
@@ -121,9 +120,9 @@
     <datalist id="mdlList"></datalist>
     <p class="hint" id="mdlQuota" style="margin:8px 0 0;white-space:pre-line"></p>
     <p class="hint" style="margin:6px 0 0">Saran: utama Flash-Lite, cadangan Flash. Angka kuota dari AI Studio (Okt 2026), bisa berubah atau berbeda per project.</p>
-    <div class="actions"><button id="mdlSuggest" type="button">Isi saran model</button><button id="mdlSave">Simpan model</button></div>
+    <div class="actions"><button class="primary" id="mdlSuggest" type="button">Isi saran model</button><button class="primary" id="mdlSave">Simpan model</button></div>
     <p class="msg" id="mdlMsg"></p>
-    <a class="btn" id="histLink" href="/riwayat.html" style="margin-top:12px;width:100%">Lihat riwayat pemakaian →</a>
+    <a class="btn primary" id="histLink" href="/riwayat.html" style="margin-top:12px;width:100%">Lihat riwayat pemakaian →</a>
   </section>
 
   <section id="secBot">
@@ -139,7 +138,7 @@
     <input id="pwOld" type="password" autocomplete="current-password" placeholder="Password lama">
     <div class="row" style="margin-top:8px">
       <input id="pwNew" type="password" autocomplete="new-password" placeholder="Password baru (min. 8)">
-      <button id="pwBtn">Ganti</button>
+      <button class="primary" id="pwBtn">Ganti</button>
     </div>
     <p class="msg" id="pwMsg"></p>
     <hr>
