@@ -2,7 +2,7 @@
 // Dipakai web untuk memuat state awal (GET) dan melakukan satu aksi (POST),
 // semua baca/tulis ke Redis yang sama dipakai bot Telegram.
 
-const { redis, key, MAX_KEYS, keyState, clearKeyHistory, testGeminiKey, HIST_SHOW, addGeminiKey, deleteGeminiKey, moveGeminiKey, setupBot, removeBot, relinkBot, botStatus } = require("./_lib");
+const { redis, key, MAX_KEYS, keyState, clearKeyHistory, testGeminiKey, addGeminiKey, deleteGeminiKey, moveGeminiKey, setupBot, removeBot, relinkBot, botStatus } = require("./_lib");
 const { requireUser } = require("./_auth");
 const {
   getTasks, addTask, toggleTask, deleteTask,
@@ -37,7 +37,7 @@ module.exports = async (req, res) => {
         notes: notes.slice(-100).reverse(),
         expenses: expenses.slice(-100).reverse(),
         profile, mode, messages, reminders, botLinked,
-        ...(light ? {} : { geminiKeys: kstate.keys, keyHistory: kstate.history, histShow: HIST_SHOW, maxKeys: MAX_KEYS, globalKey: !!process.env.GEMINI_API_KEY, bot }),
+        ...(light ? {} : { geminiKeys: kstate.keys, keyHistoryCount: kstate.history.length, maxKeys: MAX_KEYS, globalKey: !!process.env.GEMINI_API_KEY, bot }),
       });
     } catch (e) {
       return res.status(500).json({ error: "Server error: " + e.message });
@@ -62,6 +62,7 @@ module.exports = async (req, res) => {
         case "addKey": result = await addGeminiKey(u, p.value); break;
         case "deleteKey": result = await deleteGeminiKey(u, p.id); break;
         case "moveKey": result = await moveGeminiKey(u, p.id, p.dir); break;
+        case "keyHistory": result = await keyState(u); break;
         case "testKey": result = await testGeminiKey(u, p.id); break;
         case "clearKeyHistory": await clearKeyHistory(u); result = await keyState(u); break;
         case "setBot": {

@@ -33,16 +33,19 @@
   .msg { font-size:13px; min-height:18px; margin:8px 0 0; }
   .msg.err { color:var(--err); }
   .msg.ok { color:var(--ok); }
-  .item { display:flex; align-items:center; gap:6px; padding:8px 0; border-bottom:1px solid var(--line); }
+  .item { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:12px 0; border-bottom:1px solid var(--line); }
   .item:last-of-type { border-bottom:none; }
-  .item > span { flex:1; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:14px; }
-  .item .kmain { flex:1; min-width:0; }
+  .item .kmain { flex:1 1 100%; min-width:0; }
   .item .klabel { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:14px; margin-right:6px; }
   .ksub { display:block; font-size:12px; color:var(--muted); margin-top:4px; word-break:break-word; }
-  .hrow { padding:6px 0; border-bottom:1px solid var(--line); font-size:13px; color:var(--ink); }
-  .hrow:last-child { border-bottom:none; }
-  .herr { color:var(--muted); font-size:12px; margin-top:2px; word-break:break-word; }
-  .item button { padding:6px 10px; min-width:36px; }
+  .kbtns { display:flex; gap:6px; flex:1 1 100%; }
+  .kbtns button { flex:1; padding:8px 4px; min-width:0; white-space:nowrap; font-size:14px; }
+  @media (max-width:520px) {
+    .row { flex-wrap:wrap; }
+    .row > .pw, .row > input { flex:1 1 100%; }
+    .row > button { flex:1 1 100%; }
+    .actions > button, .actions > a.btn { flex:1 1 100%; }
+  }
   .status { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; border:1px solid var(--line); }
   .status::before { content:""; display:inline-block; width:7px; height:7px; border-radius:50%; background:currentColor; margin-right:6px; vertical-align:1px; }
   .status.on { color:var(--ok); border-color:var(--ok); }
@@ -104,14 +107,7 @@
       <button id="keyAddBtn">Tambah</button>
     </div>
     <p class="msg" id="keyMsg"></p>
-    <details class="guide" id="histBox" style="margin:12px 0 0">
-      <summary id="histTitle">Riwayat pemakaian</summary>
-      <div id="histList"></div>
-      <div class="actions">
-        <button id="histMore" style="display:none"></button>
-        <button id="histClear" class="danger">Hapus riwayat</button>
-      </div>
-    </details>
+    <a class="btn" id="histLink" href="/riwayat.html" style="margin-top:12px;width:100%">Lihat riwayat pemakaian →</a>
   </section>
 
   <section id="secBot">
@@ -151,7 +147,7 @@ async function api(path, opts = {}) {
 const op = (name, extra) => api("/api/state", { method: "POST", body: JSON.stringify({ op: name, ...extra }) }).then((d) => d.result);
 function say(id, text, kind) { const m = $(id); m.textContent = text || ""; m.className = "msg" + (kind ? " " + kind : ""); }
 
-let profile = {}, geminiKeys = [], keyHistory = [], histShow = 20, histAll = false, maxKeys = 5, globalKey = false, botState = { installed: false };
+let profile = {}, geminiKeys = [], histCount = 0, maxKeys = 5, globalKey = false, botState = { installed: false };
 
 /* ---------- Profil ---------- */
 $("profileSave").onclick = async () => {
@@ -199,9 +195,12 @@ function renderKeys() {
       ((k.status === "invalid" || k.status === "error") && k.error ? " · " + k.error : "");
     main.appendChild(sub);
     row.appendChild(main);
+    const btns = document.createElement("div");
+    btns.className = "kbtns";
+    row.appendChild(btns);
     const mk = (txt, title, fn, disabled) => {
       const b = document.createElement("button");
-      b.textContent = txt; b.title = title; b.disabled = !!disabled; b.onclick = fn; row.appendChild(b);
+      b.textContent = txt; b.title = title; b.disabled = !!disabled; b.onclick = fn; btns.appendChild(b);
     };
     mk("Uji", "Uji key ini", async () => {
       say("keyMsg", "Menguji key …" + k.last4 + "...");
@@ -211,9 +210,9 @@ function renderKeys() {
         say("keyMsg", "Key …" + k.last4 + ": " + t + (n.error ? " (" + n.error + ")" : "") + ".", c === "ok" ? "ok" : c === "wait" ? "" : "err");
       }
     });
-    mk("↑", "Naikkan", () => keyOp("moveKey", { id: k.id, dir: "up" }), i === 0);
-    mk("↓", "Turunkan", () => keyOp("moveKey", { id: k.id, dir: "down" }), i === geminiKeys.length - 1);
-    mk("✕", "Hapus", () => { if (confirm("Hapus key …" + k.last4 + "?")) keyOp("deleteKey", { id: k.id }); });
+    mk("↑ Naik", "Naikkan", () => keyOp("moveKey", { id: k.id, dir: "up" }), i === 0);
+    mk("↓ Turun", "Turunkan", () => keyOp("moveKey", { id: k.id, dir: "down" }), i === geminiKeys.length - 1);
+    mk("✕ Hapus", "Hapus", () => { if (confirm("Hapus key …" + k.last4 + "?")) keyOp("deleteKey", { id: k.id }); });
     box.appendChild(row);
   });
   $("keyCount").textContent = "(" + geminiKeys.length + "/" + maxKeys + ")";
@@ -221,41 +220,14 @@ function renderKeys() {
   $("globalKeyNote").textContent = globalKey ? "Key bawaan server jadi cadangan terakhir." : "";
 }
 
-/* ---------- Riwayat pemakaian key ---------- */
-const SRC = { web: "Web", telegram: "Telegram", otomatis: "Otomatis", uji: "Uji" };
-function renderHist() {
-  const box = $("histList");
-  box.innerHTML = "";
-  $("histTitle").textContent = "Riwayat pemakaian (" + keyHistory.length + ")";
-  if (!keyHistory.length) {
-    const p = document.createElement("p");
-    p.className = "hint"; p.style.marginTop = "8px";
-    p.textContent = "Belum ada riwayat. Riwayat dihapus otomatis setelah 1 hari dan maksimal 50 entri.";
-    box.appendChild(p);
-  }
-  const today = new Date().toDateString();
-  (histAll ? keyHistory : keyHistory.slice(0, histShow)).forEach((h) => {
-    const d = new Date(h.ts);
-    const time = d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
-    const row = document.createElement("div");
-    row.className = "hrow";
-    row.appendChild(document.createTextNode((d.toDateString() === today ? "" : "kemarin ") + time + " · " + (h.k === "server" ? "key server" : "•••• " + h.k) + " · " + (SRC[h.src] || h.src) + " "));
-    const [t, c] = STATUS[h.st] || STATUS.error;
-    row.appendChild(badge(t, c));
-    if (h.err) { const e = document.createElement("div"); e.className = "herr"; e.textContent = h.err; row.appendChild(e); }
-    box.appendChild(row);
-  });
-  const more = $("histMore");
-  more.style.display = keyHistory.length > histShow ? "" : "none";
-  more.textContent = histAll ? "Tampilkan lebih sedikit" : "Lihat semua (" + keyHistory.length + ")";
-  $("histClear").style.display = keyHistory.length ? "" : "none";
+/* ---------- Tautan ke halaman riwayat ---------- */
+function renderHistLink() {
+  $("histLink").textContent = "Lihat riwayat pemakaian" + (histCount ? " (" + histCount + ")" : "") + " →";
 }
-$("histMore").onclick = () => { histAll = !histAll; renderHist(); };
-$("histClear").onclick = () => { if (confirm("Hapus semua riwayat pemakaian key?")) keyOp("clearKeyHistory"); };
 
 async function keyOp(name, extra) {
   say("keyMsg", "");
-  try { const r = await op(name, extra); geminiKeys = r.keys; keyHistory = r.history; renderKeys(); renderHist(); return true; }
+  try { const r = await op(name, extra); geminiKeys = r.keys; histCount = (r.history || []).length; renderKeys(); renderHistLink(); return true; }
   catch (e) { say("keyMsg", e.message, "err"); return false; }
 }
 $("keyInput").addEventListener("keydown", (e) => { if (e.key === "Enter") $("keyAddBtn").click(); });
@@ -363,9 +335,9 @@ async function load() {
   $("pName").value = profile.name || "";
   $("pAssistant").value = profile.assistantName || "Asisten";
   $("pNotes").value = profile.notes || "";
-  geminiKeys = d.geminiKeys || []; keyHistory = d.keyHistory || []; histShow = d.histShow || 20; maxKeys = d.maxKeys || 5; globalKey = !!d.globalKey;
+  geminiKeys = d.geminiKeys || []; histCount = d.keyHistoryCount || 0; maxKeys = d.maxKeys || 5; globalKey = !!d.globalKey;
   botState = d.bot || { installed: false };
-  renderKeys(); renderHist(); renderBot();
+  renderKeys(); renderHistLink(); renderBot();
 }
 load().catch((e) => { if (e.message !== "Belum login") say("profileMsg", "Gagal memuat: " + e.message, "err"); });
 api("/api/auth").then((d) => { $("who").textContent = "Masuk sebagai " + d.user.username; }).catch(() => {});

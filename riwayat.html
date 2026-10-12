@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#4f46e5">
+<title>Riwayat pemakaian · Asisten Pribadi</title>
+<style>
+  :root { --bg:#f6f7fb; --card:#fff; --ink:#1d2433; --muted:#6b7385; --accent:#4f46e5; --line:#e4e7ef; --err:#d33; --ok:#2a9d4b; --warn:#b7791f; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0f1220; --card:#181c2e; --ink:#e8eaf3; --muted:#9aa1b5; --line:#2a3050; }
+  }
+  * { box-sizing:border-box; }
+  html { -webkit-text-size-adjust:100%; }
+  body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--ink); min-height:100dvh; }
+  header { position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:10px; padding:12px 16px; padding-top:max(12px, env(safe-area-inset-top)); background:var(--card); border-bottom:1px solid var(--line); }
+  header h1 { font-size:17px; margin:0; flex:1; }
+  button, a.btn { font:inherit; cursor:pointer; border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:10px; padding:8px 14px; touch-action:manipulation; text-decoration:none; display:inline-flex; align-items:center; justify-content:center; line-height:1.2; }
+  button.danger { color:var(--err); border-color:var(--err); }
+  button:disabled { opacity:.5; cursor:default; }
+  main { max-width:640px; margin:0 auto; padding:16px; padding-bottom:max(32px, env(safe-area-inset-bottom)); display:flex; flex-direction:column; gap:14px; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; }
+  section h2 { font-size:16px; margin:0 0 4px; display:flex; align-items:baseline; gap:8px; }
+  section h2 small { font-weight:400; color:var(--muted); font-size:13px; }
+  .hint { color:var(--muted); font-size:13px; line-height:1.5; margin:0 0 12px; }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 10px; }
+  .chip { padding:6px 12px; border-radius:999px; font-size:13px; }
+  .chip.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .status { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; border:1px solid var(--line); white-space:nowrap; }
+  .status::before { content:""; display:inline-block; width:7px; height:7px; border-radius:50%; background:currentColor; margin-right:6px; vertical-align:1px; }
+  .status.ok { color:var(--ok); border-color:var(--ok); }
+  .status.limit { color:var(--warn); border-color:var(--warn); }
+  .status.invalid { color:var(--err); border-color:var(--err); }
+  .hrow { padding:10px 0; border-bottom:1px solid var(--line); }
+  .hrow:last-child { border-bottom:none; }
+  .htop { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .hwho { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:14px; }
+  .hmeta { color:var(--muted); font-size:12px; margin-top:3px; }
+  .herr { color:var(--muted); font-size:12px; margin-top:3px; word-break:break-word; }
+  .empty { color:var(--muted); font-size:14px; text-align:center; padding:18px 0 8px; }
+  .actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; }
+  .actions button { flex:1 1 140px; }
+  .msg { font-size:13px; min-height:18px; margin:8px 0 0; }
+  .msg.err { color:var(--err); }
+  .msg.ok { color:var(--ok); }
+</style>
+</head>
+<body>
+<header>
+  <a href="/settings.html" class="btn" aria-label="Kembali ke Pengaturan">← Pengaturan</a>
+  <h1>Riwayat pemakaian</h1>
+</header>
+
+<main>
+  <section>
+    <h2>API key Gemini <small id="count"></small></h2>
+    <p class="hint">Dicatat setiap kali API key dipakai (web, Telegram, pesan otomatis, atau tombol Uji). Dihapus otomatis setelah 1 hari, maksimal 50 entri. Isi pesan tidak disimpan.</p>
+    <div class="chips" id="chips"></div>
+    <div id="list"></div>
+    <div class="actions">
+      <button id="refresh">Segarkan</button>
+      <button id="clear" class="danger">Hapus riwayat</button>
+    </div>
+    <p class="msg" id="msg"></p>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+async function op(name, extra) {
+  const r = await fetch("/api/state", {
+    method: "POST", credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ op: name, ...extra }),
+  });
+  if (r.status === 401) { location.href = "/"; throw new Error("Belum login"); }
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || "Gagal memuat");
+  return d.result;
+}
+function say(text, kind) { const m = $("msg"); m.textContent = text || ""; m.className = "msg" + (kind ? " " + kind : ""); }
+
+const STATUS = { ok: ["Berfungsi", "ok"], limit: ["Kena limit", "limit"], invalid: ["Tidak valid", "invalid"], error: ["Error", "invalid"] };
+const SRC = { web: "Web", telegram: "Telegram", otomatis: "Otomatis", uji: "Uji" };
+const FILTERS = [
+  ["all", "Semua", () => true],
+  ["ok", "Berfungsi", (h) => h.st === "ok"],
+  ["limit", "Kena limit", (h) => h.st === "limit"],
+  ["bad", "Error", (h) => h.st === "invalid" || h.st === "error"],
+];
+let history = [], filter = "all";
+
+function ago(ts) {
+  const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (s < 60) return "baru saja";
+  const m = Math.round(s / 60); if (m < 60) return m + " menit lalu";
+  const h = Math.round(m / 60); if (h < 24) return h + " jam lalu";
+  return Math.round(h / 24) + " hari lalu";
+}
+
+function render() {
+  $("count").textContent = "(" + history.length + " entri)";
+
+  const chips = $("chips");
+  chips.innerHTML = "";
+  FILTERS.forEach(([id, label, fn]) => {
+    const b = document.createElement("button");
+    b.className = "chip" + (filter === id ? " on" : "");
+    b.textContent = label + " (" + history.filter(fn).length + ")";
+    b.onclick = () => { filter = id; render(); };
+    chips.appendChild(b);
+  });
+
+  const fn = FILTERS.find((f) => f[0] === filter)[2];
+  const rows = history.filter(fn);
+  const box = $("list");
+  box.innerHTML = "";
+  if (!rows.length) {
+    const e = document.createElement("div");
+    e.className = "empty";
+    e.textContent = history.length ? "Tidak ada entri untuk filter ini." : "Belum ada riwayat.";
+    box.appendChild(e);
+  }
+  const today = new Date().toDateString();
+  rows.forEach((h) => {
+    const d = new Date(h.ts);
+    const row = document.createElement("div");
+    row.className = "hrow";
+
+    const top = document.createElement("div");
+    top.className = "htop";
+    const who = document.createElement("span");
+    who.className = "hwho";
+    who.textContent = h.k === "server" ? "Key server" : "•••• " + h.k;
+    const [t, c] = STATUS[h.st] || STATUS.error;
+    const b = document.createElement("span");
+    b.className = "status " + c; b.textContent = t;
+    top.append(who, b);
+
+    const meta = document.createElement("div");
+    meta.className = "hmeta";
+    const time = d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+    meta.textContent = (SRC[h.src] || h.src) + " · " + (d.toDateString() === today ? "" : "kemarin ") + time + " · " + ago(h.ts);
+
+    row.append(top, meta);
+    if (h.err) { const e = document.createElement("div"); e.className = "herr"; e.textContent = h.err; row.appendChild(e); }
+    box.appendChild(row);
+  });
+  $("clear").style.display = history.length ? "" : "none";
+}
+
+async function load(msg) {
+  say(msg || "");
+  try { const r = await op("keyHistory"); history = r.history || []; render(); }
+  catch (e) { if (e.message !== "Belum login") say("Gagal memuat: " + e.message, "err"); }
+}
+$("refresh").onclick = () => load();
+$("clear").onclick = async () => {
+  if (!confirm("Hapus semua riwayat pemakaian key?")) return;
+  try { const r = await op("clearKeyHistory"); history = r.history || []; render(); say("Riwayat dihapus.", "ok"); }
+  catch (e) { say(e.message, "err"); }
+};
+load();
+</script>
+</body>
+</html>

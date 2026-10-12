@@ -243,7 +243,6 @@ async function saveKeyRecords(u, list) {
 const HIST_MAX = 50;
 const HIST_TTL = DAY;
 const COOLDOWN_SEC = 60;
-const HIST_SHOW = 20; // jumlah yang ditampilkan awal di UI
 
 async function loadKeyStats(u) {
   const rows = await redis("HGETALL", key(u, "gstat"));
@@ -810,7 +809,7 @@ ${COMMON}`;
 
 module.exports = {
   TZ, DAY, HOUR, HOURS, BTN,
-  uid, key, MAX_KEYS, getBot, saveBot, setupBot, removeBot, relinkBot, botStatus, botUsers, listGeminiKeys, keyState, getKeyHistory, clearKeyHistory, testGeminiKey, HIST_SHOW, addGeminiKey, deleteGeminiKey, moveGeminiKey,
+  uid, key, MAX_KEYS, getBot, saveBot, setupBot, removeBot, relinkBot, botStatus, botUsers, listGeminiKeys, keyState, getKeyHistory, clearKeyHistory, testGeminiKey, addGeminiKey, deleteGeminiKey, moveGeminiKey,
   redis, sendTelegram, downloadTelegramFile, gemini, geminiRaw, trimHist, appendModelToHist,
   fmtWib, fmtTime, fmtDateShort, wib, startOfDayWib, nextRepeat, rupiah,
   cfgOn, getLocation, setLocation, getWeather, getNews,
