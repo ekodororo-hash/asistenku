@@ -518,6 +518,7 @@ async function addTask(text, when) {
 
 /* ---------- Pengingat (dikirim lewat Telegram oleh server) ---------- */
 const REPEAT_LABEL = { harian: "tiap hari", mingguan: "tiap minggu", bulanan: "tiap bulan" };
+const repLabel = (r) => REPEAT_LABEL[r] || (/^(\d+)m$/.test(r) ? (+r.slice(0, -1) % 60 === 0 ? "tiap " + (+r.slice(0, -1) / 60) + " jam" : "tiap " + r.slice(0, -1) + " menit") : "berulang");
 const fmtWhen = (ts) => new Date(ts).toLocaleString("id-ID", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false }).replace(":", ".");
 
 function renderReminders() {
@@ -527,7 +528,7 @@ function renderReminders() {
   if (!reminders.length) { box.innerHTML = '<p class="muted">Belum ada pengingat.</p>'; return; }
   reminders.forEach((r) => {
     box.appendChild(makeRow(
-      r.text + (r.repeat ? " (" + REPEAT_LABEL[r.repeat] + ")" : ""),
+      r.text + (r.repeat ? " (" + repLabel(r.repeat) + ")" : ""),
       fmtWhen(r.ts),
       async () => {
         try { await api("/api/state", { method: "POST", body: JSON.stringify({ op: "deleteReminder", id: r.id }) }); reminders = reminders.filter((x) => x.id !== r.id); renderReminders(); }

@@ -638,7 +638,27 @@ function startOfDayWib(ts = Date.now()) {
   d.setUTCHours(0, 0, 0, 0);
   return d.getTime() - 7 * HOUR;
 }
+// Aturan interval ditulis "<menit>m", mis. "5m" = tiap 5 menit (dibuat dari "tiap 5 menit" / "tiap 2 jam")
+function parseRepeat(str) {
+  const t = String(str || "").trim().toLowerCase();
+  if (["harian", "mingguan", "bulanan"].includes(t)) return t;
+  const m = t.match(/^(?:tiap|setiap|every)?\s*(\d+)\s*(menit|mnt|m|jam|j|h)$/);
+  if (!m) return null;
+  const mins = Number(m[1]) * (/^(jam|j|h)$/.test(m[2]) ? 60 : 1);
+  return mins >= 1 && mins <= 1440 ? mins + "m" : null;
+}
+function repeatLabel(rule) {
+  if (rule === "harian") return "tiap hari";
+  if (rule === "mingguan") return "tiap minggu";
+  if (rule === "bulanan") return "tiap bulan";
+  const m = /^(\d+)m$/.exec(rule || "");
+  if (!m) return "berulang";
+  const n = Number(m[1]);
+  return n % 60 === 0 ? `tiap ${n / 60} jam` : `tiap ${n} menit`;
+}
 function nextRepeat(ts, rule) {
+  const iv = /^(\d+)m$/.exec(rule || "");
+  if (iv) return ts + Number(iv[1]) * 60 * 1000;
   if (rule === "harian") return ts + DAY;
   if (rule === "mingguan") return ts + 7 * DAY;
   if (rule === "bulanan") {
@@ -777,7 +797,6 @@ async function incomesSince(u, fromTs) {
 }
 
 // ---------- Pengingat (dipakai bareng web & Telegram; dikirim lewat Telegram oleh cron) ----------
-const REPEATS = ["harian", "mingguan", "bulanan"];
 async function getReminders(u) {
   const rows = await redis("ZRANGE", key(u, "reminders"), 0, -1, "WITHSCORES");
   const out = [];
@@ -785,19 +804,21 @@ async function getReminders(u) {
     let it = {};
     try { it = JSON.parse(rows[i]); } catch {}
     const ts = Number(rows[i + 1]);
-    out.push({ id: it.id || "t" + ts, text: it.text || "?", ts, repeat: it.repeat || null, tid: it.tid || null });
+    out.push({ id: it.id || "t" + ts, text: it.text || "?", ts, repeat: it.repeat || null, until: it.until || null, tid: it.tid || null });
   }
   return out;
 }
-async function addReminder(u, text, ts, repeat, tid) {
+async function addReminder(u, text, ts, repeat, tid, until) {
   const t = String(text || "").trim().slice(0, 200);
   const when = Number(ts);
   if (!t || !Number.isFinite(when) || when <= Date.now()) return null;
   const item = { id: uid(), text: t };
-  if (REPEATS.includes(repeat)) item.repeat = repeat;
+  const rule = parseRepeat(repeat);
+  if (rule) item.repeat = rule;
+  if (rule && Number.isFinite(Number(until)) && Number(until) > when) item.until = Number(until);
   if (tid) item.tid = tid;
   await redis("ZADD", key(u, "reminders"), when, JSON.stringify(item));
-  return { id: item.id, text: item.text, ts: when, repeat: item.repeat || null };
+  return { id: item.id, text: item.text, ts: when, repeat: item.repeat || null, until: item.until || null };
 }
 async function deleteReminderById(u, id, unlink = true) {
   const rows = await redis("ZRANGE", key(u, "reminders"), 0, -1, "WITHSCORES");
@@ -1183,7 +1204,7 @@ async function loadContext(u) {
   for (let i = 0; i < (rows || []).length; i += 2) {
     let it = {};
     try { it = JSON.parse(rows[i]); } catch {}
-    reminders.push({ text: it.text || "?", ts: Number(rows[i + 1]), repeat: it.repeat });
+    reminders.push({ text: it.text || "?", ts: Number(rows[i + 1]), repeat: it.repeat, until: it.until });
   }
   return { facts: facts || [], reminders, profile, tasks, notes, money, partner };
 }
@@ -1209,7 +1230,8 @@ const COMMON = `Aturan umum:
 Tag khusus (ditaruh di baris terakhir balasan; pengguna tidak melihatnya):
 - Pengingat: [[REMIND: 2026-10-12T08:00:00+07:00 | isi pengingat singkat]]
   Waktu format ISO 8601 dengan +07:00, dihitung dari waktu sekarang (ubah "besok", "lusa", "2 jam lagi" jadi waktu pasti). Jika pengguna menyebut hari/tanggal tanpa jam (mis. bayar wifi tanggal 10), pakai jam 08:00. Kalau cuma tanggal tanpa bulan, pakai tanggal itu yang terdekat dan belum lewat. Tagihan/cicilan/langganan atau kata tiap bulan dibuat bulanan. Kalau waktunya benar-benar tidak jelas (tanpa jam DAN tanpa hari), tanyakan dulu dan jangan buat tag. Jangan pernah bilang akan mengingatkan kalau kamu tidak membuat tag REMIND.
-  Pengingat berulang: tambahkan bagian ketiga harian / mingguan / bulanan, contoh [[REMIND: 2026-10-13T09:00:00+07:00 | rapat tim | mingguan]]. Waktu = kemunculan pertama.
+  Pengingat berulang: tambahkan bagian ketiga harian / mingguan / bulanan, atau interval seperti "tiap 5 menit" / "tiap 2 jam" (minimal 1 menit). Contoh: [[REMIND: 2026-10-13T09:00:00+07:00 | rapat tim | mingguan]]. Waktu = kemunculan pertama.
+  Kalau pengguna minta berulang SAMPAI jam tertentu (mis. "tiap 5 menit sampai jam 10"), tambahkan bagian keempat berisi waktu berhenti (ISO, +07:00; kalau jam itu sudah lewat hari ini berarti besok). Waktu pertama = sekarang + interval. Contoh: [[REMIND: 2026-10-12T22:10:00+07:00 | waktunya minum | tiap 5 menit | 2026-10-12T22:30:00+07:00]]. Jangan pernah memakai harian untuk permintaan interval menit/jam, dan jangan mengubah isi pengingat dengan menambah jam atau menit.
 - Pengeluaran yang sudah terjadi (mis. "makan siang 25rb", "beli bensin 50 ribu", atau foto struk/nota): [[BELI: 25000 | makan | makan siang]]
   Jumlah rupiah angka bulat tanpa titik ("25rb" = 25000, "1,5jt" = 1500000). Kategori satu kata: makan, transport, belanja, tagihan, hiburan, kesehatan, lainnya. Untuk struk cukup satu tag berisi total.
 - Pemasukan / uang masuk yang sudah terjadi (mis. "gajian 3jt", "dapat bonus 500rb", "dikasih ortu 200rb"): [[MASUK: 3000000 | gaji | gajian]]
@@ -1238,7 +1260,7 @@ function buildSystem(mode, ctx) {
   const persona = mode === "curhat" ? PERSONA.curhat : PERSONA.asisten;
   const rem = ctx.reminders.length
     ? ctx.reminders
-        .map((r, i) => `${i + 1}. ${r.text} (${fmtWib(r.ts)})${r.repeat ? " [berulang: " + r.repeat + "]" : ""}`)
+        .map((r, i) => `${i + 1}. ${r.text} (${fmtWib(r.ts)})${r.repeat ? " [berulang: " + repeatLabel(r.repeat) + "]" : ""}`)
         .join("\n")
     : "(belum ada)";
   return `${persona}
@@ -1578,7 +1600,7 @@ module.exports = {
   TZ, DAY, HOUR, HOURS, BTN,
   uid, key, MAX_KEYS, getBot, saveBot, setupBot, removeBot, relinkBot, botStatus, botUsers, listGeminiKeys, getModelCfg, saveModelCfg, listGeminiModels, keyState, quotaStatus, getKeyHistory, clearKeyHistory, testGeminiKey, addGeminiKey, renameGeminiKey, deleteGeminiKey, moveGeminiKey,
   redis, tg, sendTelegram, downloadTelegramFile, gemini, geminiRaw, geminiSearch, sourceLine, REMIND_INTENT, trimHist, appendModelToHist,
-  fmtWib, fmtTime, fmtDateShort, wib, startOfDayWib, nextRepeat, rupiah,
+  fmtWib, fmtTime, fmtDateShort, wib, startOfDayWib, nextRepeat, parseRepeat, repeatLabel, rupiah,
   cfgOn, getLocation, setLocation, getWeather, getNews,
   recapText, deleteExpenseNumber, loadContext, buildSystem, loadCurhatContext, buildCurhatSystem, stripTags,
   getTasks, addTask, toggleTask, deleteTask, unlinkTaskReminder, parseWib, fmtDue,

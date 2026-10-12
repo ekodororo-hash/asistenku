@@ -2,13 +2,12 @@
 // Tugasnya: kirim pengingat yang jatuh tempo, ringkasan pagi, check-in malam, dan rekap mingguan.
 const {
   DAY, HOURS, redis, key, getBot, botUsers, sendTelegram, gemini: geminiBase, appendModelToHist,
-  fmtWib, fmtTime, fmtDue, wib, startOfDayWib, nextRepeat, getTasks,
+  fmtWib, fmtTime, fmtDue, wib, startOfDayWib, nextRepeat, repeatLabel, getTasks,
   cfgOn, getWeather, recapText, loadContext, buildSystem, loadCurhatContext, buildCurhatSystem, getMode,
 } = require("./_lib");
 
 const gemini = (u, system, contents) => geminiBase(u, system, contents, "otomatis"); // riwayat key menandai sumbernya
 
-const REPEAT_LABEL = { harian: "tiap hari", mingguan: "tiap minggu", bulanan: "tiap bulan" };
 
 // Tandai "sudah dikirim" secara atomik supaya tidak terkirim dobel
 async function once(k, ttlSec) {
@@ -42,7 +41,7 @@ async function runReminders(u, chatId) {
       if (idx < 0 || tasks[idx].done) continue;
       msg = `⏰ Waktunya: ${item.text}\nSelesai? Ketik /tugasdone ${idx + 1}`;
     } else {
-      const label = item.repeat ? ` (${REPEAT_LABEL[item.repeat]})` : "";
+      const label = item.repeat ? ` (${repeatLabel(item.repeat)})` : "";
       msg = `⏰ Pengingat${label}: ${item.text}`;
     }
     const ok = await sendTelegram(u, chatId, msg);
@@ -54,8 +53,8 @@ async function runReminders(u, chatId) {
 
     if (item.repeat) {
       let next = nextRepeat(score, item.repeat);
-      while (next !== null && next <= now) next = nextRepeat(next, item.repeat);
-      if (next) await redis("ZADD", key(u, "reminders"), next, member);
+      while (next !== null && next <= now && (!item.until || next <= item.until)) next = nextRepeat(next, item.repeat);
+      if (next && (!item.until || next <= item.until)) await redis("ZADD", key(u, "reminders"), next, member); // berhenti setelah batas "sampai"
     }
   }
   return { due: (rows || []).length / 2, sent };

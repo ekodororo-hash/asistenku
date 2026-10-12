@@ -1,7 +1,7 @@
 // Webhook bot Telegram: /api/telegram
 const {
   HOURS, BTN, redis, tg, key, getBot, saveBot, sendTelegram, downloadTelegramFile, gemini, geminiSearch, sourceLine, REMIND_INTENT, DELETE_INTENT, deleteReminderNumber, trimHist,
-  fmtWib, wib, rupiah, cfgOn, getLocation, setLocation, getWeather, getNews,
+  fmtWib, fmtTime, wib, rupiah, parseRepeat, repeatLabel, cfgOn, getLocation, setLocation, getWeather, getNews,
   recapText, deleteExpenseNumber, incomeListText, deleteIncomeNumber, loadContext, buildSystem,
   getTasks, addTask, toggleTask, deleteTask, unlinkTaskReminder, parseWib, fmtDue,
   addNote, addExpense, addIncome, setSaldo, addOutsideMoney, fmtDateShort, mentionsAmount,
@@ -13,7 +13,6 @@ const { getOwnerId, safeEq } = require("./_auth");
 const PLAN_PROMPT =
   "Bantu aku susun rencana hari ini berdasarkan pengingat dan hal yang kamu tahu tentang aku. Tanya aku kalau butuh info tambahan.";
 
-const REPEAT_LABEL = { harian: "tiap hari", mingguan: "tiap minggu", bulanan: "tiap bulan" };
 // Pilihan saat keluar dari mode curhat: tombol di bawah pesan (inline), jawabannya masuk sebagai callback_query
 const EXIT = { del: "🗑️ Hapus & keluar", keep: "💾 Simpan dulu", stay: "↩️ Tetap curhat" };
 const EXIT_BUTTONS = {
@@ -315,7 +314,7 @@ async function handleCommand(u, cmd, arg, say, ensureCb) {
       for (let i = 0; i < rows.length; i += 2) {
         let it = {};
         try { it = JSON.parse(rows[i]); } catch {}
-        const rep = it.repeat ? " (" + REPEAT_LABEL[it.repeat] + ")" : "";
+        const rep = it.repeat ? " (" + repeatLabel(it.repeat) + (it.until ? " sampai " + fmtTime(it.until) : "") + ")" : "";
         lines.push(`  ${lines.length + 1}. ${it.text || "?"}${rep}\n      ⏰ ${fmtDue(Number(rows[i + 1]))}`);
       }
       await say(`📋 Pengingat (${lines.length} total)\n\n${lines.join("\n")}\n\nHapus: /hapus <nomor>, contoh: /hapus 2`);
@@ -500,18 +499,20 @@ async function processTags(u, reply, userText = "", hasImage = false) {
   }
 
   // Pengingat (boleh berulang)
-  for (const m of remindOk ? [...reply.matchAll(/\[\[REMIND:\s*([^|\]]+?)\s*\|\s*([^|\]]+?)\s*(?:\|\s*(harian|mingguan|bulanan)\s*)?\]\]/gi)] : []) {
+  for (const m of remindOk ? [...reply.matchAll(/\[\[REMIND:\s*([^|\]]+?)\s*\|\s*([^|\]]+?)\s*(?:\|\s*([^|\]]+?)\s*)?(?:\|\s*([^|\]]+?)\s*)?\]\]/gi)] : []) {
     const ts = parseWib(m[1]);
     const label = m[2].trim();
-    const repeat = m[3] ? m[3].toLowerCase() : null;
+    const repeat = parseRepeat(m[3]);
+    const until = repeat && m[4] ? parseWib(m[4]) : null;
     if (isNaN(ts) || ts <= Date.now()) {
       notes.push('Gagal mengatur pengingat "' + label + '" (waktu tidak valid atau sudah lewat).');
       continue;
     }
     const item = { id: Math.random().toString(36).slice(2, 10), text: label };
     if (repeat) item.repeat = repeat;
+    if (repeat && Number.isFinite(until) && until > ts) item.until = until;
     await redis("ZADD", key(u, "reminders"), ts, JSON.stringify(item));
-    notes.push("⏰ Pengingat diset: " + label + (repeat ? " (" + REPEAT_LABEL[repeat] + ")" : "") + "\n" + fmtWib(ts));
+    notes.push("⏰ Pengingat diset: " + label + (repeat ? " (" + repeatLabel(repeat) + (item.until ? " sampai " + fmtWib(item.until) : "") + ")" : "") + "\n" + fmtWib(ts));
   }
 
   // Fakta tentang pengguna
