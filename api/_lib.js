@@ -465,7 +465,46 @@ async function geminiCandidates(u) {
 // Error yang layak dicoba dengan key berikutnya
 const rotatable = (status) => status === 429 || status === 403 || status === 401 || status === 400 || status >= 500;
 
-async function geminiRaw(u, body, src) {
+// Baca balasan streaming (SSE) dari Gemini; onText dipanggil tiap ada potongan teks baru.
+// Hasil digabung ke bentuk yang sama dengan respons biasa supaya pemanggil lain tidak perlu berubah.
+async function readGeminiStream(r, onText) {
+  const dec = new TextDecoder();
+  let buf = "", text = "", grounding = null, finish = "";
+  const handle = (line) => {
+    if (!line.startsWith("data:")) return;
+    const raw = line.slice(5).trim();
+    if (!raw) return;
+    let j; try { j = JSON.parse(raw); } catch { return; }
+    if (j.error) { const e = new Error(j.error.message || "Gagal memanggil Gemini"); e.status = 502; throw e; }
+    const cand = (j.candidates || [])[0] || {};
+    const piece = ((cand.content || {}).parts || []).map((p) => p.text || "").join("");
+    if (cand.groundingMetadata) grounding = cand.groundingMetadata;
+    if (cand.finishReason) finish = cand.finishReason;
+    if (piece) { text += piece; onText(piece); }
+  };
+  try {
+    for await (const chunk of r.body) {
+      buf += dec.decode(chunk, { stream: true });
+      let i;
+      while ((i = buf.search(/\r?\n/)) >= 0) {
+        const line = buf.slice(0, i);
+        buf = buf.slice(buf[i] === "\r" && buf[i + 1] === "\n" ? i + 2 : i + 1);
+        handle(line);
+      }
+    }
+    buf += dec.decode();
+    if (buf) handle(buf);
+  } catch (e) {
+    e.partial = text.length > 0; // sebagian teks sudah terkirim ke pengguna: jangan diulang dengan key lain
+    if (!e.status) e.status = 502;
+    throw e;
+  }
+  const cand = { content: { parts: [{ text }] }, finishReason: finish };
+  if (grounding) cand.groundingMetadata = grounding;
+  return { candidates: [cand] };
+}
+
+async function geminiRaw(u, body, src, onText) {
   const cands = await geminiCandidates(u);
   if (!cands.length) {
     const e = new Error("Belum ada API key Gemini. Tambahkan di Pengaturan.");
@@ -498,11 +537,16 @@ async function geminiRaw(u, body, src) {
     if (!order.length) order = usable;
 
     for (const c of order) {
-      const r = await fetch(`${GEMINI_BASE}/models/${model}:generateContent`, {
+      const streaming = typeof onText === "function";
+      const r = await fetch(`${GEMINI_BASE}/models/${model}:${streaming ? "streamGenerateContent?alt=sse" : "generateContent"}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-goog-api-key": c.key },
         body: JSON.stringify(body),
       });
+      if (streaming && r.ok) { // koneksi berhasil: catat pemakaian lalu alirkan teksnya
+        await recordKeyUse(u, c, { ok: true, http: r.status, message: "", src, model });
+        return readGeminiStream(r, onText);
+      }
       const data = await r.json().catch(() => ({}));
       await recordKeyUse(u, c, { ok: r.ok, http: r.status, message: data?.error?.message, src, model });
       if (r.ok) return data;
@@ -529,10 +573,10 @@ async function geminiRaw(u, body, src) {
   throw lastErr;
 }
 
-async function gemini(u, system, contents, src = "telegram") {
+async function gemini(u, system, contents, src = "telegram", onText) {
   const body = { contents };
   if (system) body.systemInstruction = { parts: [{ text: system }] };
-  const data = await geminiRaw(u, body, src);
+  const data = await geminiRaw(u, body, src, onText);
   return (data.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("");
 }
 
@@ -541,13 +585,13 @@ async function gemini(u, system, contents, src = "telegram") {
 // Kalau pencarian gagal/tidak didukung model, diulang tanpa pencarian supaya obrolan tetap jalan.
 // Pencarian MATI secara bawaan (paket gratis Google tidak menyediakan pencarian untuk model Gemini 3).
 // Nyalakan dengan env GEMINI_SEARCH=on kalau API key-nya sudah berbilling.
-async function geminiSearch(u, system, contents, src = "telegram") {
+async function geminiSearch(u, system, contents, src = "telegram", onText) {
   if (process.env.GEMINI_SEARCH !== "on") {
     const sys = (system || "").replace(
       /- Kamu punya akses pencarian Google\.[^\n]*\n- Pertanyaan info[^\n]*\n/,
       "- Kamu TIDAK punya akses internet/pencarian. Untuk info terkini (jadwal pertandingan, skor, kurs, harga, berita, cuaca), bilang jujur kamu tidak bisa mengeceknya dan sarankan pengguna cek di Google atau aplikasi terkait. Jangan mengarang angka, dan jangan membuat pengingat atau tugas untuk \"mengecek nanti\".\n"
     );
-    return { text: await gemini(u, sys, contents, src), sources: [], searchError: "" };
+    return { text: await gemini(u, sys, contents, src, onText), sources: [], searchError: "" };
   }
   const body = { contents, tools: [{ google_search: {} }] };
   if (system) body.systemInstruction = { parts: [{ text: system }] };
@@ -558,18 +602,19 @@ async function geminiSearch(u, system, contents, src = "telegram") {
   if (off) {
     delete body.tools;
     body.systemInstruction = { parts: [{ text: (system || "") + NOSEARCH }] };
-    data = await geminiRaw(u, body, src);
+    data = await geminiRaw(u, body, src, onText);
   } else {
     try {
-      data = await geminiRaw(u, body, src);
+      data = await geminiRaw(u, body, src, onText);
     } catch (e) {
+      if (e.partial) throw e; // teks sudah sebagian tampil; mengulang akan menggandakan jawaban
       const full = String(e.message || "gagal").replace(/\s+/g, " ");
       const g = full.match(/\[Pesan Google: (.*)\]/); // tampilkan pesan asli Google kalau ada
       searchError = (g ? g[1] : full).slice(0, 200);
       await redis("SET", key(u, "searchoff"), "1", "EX", "1800").catch(() => {});
       delete body.tools;
       body.systemInstruction = { parts: [{ text: (system || "") + NOSEARCH }] };
-      data = await geminiRaw(u, body, src);
+      data = await geminiRaw(u, body, src, onText);
     }
   }
   const cand = data.candidates?.[0] || {};

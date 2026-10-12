@@ -162,6 +162,39 @@ function moneyText(expenses) {
   return `Bulan ini total ${rupiah(total)}. Per kategori: ${cats}. Terakhir: ${last}.`;
 }
 
+// ---- Streaming (SSE) ----
+// Klien yang mengirim { stream: true } menerima potongan jawaban lewat event "data: {...}".
+// Event: delta (potongan teks), final (teks akhir setelah tag diproses), done (data terbaru, sama seperti respons JSON), error.
+// Header baru dikirim saat event pertama, jadi error sebelum itu (login, key, limit) tetap berupa JSON biasa.
+function makeOut(res) {
+  let started = false;
+  const start = () => {
+    if (started) return;
+    started = true;
+    res.statusCode = 200;
+    res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("X-Accel-Buffering", "no");
+    if (res.flushHeaders) res.flushHeaders();
+  };
+  return {
+    started: () => started,
+    emit(o) { start(); res.write("data: " + JSON.stringify(o) + "\n\n"); },
+  };
+}
+
+// Menyaring potongan teks: tag khusus ([[...]]) ada di akhir balasan dan tidak boleh sempat terlihat.
+// Teks mulai dari "[[" ditahan; teks final yang bersih dikirim lewat event "final".
+function makeStreamer(emit) {
+  let acc = "", sent = 0;
+  return (piece) => {
+    acc += piece;
+    const i = acc.indexOf("[[");
+    const safe = i >= 0 ? i : acc.length - (acc.endsWith("[") ? 1 : 0);
+    if (safe > sent) { emit({ t: "delta", text: acc.slice(sent, safe) }); sent = safe; }
+  };
+}
+
 module.exports = async (req, res) => {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Gunakan metode POST" });
@@ -172,6 +205,15 @@ module.exports = async (req, res) => {
   const text = String((req.body || {}).text || "").trim().slice(0, 4000);
   if (!text) return res.status(400).json({ error: "Pesan kosong" });
 
+  const wantStream = !!(req.body || {}).stream;
+  const out = makeOut(res);
+  const onText = wantStream ? makeStreamer(out.emit) : undefined;
+  const finish = (payload) => {
+    if (!wantStream) return res.status(200).json(payload);
+    out.emit({ t: "done", ...payload });
+    return res.end();
+  };
+
   try {
     const mode = await getMode(u);
 
@@ -179,13 +221,14 @@ module.exports = async (req, res) => {
     if (mode === "curhat") {
       const [hist, ctx] = await Promise.all([getHist(u, "curhat"), loadCurhatContext(u)]);
       const userTurn = { role: "user", parts: [{ text }], ts: Date.now() };
-      const raw = await gemini(u, buildCurhatSystem(ctx), trimHist([...hist, userTurn]), "web");
+      const raw = await gemini(u, buildCurhatSystem(ctx), trimHist([...hist, userTurn]), "web", onText);
       const reply = stripTags(raw) || "(tidak ada jawaban)";
       await saveHist(u, [...hist, userTurn, { role: "model", parts: [{ text: reply }], ts: Date.now() }], "curhat");
-      return res.status(200).json({ reply, added: [], mode: "curhat" });
+      return finish({ reply, added: [], mode: "curhat" });
     }
 
     const expiredNotice = await takeCurhatExpiredNotice(u); // curhat kedaluwarsa sendiri: kabari sekali
+    if (wantStream && expiredNotice) out.emit({ t: "delta", text: expiredNotice + "\n\n" });
     const [hist, tasks, notes, expenses, profile, reminders, bot] = await Promise.all([
       getHist(u, "asisten"), getTasks(u), getNotes(u), getExpenses(u), getProfile(u), getReminders(u), getBot(u).catch(() => null),
     ]);
@@ -206,7 +249,7 @@ module.exports = async (req, res) => {
       const t = Date.now();
       await saveHist(u, [...hist, { role: "user", parts: [{ text }], ts: t }, { role: "model", parts: [{ text: dupReply }], ts: t }], "asisten");
       const [fTasks, fNotes, fExpenses, fReminders, fQuota, fIncomes, fMoney, fXfer] = await Promise.all([getTasks(u), getNotes(u), getExpenses(u), getReminders(u), quotaStatus(u), getIncomes(u), moneySummary(u), incomingTransfers(u)]);
-      return res.status(200).json({
+      return finish({
         reply: [expiredNotice, dupReply].filter(Boolean).join("\n\n"), added: [], quota: fQuota,
         tasks: fTasks, reminders: fReminders, notes: fNotes.slice(-100).reverse(), expenses: fExpenses.slice(-100).reverse(),
         incomes: fIncomes.slice(-100).reverse(), money: fMoney, xferIn: fXfer,
@@ -218,7 +261,7 @@ module.exports = async (req, res) => {
     const userTurn = { role: "user", parts: [{ text }], ts: Date.now() };
     const contents = trimHist([...hist, userTurn]);
 
-    const found = await geminiSearch(u, system, contents, "web");
+    const found = await geminiSearch(u, system, contents, "web", onText);
     const raw = found.text;
     const { clean, added } = await processTags(u, raw, text);
     const reply = clean || (added.length ? "" : "(tidak ada jawaban)");
@@ -226,6 +269,7 @@ module.exports = async (req, res) => {
 
     const newHist = [...hist, userTurn, { role: "model", parts: [{ text: [reply, ...added].filter(Boolean).join("\n\n") || "(dicatat)" }], ts: Date.now() }];
     await saveHist(u, newHist, "asisten");
+    if (wantStream) out.emit({ t: "final", text: [shown, ...added].filter(Boolean).join("\n\n") || "(tidak ada jawaban)" }); // teks akhir tanpa tag, sebelum langkah susulan
 
     // Salin ke Telegram supaya obrolan di web juga terlihat di chat Telegram (matikan: /salin off)
     if (bot && bot.chatId && (await cfgOn(u, "mirror").catch(() => true))) {
@@ -235,7 +279,7 @@ module.exports = async (req, res) => {
 
     const [freshTasks, freshNotes, freshExpenses, freshReminders, quota, freshIncomes, money] = await Promise.all([getTasks(u), getNotes(u), getExpenses(u), getReminders(u), quotaStatus(u), getIncomes(u), moneySummary(u)]);
     const xferIn = await incomingTransfers(u).catch(() => []);
-    return res.status(200).json({
+    return finish({
       reply: shown, added, quota, xferIn,
       tasks: freshTasks,
       reminders: freshReminders,
@@ -245,6 +289,8 @@ module.exports = async (req, res) => {
       money,
     });
   } catch (e) {
-    return res.status(e.status || 500).json({ error: e.status ? e.message : "Server error: " + e.message });
+    const status = e.status || 500, msg = e.status ? e.message : "Server error: " + e.message;
+    if (wantStream && out.started()) { out.emit({ t: "error", error: msg, status }); return res.end(); } // header sudah terkirim
+    return res.status(status).json({ error: msg });
   }
 };

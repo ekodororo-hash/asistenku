@@ -27,7 +27,7 @@
   #app { width:100%; height:100%; display:flex; flex-direction:column; background:var(--bg); min-height:0; }
   /* layar lebar: panel tetap penuh, isi chat dipersempit dan ditaruh di tengah */
   @media (min-width:761px) {
-    #app #chat, #app .chips, #app #form {
+    #app #chat, #app .chips, #app #form, #app .wxbar {
       padding-left:max(16px, calc((100% - 720px) / 2));
       padding-right:max(16px, calc((100% - 720px) / 2));
     }
@@ -58,6 +58,12 @@
   .msg.bot { align-self:flex-start; background:var(--card); border:1px solid var(--line); border-bottom-left-radius:4px; }
   .msg .ts { font-size:11px; opacity:.65; text-align:right; margin-top:4px; line-height:1; }
   .msg.err { color:#d33; }
+  .msg.streaming > div:first-child::after { content:"▍"; margin-left:2px; opacity:.55; animation:blink 1s steps(2,start) infinite; }
+  @keyframes blink { to { visibility:hidden; } }
+  /* satu baris cuaca di bawah header; ketuk untuk membuka detail di panel Info */
+  .wxbar { display:block; width:100%; text-align:left; border:0; border-bottom:1px solid var(--line); border-radius:0; background:var(--bg); color:var(--muted); font-size:13px; line-height:1.3; padding:6px 16px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .wxbar[hidden] { display:none; }
+  .wxbar b { color:var(--ink); font-weight:600; }
   .msg.note { align-self:center; background:transparent; border:1px dashed var(--line); color:var(--muted); font-size:13px; }
   .quota { margin:0 16px 8px; padding:8px 12px; border-radius:10px; font-size:13px; line-height:1.4; border:1px solid #e0a030; background:rgba(224,160,48,.15); color:var(--ink); }
   .quota[hidden] { display:none; }
@@ -174,6 +180,7 @@
     header h1 { font-size:16px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     header button, header a.btn { padding:8px 10px; font-size:13px; min-height:40px; }
     header .lbl { display:none; }
+    .wxbar { padding:6px 12px; }
     #chat { padding:12px; gap:8px; }
     .msg { max-width:92%; font-size:15px; }
     .chips { padding:0 12px 8px; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
@@ -245,6 +252,7 @@
     <a href="/settings.html" class="btn" title="Pengaturan" aria-label="Pengaturan">⚙️<span class="lbl">&nbsp;Pengaturan</span></a>
   </div>
 </header>
+<button id="wxBar" class="wxbar" type="button" title="Ketuk untuk detail cuaca" hidden></button>
 
 <main>
   <section id="chatCol">
@@ -682,14 +690,38 @@ const el = (tag, cls, text) => {
   return e;
 };
 
-async function loadWeather() {
+// Data cuaca dipakai bersama oleh bar di atas chat dan kartu di tab Info (cache 10 menit)
+let wxData = null, wxAt = 0, wxFor = "";
+async function fetchWeather(force) {
+  if (!force && wxData && wxFor === city && Date.now() - wxAt < 10 * 60 * 1000) return wxData;
+  const r = await fetch("/api/info?type=weather&city=" + encodeURIComponent(city));
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || "Gagal");
+  wxData = d; wxAt = Date.now(); wxFor = city;
+  return d;
+}
+
+function renderWxBar(d) {
+  const bar = $("wxBar");
+  const parts = [d.icon + " " + d.temp + "°C " + d.desc, d.min + "–" + d.max + "°"];
+  if (d.rain != null) parts.push("hujan " + d.rain + "%");
+  parts.push(d.city);
+  bar.textContent = parts.join(" · ");
+  bar.hidden = false;
+}
+
+async function loadWxBar(force) {
+  try { renderWxBar(await fetchWeather(force)); }
+  catch { if (!wxData) $("wxBar").hidden = true; } // gagal: diam saja, detailnya masih ada di tab Info
+}
+
+async function loadWeather(force = true) {
   const box = $("weather");
   box.className = "card";
   box.textContent = "Memuat cuaca...";
   try {
-    const r = await fetch("/api/info?type=weather&city=" + encodeURIComponent(city));
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error || "Gagal");
+    const d = await fetchWeather(force);
+    renderWxBar(d);
     box.className = "card wx";
     box.textContent = "";
     const top = el("div", "wx-top");
@@ -781,7 +813,7 @@ async function loadNews(topic) {
 function loadInfo() {
   infoLoaded = true;
   $("cityInput").value = city;
-  loadWeather();
+  loadWeather(false);
   const topic = $("topicInput").value.trim();
   renderCats(topic ? "" : cat);
   loadNews(topic);
@@ -818,6 +850,72 @@ function showQuota(q) {
 }
 
 /* ---------- Kirim pesan ---------- */
+// Kirim ke /api/chat dengan streaming: teks muncul sedikit demi sedikit di gelembung `bubble`.
+// Hasil akhirnya (data terbaru) sama dengan respons JSON biasa.
+async function chatStream(text, bubble) {
+  const r = await fetch("/api/chat", {
+    method: "POST", credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, stream: true }),
+  });
+  if (r.status === 401) {
+    showGate(wasLoggedIn ? "Sesi habis. Silakan masuk lagi." : "");
+    throw new Error("Belum login");
+  }
+  if (!(r.headers.get("content-type") || "").includes("text/event-stream")) { // error sebelum stream mulai, atau server tanpa streaming
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || "Gagal memuat");
+    return d;
+  }
+
+  const chat = $("chat");
+  let acc = "", final = null, done = null, buf = "", raf = 0;
+  const paint = () => {
+    raf = 0;
+    const near = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 80;
+    setBubble(bubble, acc);
+    if (near) chat.scrollTop = chat.scrollHeight;
+  };
+  bubble.classList.add("streaming");
+  const handle = (line) => {
+    if (!line.startsWith("data:")) return;
+    let ev; try { ev = JSON.parse(line.slice(5)); } catch { return; }
+    if (ev.t === "delta") { acc += ev.text; if (!raf) raf = requestAnimationFrame(paint); }
+    else if (ev.t === "final") { // teks akhir (tanpa tag, plus catatan sistem): tampilkan segera, sebelum data panel selesai dimuat
+      final = ev.text;
+      if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      bubble.classList.remove("streaming"); setBubble(bubble, final);
+    }
+    else if (ev.t === "done") done = ev;
+    else if (ev.t === "error") throw new Error(ev.error || "Gagal");
+  };
+  const feed = (str, flush) => {
+    buf += str;
+    const lines = buf.split(/\r?\n/);
+    buf = flush ? "" : lines.pop();
+    lines.forEach(handle);
+  };
+  try {
+    if (r.body && r.body.getReader) {
+      const reader = r.body.getReader(), dec = new TextDecoder();
+      for (;;) {
+        const { value, done: end } = await reader.read();
+        if (end) break;
+        feed(dec.decode(value, { stream: true }));
+      }
+      feed(dec.decode(), true);
+    } else {
+      feed(await r.text(), true); // browser lama tanpa stream: tampil sekaligus
+    }
+  } finally {
+    if (raf) cancelAnimationFrame(raf);
+    bubble.classList.remove("streaming");
+  }
+  if (done) return done;
+  if (final != null) return { reply: final, added: [] }; // jawaban sudah tersimpan di server; data panel menyusul di penyegaran berikutnya
+  throw new Error("Koneksi terputus sebelum jawaban selesai. Muat ulang untuk melihat hasilnya.");
+}
+
 async function send(text) {
   text = text.trim();
   if (!text || busy) return;
@@ -829,7 +927,7 @@ async function send(text) {
   autoGrow();
   const wait = addBubble("bot", "...");
   try {
-    const d = await api("/api/chat", { method: "POST", body: JSON.stringify({ text }) });
+    const d = await chatStream(text, wait);
     const shown = [d.reply, ...(d.added || [])].filter(Boolean).join("\n\n") || "(tidak ada jawaban)";
     const gotAt = Date.now();
     setBubble(wait, shown, gotAt);
@@ -894,8 +992,9 @@ $("expAddBtn").onclick = doAddExp; onEnter("expNote", doAddExp);
 const doCity = () => {
   const c = $("cityInput").value.trim();
   if (!c) return;
-  city = c; save("city", city); loadWeather();
+  city = c; save("city", city); loadWeather(true);
 };
+$("wxBar").onclick = () => { toggleSide(true); showTab("info"); };
 $("cityBtn").onclick = doCity; onEnter("cityInput", doCity);
 
 const doNews = () => {
@@ -1005,7 +1104,7 @@ async function refreshFromServer() {
   } catch {}
 }
 setInterval(refreshFromServer, 20000);
-document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshFromServer(); });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { refreshFromServer(); if (wasLoggedIn) loadWxBar(); } });
 window.addEventListener("focus", refreshFromServer);
 
 async function boot() {
@@ -1016,6 +1115,7 @@ async function boot() {
     renderTitle(); renderMode(); renderChat();
     renderTasks(); renderNotes(); renderMoney(); renderReminders();
     showTab(load("tab", "tasks"));
+    loadWxBar();
   } catch (e) {
     if (e.message !== "Belum login") showGate("Gagal memuat: " + e.message);
   }
