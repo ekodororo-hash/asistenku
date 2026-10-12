@@ -135,7 +135,7 @@
     <form id="authForm">
       <input id="authUser" type="text" autocomplete="username" autocapitalize="none" placeholder="Username" style="font-size:16px;letter-spacing:0;margin:14px 0 0">
       <input id="authPass" type="password" autocomplete="current-password" placeholder="Password" style="font-size:16px;letter-spacing:0;margin:8px 0 0">
-      <input id="authInvite" type="password" autocomplete="off" placeholder="Kode undangan" style="font-size:16px;letter-spacing:0;margin:8px 0 0;display:none">
+      <input id="authInvite" type="password" autocomplete="off" placeholder="Kode undangan" style="font-size:16px;letter-spacing:0;margin:8px 0 0">
       <p class="err" id="pinErr" style="margin-top:10px"></p>
       <button class="primary" type="submit" id="authBtn" style="width:100%">Masuk</button>
     </form>
@@ -234,6 +234,7 @@
 </div>
 
 
+<script src="/pw.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
@@ -255,12 +256,17 @@ async function api(path, opts = {}) {
   return d;
 }
 
+window.authPwBox = PW.attach($("authPass"), { examples: true });
+window.authPwBox.style.display = "none"; // bar kekuatan hanya saat Daftar
+PW.eye($("authInvite"));
+$("authInvite").parentElement.style.display = "none"; // tampil hanya saat Daftar
 let registerMode = false;
 function setAuthMode(reg) {
   registerMode = reg;
   $("authTitle").textContent = reg ? "✨ Daftar" : "🔒 Masuk";
   $("authSub").textContent = reg ? "Buat akun baru (perlu kode undangan)." : "Masuk ke asistenmu.";
-  $("authInvite").style.display = reg ? "" : "none";
+  $("authInvite").parentElement.style.display = reg ? "" : "none";
+  if (window.authPwBox) window.authPwBox.style.display = reg ? "" : "none";
   $("authPass").autocomplete = reg ? "new-password" : "current-password";
   $("authBtn").textContent = reg ? "Daftar" : "Masuk";
   $("authSwitch").textContent = reg ? "Sudah punya akun? Masuk" : "Belum punya akun? Daftar";
