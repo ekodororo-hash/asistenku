@@ -8,6 +8,7 @@ const {
   getTasks, addTask, toggleTask, deleteTask,
   getNotes, addNote, deleteNoteById,
   getExpenses, addExpense, deleteExpenseById,
+  getIncomes, addIncome, deleteIncomeById, moneySummary,
   getProfile, saveProfile,
   getMode, setMode,
   getHist, getBot,
@@ -22,8 +23,8 @@ module.exports = async (req, res) => {
     try {
       // ?light=1: dipakai web untuk penyegaran berkala (tanpa key dan tanpa panggilan ke Telegram)
       const light = !!(req.query && req.query.light);
-      const [tasks, notes, expenses, profile, mode, hist, reminders, kstate, bot, rawBot, mcfg] = await Promise.all([
-        getTasks(u), getNotes(u), getExpenses(u), getProfile(u), getMode(u), getHist(u), getReminders(u),
+      const [tasks, notes, expenses, incomes, money, profile, mode, hist, reminders, kstate, bot, rawBot, mcfg] = await Promise.all([
+        getTasks(u), getNotes(u), getExpenses(u), getIncomes(u), moneySummary(u), getProfile(u), getMode(u), getHist(u), getReminders(u),
         light ? null : keyState(u), light ? null : botStatus(u), light ? getBot(u).catch(() => null) : null, light ? null : getModelCfg(u),
       ]);
       const botLinked = light ? !!(rawBot && rawBot.chatId) : !!(bot && bot.linked);
@@ -36,6 +37,8 @@ module.exports = async (req, res) => {
         tasks,
         notes: notes.slice(-100).reverse(),
         expenses: expenses.slice(-100).reverse(),
+        incomes: incomes.slice(-100).reverse(),
+        money,
         profile, mode, messages, reminders, botLinked,
         ...(light ? {} : { geminiKeys: kstate.keys, keyHistoryCount: kstate.history.length, modelCfg: mcfg, maxKeys: MAX_KEYS, globalKey: !!process.env.GEMINI_API_KEY, bot }),
       });
@@ -58,6 +61,8 @@ module.exports = async (req, res) => {
         case "deleteNote": result = await deleteNoteById(u, p.id); break;
         case "addExpense": result = await addExpense(u, p.amt, p.cat, p.note); break;
         case "deleteExpense": result = await deleteExpenseById(u, p.id); break;
+        case "addIncome": result = await addIncome(u, p.amt, p.cat, p.note); break;
+        case "deleteIncome": result = await deleteIncomeById(u, p.id); break;
         case "saveProfile": result = await saveProfile(u, p.profile || {}); break;
         case "addKey": result = await addGeminiKey(u, p.value, p.name); break;
         case "renameKey": result = await renameGeminiKey(u, p.id, p.name); break;

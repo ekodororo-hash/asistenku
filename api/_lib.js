@@ -751,6 +751,31 @@ async function deleteExpenseById(u, id, monthKey) {
   return removeFromList(key(u, "exp:" + (monthKey || wib().monthKey)), (e) => e.id === id);
 }
 
+// ---------- Pemasukan (dipakai bareng web & Telegram) ----------
+async function addIncome(u, amt, cat, note) {
+  const n = Math.round(Number(amt));
+  if (!Number.isFinite(n) || n <= 0 || n > 1e12) return null;
+  const item = { id: uid(), ts: Date.now(), amt: n, cat: String(cat || "lainnya").toLowerCase().slice(0, 20), note: String(note || "").slice(0, 100) };
+  await redis("RPUSH", key(u, "inc:" + wib().monthKey), JSON.stringify(item));
+  return item;
+}
+async function getIncomes(u, monthKey) {
+  const rows = await redis("LRANGE", key(u, "inc:" + (monthKey || wib().monthKey)), 0, -1);
+  return (rows || []).map((r) => { try { return JSON.parse(r); } catch { return null; } }).filter(Boolean);
+}
+async function deleteIncomeById(u, id, monthKey) {
+  return removeFromList(key(u, "inc:" + (monthKey || wib().monthKey)), (e) => e.id === id);
+}
+async function incomesSince(u, fromTs) {
+  const keys = new Set([wib(fromTs).monthKey, wib().monthKey]);
+  const all = [];
+  for (const k of keys) {
+    const rows = await redis("LRANGE", key(u, "inc:" + k), 0, -1);
+    for (const r of rows || []) { try { all.push(JSON.parse(r)); } catch {} }
+  }
+  return all.filter((e) => e.ts >= fromTs).sort((a, b) => a.ts - b.ts);
+}
+
 // ---------- Pengingat (dipakai bareng web & Telegram; dikirim lewat Telegram oleh cron) ----------
 const REPEATS = ["harian", "mingguan", "bulanan"];
 async function getReminders(u) {
@@ -934,17 +959,26 @@ async function recapText(u, interactive = false) {
   const all = await expensesSince(u, Math.min(weekStart, monthStart));
   const week = all.filter((e) => e.ts >= weekStart);
   const month = all.filter((e) => e.ts >= monthStart);
-  if (!month.length) {
-    return { text: "💰 Pengeluaran\n\nBelum ada pengeluaran tercatat bulan ini.\n\nCara mencatat, ketik:\n  makan siang 25rb\n  bensin 50rb", weekCount: 0, monthCount: 0 };
+  const incMonth = (await incomesSince(u, monthStart)).filter((e) => e.ts >= monthStart);
+  const incTotal = incMonth.reduce((s, e) => s + e.amt, 0);
+  if (!month.length && !incMonth.length) {
+    return { text: "💰 Uang\n\nBelum ada pemasukan atau pengeluaran tercatat bulan ini.\n\nCara mencatat, ketik:\n  makan siang 25rb\n  bensin 50rb\n  gajian 3jt", weekCount: 0, monthCount: 0 };
   }
   const bw = breakdown(week), bm = breakdown(month);
+  const net = incTotal - bm.total;
+  const incLines = incMonth.length
+    ? `Pemasukan bulan ini: ${rupiah(incTotal)} (${incMonth.length} transaksi)\nSelisih (masuk - keluar): ${net < 0 ? "-" : ""}${rupiah(Math.abs(net))}\n(Lihat atau hapus pemasukan: /masuk)\n\n`
+    : "";
+  if (!month.length) {
+    return { text: `💰 Uang\n\n${incLines}Belum ada pengeluaran tercatat bulan ini.`, weekCount: 0, monthCount: 0 };
+  }
   const base = Math.max(0, month.length - 8); // nomor = urutan di bulan ini, dipakai /hapusbeli N
   const last = month.slice(-8).map((e, i) => `  ${base + i + 1}. ${fmtDateShort(e.ts)}: ${e.note || e.cat}, ${rupiah(e.amt)} (${e.cat})`);
   const text =
-    `💰 Pengeluaran\n\n` +
-    `Minggu ini: ${rupiah(bw.total)} (${week.length} transaksi)\n${bw.lines.join("\n") || "  -"}\n\n` +
-    `Bulan ini: ${rupiah(bm.total)} (${month.length} transaksi)\n${bm.lines.join("\n")}\n\n` +
-    `Terakhir:\n${last.join("\n")}\n\n` +
+    `💰 Uang\n\n` + incLines +
+    `Pengeluaran minggu ini: ${rupiah(bw.total)} (${week.length} transaksi)\n${bw.lines.join("\n") || "  -"}\n\n` +
+    `Pengeluaran bulan ini: ${rupiah(bm.total)} (${month.length} transaksi)\n${bm.lines.join("\n") || "  -"}\n\n` +
+    (last.length ? `Pengeluaran terakhir:\n${last.join("\n")}\n\n` : "") +
     (interactive
       ? "Ada yang salah catat? Balas dengan nomornya saja (contoh: 2) untuk menghapus entri itu. Batal: /batal"
       : "Salah catat? Ketik /rekap, lalu balas dengan nomor entri yang mau dihapus.");
@@ -962,8 +996,39 @@ async function deleteExpenseNumber(u, n) {
   return (await deleteExpenseById(u, item.id)) ? { item } : { fail: true };
 }
 
+// Daftar pemasukan bulan ini, bernomor (dipakai /masuk, /hapusmasuk, dan balasan angka setelah /masuk)
+async function incomeListText(u, interactive = false) {
+  const w = wib();
+  const monthStart = Date.UTC(w.y, w.m - 1, 1) - 7 * HOUR;
+  const month = (await incomesSince(u, monthStart)).filter((e) => e.ts >= monthStart);
+  if (!month.length) {
+    return { text: "💵 Pemasukan\n\nBelum ada pemasukan tercatat bulan ini.\n\nCara mencatat, ketik:\n  gajian 3jt\n  dapat bonus 500rb", count: 0 };
+  }
+  const total = month.reduce((s, e) => s + e.amt, 0);
+  const base = Math.max(0, month.length - 10);
+  const last = month.slice(-10).map((e, i) => `  ${base + i + 1}. ${fmtDateShort(e.ts)}: ${e.note || e.cat}, ${rupiah(e.amt)} (${e.cat})`);
+  const text =
+    `💵 Pemasukan\n\nBulan ini: ${rupiah(total)} (${month.length} transaksi)\n\n${last.join("\n")}\n\n` +
+    (interactive
+      ? "Ada yang salah catat? Balas dengan nomornya saja (contoh: 2) untuk menghapus entri itu. Batal: /batal"
+      : "Salah catat? Ketik /masuk, lalu balas dengan nomor entri yang mau dihapus.");
+  return { text, count: month.length };
+}
+
+// Hapus pemasukan bulan ini berdasarkan nomor di daftar /masuk (n kosong = yang terakhir)
+async function deleteIncomeNumber(u, n) {
+  const w = wib();
+  const monthStart = Date.UTC(w.y, w.m - 1, 1) - 7 * HOUR;
+  const month = (await incomesSince(u, monthStart)).filter((e) => e.ts >= monthStart);
+  if (!month.length) return { empty: true };
+  const idx = n ? n - 1 : month.length - 1;
+  if (idx < 0 || idx >= month.length) return { range: month.length };
+  const item = month[idx];
+  return (await deleteIncomeById(u, item.id)) ? { item } : { fail: true };
+}
+
 // ---------- Saldo & ringkasan uang untuk Gemini ----------
-// Aplikasi hanya mencatat pengeluaran. Saldo = angka terakhir yang disebut pengguna; sisa = saldo - pengeluaran sejak itu.
+// Saldo = angka terakhir yang disebut pengguna; sisa = saldo + pemasukan - pengeluaran tercatat sejak saat itu.
 async function getSaldo(u) {
   const raw = await redis("GET", key(u, "saldo"));
   try { return raw ? JSON.parse(raw) : null; } catch { return null; }
@@ -975,8 +1040,19 @@ async function setSaldo(u, amt) {
   await redis("SET", key(u, "saldo"), JSON.stringify(item));
   return item;
 }
+async function moneySummary(u) {
+  const [exp, inc, saldo] = await Promise.all([getExpenses(u), getIncomes(u), getSaldo(u)]);
+  const expense = exp.reduce((s, e) => s + e.amt, 0);
+  const income = inc.reduce((s, e) => s + e.amt, 0);
+  let remaining = null;
+  if (saldo) {
+    const [e2, i2] = await Promise.all([expensesSince(u, saldo.ts), incomesSince(u, saldo.ts)]);
+    remaining = saldo.amt + i2.reduce((s, e) => s + e.amt, 0) - e2.reduce((s, e) => s + e.amt, 0);
+  }
+  return { income, expense, net: income - expense, saldo: saldo ? saldo.amt : null, saldoTs: saldo ? saldo.ts : null, remaining };
+}
 async function moneyContext(u) {
-  const [month, saldo] = await Promise.all([getExpenses(u), getSaldo(u)]);
+  const [month, incs, saldo] = await Promise.all([getExpenses(u), getIncomes(u), getSaldo(u)]);
   let out;
   if (!month.length) out = "Belum ada pengeluaran tercatat bulan ini.";
   else {
@@ -985,13 +1061,23 @@ async function moneyContext(u) {
     const last = month.slice(-5).map((e) => (e.note || e.cat) + " " + rupiah(e.amt)).join("; ");
     out = `Bulan ini total ${rupiah(b.total)} (${month.length} transaksi). Per kategori: ${cats}. Terakhir: ${last}.`;
   }
-  if (saldo) {
-    const since = (await expensesSince(u, saldo.ts)).reduce((s, e) => s + e.amt, 0);
-    out += `\nSaldo yang diberitahu pengguna: ${rupiah(saldo.amt)} (dicatat ${fmtWib(saldo.ts)}). ` +
-      `Pengeluaran tercatat sejak itu: ${rupiah(since)}. Perkiraan sisa uang: ${rupiah(saldo.amt - since)} ` +
-      `(pemasukan baru tidak tercatat; kalau pengguna menyebut saldo terbaru, catat ulang dengan tag SALDO).`;
+  const expTotal = month.reduce((s, e) => s + e.amt, 0);
+  if (incs.length) {
+    const it = incs.reduce((s, e) => s + e.amt, 0);
+    const lastIn = incs.slice(-5).map((e) => (e.note || e.cat) + " " + rupiah(e.amt)).join("; ");
+    const net = it - expTotal;
+    out += `\nPemasukan bulan ini: ${rupiah(it)} (${incs.length} transaksi). Terakhir: ${lastIn}. Selisih pemasukan - pengeluaran bulan ini: ${net < 0 ? "-" : ""}${rupiah(Math.abs(net))}.`;
   } else {
-    out += "\nSaldo/pemasukan pengguna BELUM diketahui. Jangan menebak sisa uang; kalau ditanya, minta pengguna menyebut uangnya sekarang, lalu catat dengan tag SALDO.";
+    out += "\nBelum ada pemasukan tercatat bulan ini.";
+  }
+  if (saldo) {
+    const [e2, i2] = await Promise.all([expensesSince(u, saldo.ts), incomesSince(u, saldo.ts)]);
+    const spent = e2.reduce((s, e) => s + e.amt, 0), got = i2.reduce((s, e) => s + e.amt, 0);
+    out += `\nSaldo yang diberitahu pengguna: ${rupiah(saldo.amt)} (dicatat ${fmtWib(saldo.ts)}). ` +
+      `Sejak itu pemasukan tercatat ${rupiah(got)} dan pengeluaran tercatat ${rupiah(spent)}. Perkiraan sisa uang: ${rupiah(saldo.amt + got - spent)} ` +
+      `(kalau pengguna menyebut saldo terbaru, catat ulang dengan tag SALDO).`;
+  } else {
+    out += "\nSaldo awal pengguna BELUM diketahui. Jangan menebak sisa uang; kalau ditanya sisa uang, minta pengguna menyebut uangnya sekarang, lalu catat dengan tag SALDO.";
   }
   return out;
 }
@@ -1036,6 +1122,8 @@ Tag khusus (ditaruh di baris terakhir balasan; pengguna tidak melihatnya):
   Pengingat berulang: tambahkan bagian ketiga harian / mingguan / bulanan, contoh [[REMIND: 2026-10-13T09:00:00+07:00 | rapat tim | mingguan]]. Waktu = kemunculan pertama.
 - Pengeluaran yang sudah terjadi (mis. "makan siang 25rb", "beli bensin 50 ribu", atau foto struk/nota): [[BELI: 25000 | makan | makan siang]]
   Jumlah rupiah angka bulat tanpa titik ("25rb" = 25000, "1,5jt" = 1500000). Kategori satu kata: makan, transport, belanja, tagihan, hiburan, kesehatan, lainnya. Untuk struk cukup satu tag berisi total.
+- Pemasukan / uang masuk yang sudah terjadi (mis. "gajian 3jt", "dapat bonus 500rb", "dikasih ortu 200rb"): [[MASUK: 3000000 | gaji | gajian]]
+  Format angka sama seperti BELI. Kategori satu kata: gaji, bonus, usaha, hadiah, lainnya. Jangan pakai MASUK untuk pengeluaran, dan jangan pakai SALDO untuk uang masuk baru (SALDO hanya untuk saat pengguna menyebut total uangnya sekarang).
 - Saldo/uang yang dimiliki pengguna sekarang (mis. \"uangku sekarang 500rb\", \"saldo 1,2jt\"): [[SALDO: 500000]]. Angka bulat tanpa titik. Sisa uang dihitung dari saldo dikurangi pengeluaran yang tercatat setelahnya.
 - Tugas/checklist (pekerjaan yang perlu dikerjakan): [[TASK: isi tugas singkat]]
   Kalau pengguna menyebut jam/hari untuk tugas itu (mis. "nyuci piring besok jam 7"), tambahkan waktu: [[TASK: nyuci piring | 2026-10-13T07:00:00+07:00]]. Tugas berjam otomatis jadi pengingat yang bunyi tepat waktu dan dibatalkan kalau tugasnya dicentang selesai. Jangan buat TASK dan REMIND sekaligus untuk hal yang sama.
@@ -1043,7 +1131,7 @@ Tag khusus (ditaruh di baris terakhir balasan; pengguna tidak melihatnya):
 - Fakta jangka panjang tentang pengguna (nama, orang penting, kebiasaan, preferensi, hal besar yang sedang dihadapi): [[INGAT: fakta singkat]]. Jangan simpan detail yang sangat sensitif kecuali pengguna memintanya.
 - Catatan jika pengguna minta mencatat sesuatu: [[CATAT: isi catatan]]
   JANGAN buat CATAT atau TASK untuk permintaan menghapus/menyelesaikan. Kata seperti "hapus" bukan isi catatan.
-- Kamu TIDAK bisa menghapus catatan, tugas, pengingat, atau pengeluaran. Jika pengguna minta menghapus, jangan bilang sudah dihapus dan jangan buat tag apa pun; arahkan: catatan -> ketik /hapuscatatan lalu balas nomornya; uang -> /rekap lalu balas nomornya; tugas -> /hapustugas lalu balas nomornya (menandai selesai: /tugasdone); pengingat -> /hapus N.
+- Kamu TIDAK bisa menghapus catatan, tugas, pengingat, pengeluaran, atau pemasukan. Jika pengguna minta menghapus, jangan bilang sudah dihapus dan jangan buat tag apa pun; arahkan: catatan -> ketik /hapuscatatan lalu balas nomornya; pengeluaran -> /rekap lalu balas nomornya (atau ketik "hapus pengeluaran 3"); pemasukan -> /masuk lalu balas nomornya (atau ketik "hapus pemasukan 3"); tugas -> /hapustugas lalu balas nomornya (menandai selesai: /tugasdone); pengingat -> /hapus N.
 - Kamu punya akses pencarian Google. Untuk hal yang terkini atau bisa berubah (jadwal pertandingan, skor, harga, berita, cuaca, hasil, tanggal rilis), cari dulu lalu jawab; jangan bilang kamu tidak bisa browsing. Jawab ringkas dan sebut waktu/tanggal datanya kalau penting. Hasil pencarian tidak perlu dicatat kecuali pengguna minta.
 - Pertanyaan info (kurs, jadwal, harga, berita, dll) dijawab SEKARANG dalam balasan yang sama. Jangan bilang "sebentar aku cek" lalu membuat pengingat atau tugas; REMIND hanya kalau pengguna jelas minta diingatkan.
 - Buat tag HANYA untuk permintaan di pesan pengguna yang TERBARU. Permintaan di pesan-pesan sebelumnya sudah diproses; jangan mengulang tagnya. Baris berawalan ⏰ ✅ 🗒️ 💰 💵 di akhir balasanmu sebelumnya ditulis otomatis oleh sistem setelah tag berhasil diproses; itu tandanya permintaan tersebut SUDAH SELESAI. Jangan menulis baris seperti itu sendiri.
@@ -1096,6 +1184,7 @@ module.exports = {
   getTasks, addTask, toggleTask, deleteTask, unlinkTaskReminder, parseWib, fmtDue,
   getNotes, addNote, deleteNoteById,
   getExpenses, addExpense, deleteExpenseById, getSaldo, setSaldo, moneyContext,
+  getIncomes, addIncome, deleteIncomeById, incomesSince, moneySummary, incomeListText, deleteIncomeNumber,
   getProfile, saveProfile,
   getMode, setMode,
   getHist, saveHist,

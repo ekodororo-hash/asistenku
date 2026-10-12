@@ -15,7 +15,7 @@ async function once(k, ttlSec) {
   return (await redis("SET", k, "1", "NX", "EX", String(ttlSec))) === "OK";
 }
 
-const stripTags = (s) => s.replace(/\[\[(REMIND|INGAT|BELI|CATAT|SALDO):[\s\S]*?\]\]/g, "").trim();
+const stripTags = (s) => s.replace(/\[\[(REMIND|INGAT|BELI|MASUK|CATAT|SALDO):[\s\S]*?\]\]/g, "").trim();
 const inWindow = (hour, start, len = 3) => hour >= start && hour < start + len;
 
 // ---- Pengingat (termasuk yang berulang) ----

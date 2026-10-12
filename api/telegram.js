@@ -2,9 +2,9 @@
 const {
   HOURS, BTN, redis, key, getBot, saveBot, sendTelegram, downloadTelegramFile, gemini, geminiSearch, sourceLine, REMIND_INTENT, trimHist,
   fmtWib, wib, rupiah, cfgOn, getLocation, setLocation, getWeather, getNews,
-  recapText, deleteExpenseNumber, loadContext, buildSystem,
+  recapText, deleteExpenseNumber, incomeListText, deleteIncomeNumber, loadContext, buildSystem,
   getTasks, addTask, toggleTask, deleteTask, unlinkTaskReminder, parseWib, fmtDue,
-  addNote, addExpense, setSaldo, fmtDateShort,
+  addNote, addExpense, addIncome, setSaldo, fmtDateShort,
 } = require("./_lib");
 const { getOwnerId, safeEq } = require("./_auth");
 
@@ -20,16 +20,19 @@ const START_TEXT =
   "- \"Ingatkan aku besok jam 8 bayar listrik\"\n" +
   "- \"Ingatkan tiap Senin jam 9 rapat tim\"\n" +
   "- \"makan siang 25rb\" (catat pengeluaran)\n" +
+  "- \"gajian 3jt\" (catat pemasukan)\n" +
   "- \"catat: ide konten minggu depan\"\n" +
   "- kirim foto struk, atau voice note\n\n" +
   "Perintah:\n" +
   "/pengingat  /hapus N\n" +
   "/tugas  /tugasdone  /hapustugas (lalu balas nomor)\n" +
-  "/rekap (lalu balas nomor untuk hapus)  /batal\n" +
+  "/rekap (pengeluaran, lalu balas nomor untuk hapus)  /batal\n" +
+  "/masuk (pemasukan, lalu balas nomor untuk hapus)\n" +
+  "Hapus entri: balas nomornya saja (3) atau ketik \"hapus 3\" setelah /rekap atau /masuk.\n" +
   "/catatan  /cari kata  /hapuscatatan (lalu balas nomor)\n" +
   "/cuaca  /lokasi kota  /berita topik\n" +
   "/memori  /lupakan  /atur\n\n" +
-  `Otomatis: ringkasan pagi, check-in malam, dan rekap pengeluaran mingguan. Atur di /atur.\n` +
+  `Otomatis: ringkasan pagi, check-in malam, dan rekap uang mingguan. Atur di /atur.\n` +
   "Aku mengingat hal-hal penting tentangmu supaya ngobrolnya nyambung. Lihat dengan /memori, hapus dengan /lupakan.\n\n" +
   "Tugas, catatan, uang, dan obrolan di sini sama persis dengan yang ada di web. Pesan yang kamu tulis di web juga disalin ke sini (matikan dengan /salin off).";
 
@@ -44,6 +47,16 @@ async function hapusBeli(u, n, say) {
   return true;
 }
 
+
+// ---------- Hapus pemasukan (dipakai /hapusmasuk dan balasan angka setelah /masuk) ----------
+async function hapusMasuk(u, n, say) {
+  const r = await deleteIncomeNumber(u, n);
+  if (r.empty) { await say("Tidak ada pemasukan bulan ini yang bisa dihapus."); return true; }
+  if (r.range) { await say(`Nomor ${n} tidak ada. Bulan ini ada ${r.range} entri; balas dengan nomor yang tertera di daftar.`); return false; }
+  if (r.fail) { await say("Gagal menghapus entri."); return true; }
+  await say(`🗑️ Pemasukan dihapus: ${r.item.note || r.item.cat || "?"} (${rupiah(r.item.amt || 0)})`);
+  return true;
+}
 
 // ---------- Catatan: daftar rapi + hapus (dipakai /catatan, /hapuscatatan, dan balasan angka) ----------
 async function noteListText(u, interactive) {
@@ -249,6 +262,20 @@ async function handleCommand(u, cmd, arg, say) {
       return;
     }
 
+    case "/masuk": {
+      const r = await incomeListText(u, true);
+      await say(r.text);
+      if (r.count) await redis("SET", key(u, "pending"), "hapusmasuk", "EX", "180");
+      return;
+    }
+
+    case "/hapusmasuk": {
+      const n = arg ? parseInt(arg, 10) : 0;
+      if (arg && (!n || n < 1)) { await say("Pakai: /hapusmasuk <nomor>, contoh: /hapusmasuk 2. Lihat nomornya di /masuk. Tanpa nomor menghapus entri terakhir."); return; }
+      await hapusMasuk(u, n, say);
+      return;
+    }
+
     case "/batal":
       await redis("DEL", key(u, "pending"));
       await say("Oke, dibatalkan.");
@@ -323,7 +350,7 @@ async function handleCommand(u, cmd, arg, say) {
         "Pengaturan otomatis:\n" +
           `- Ringkasan pagi (${jam(HOURS.morning)} WIB): ${s(p)}  -> /pagi on | off\n` +
           `- Check-in malam (${jam(HOURS.checkin)} WIB): ${s(c)}  -> /checkin on | off\n` +
-          `- Rekap pengeluaran (Minggu ${jam(HOURS.recap)}): ${s(r)}  -> /rekapauto on | off\n` +
+          `- Rekap uang (Minggu ${jam(HOURS.recap)}): ${s(r)}  -> /rekapauto on | off\n` +
           `- Salin obrolan web ke sini: ${s(m)}  -> /salin on | off\n` +
           `- Lokasi cuaca: ${loc.name}  -> /lokasi <kota>`
       );
@@ -380,6 +407,13 @@ async function processTags(u, reply, userText = "") {
     if (e) notes.push("💰 Dicatat: " + rupiah(e.amt) + " (" + e.cat + ")" + (e.note ? " - " + e.note : ""));
   }
 
+  // Pemasukan
+  for (const m of reply.matchAll(/\[\[MASUK:\s*([^|\]]+?)\s*\|\s*([^|\]]+?)\s*\|\s*([^\]]*?)\s*\]\]/g)) {
+    const amt = Number(String(m[1]).replace(/[^\d]/g, ""));
+    const e = await addIncome(u, amt, m[2].trim(), m[3].trim());
+    if (e) notes.push("💵 Pemasukan dicatat: " + rupiah(e.amt) + " (" + e.cat + ")" + (e.note ? " - " + e.note : ""));
+  }
+
   // Saldo
   for (const m of reply.matchAll(/\[\[SALDO:\s*([^\]]+?)\s*\]\]/g)) {
     const sd = await setSaldo(u, Number(String(m[1]).replace(/[^\d]/g, "")));
@@ -393,7 +427,7 @@ async function processTags(u, reply, userText = "") {
     if (n) notes.push("🗒️ Dicatat: " + n.text);
   }
 
-  const clean = reply.replace(/\[\[(TASK|REMIND|INGAT|BELI|CATAT|SALDO):[\s\S]*?\]\]/g, "").trim();
+  const clean = reply.replace(/\[\[(TASK|REMIND|INGAT|BELI|MASUK|CATAT|SALDO):[\s\S]*?\]\]/g, "").trim();
   return { clean, notes };
 }
 
@@ -452,15 +486,18 @@ module.exports = async (req, res) => {
     // Setelah /rekap atau /hapuscatatan: balasan angka = nomor entri yang dihapus (tidak diteruskan ke Gemini).
     // Pesan lain apa pun membatalkan mode ini.
     if (isText) {
-      const isNum = /^[1-9]\d{0,2}$/.test(text);
+      // Balasan "3" atau "hapus 3" (juga "hapus no 3") sama-sama dihitung sebagai nomor entri
+      const dm = text.match(/^(?:hapus|buang|delete)\s+(?:nomor|no\.?|ke)?\s*([1-9]\d{0,2})\s*$/i);
+      const isNum = /^[1-9]\d{0,2}$/.test(text) || !!dm;
+      const numVal = parseInt(dm ? dm[1] : text, 10);
       const pend = isNum ? await redis("GET", key(u, "pending")) : null;
-      const PEND = { hapusbeli: hapusBeli, hapuscatatan: hapusCatatan, hapustugas: hapusTugas, tugasdone: selesaiTugas };
-      if (isNum && PEND[pend]) {
-        const done = await PEND[pend](u, parseInt(text, 10), say);
+      const PEND = { hapusbeli: hapusBeli, hapusmasuk: hapusMasuk, hapuscatatan: hapusCatatan, hapustugas: hapusTugas, tugasdone: selesaiTugas };
+      if (isNum && PEND[pend] && !(dm && pend === "tugasdone")) {
+        const done = await PEND[pend](u, numVal, say);
         if (done) await redis("DEL", key(u, "pending"));
         return res.status(200).end();
       }
-      if (!isNum && text !== "/rekap" && text !== "/batal" && text !== "/hapuscatatan" && text !== "/hapustugas" && text !== "/tugasdone") await redis("DEL", key(u, "pending"));
+      if (!isNum && text !== "/rekap" && text !== "/masuk" && text !== "/batal" && text !== "/hapuscatatan" && text !== "/hapustugas" && text !== "/tugasdone") await redis("DEL", key(u, "pending"));
 
       // "hapus catatan" / "hapus catatan 2" ditangani langsung, tanpa Gemini (Gemini tidak bisa menghapus)
       const hm = text.match(/^(?:hapus|buang|delete)\s+(?:catatan|note)(?:\s+(?:nomor|no\.?|ke)?\s*(\d{1,3}))?\s*$/i);
@@ -470,6 +507,27 @@ module.exports = async (req, res) => {
         return res.status(200).end();
       }
       const NUM = "(?:\\s+(?:nomor|no\\.?|ke)?\\s*(\\d{1,3}))?\\s*$";
+      // "hapus pemasukan 3" / "hapus pengeluaran 3" langsung, atau tanpa nomor untuk menampilkan daftarnya
+      const hi = text.match(new RegExp("^(?:hapus|buang|delete)\\s+(?:pemasukan|uang masuk|masuk)" + NUM, "i"));
+      if (hi) {
+        if (hi[1]) await hapusMasuk(u, parseInt(hi[1], 10), say);
+        else {
+          const r = await incomeListText(u, true);
+          await say(r.text);
+          if (r.count) await redis("SET", key(u, "pending"), "hapusmasuk", "EX", "180");
+        }
+        return res.status(200).end();
+      }
+      const he = text.match(new RegExp("^(?:hapus|buang|delete)\\s+(?:pengeluaran|uang keluar|keluar)" + NUM, "i"));
+      if (he) {
+        if (he[1]) await hapusBeli(u, parseInt(he[1], 10), say);
+        else {
+          const r = await recapText(u, true);
+          await say(r.text);
+          if (r.monthCount) await redis("SET", key(u, "pending"), "hapusbeli", "EX", "180");
+        }
+        return res.status(200).end();
+      }
       const ht = text.match(new RegExp("^(?:hapus|buang|delete)\\s+tugas" + NUM, "i"));
       if (ht) {
         if (ht[1]) await hapusTugas(u, parseInt(ht[1], 10), say);

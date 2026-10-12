@@ -62,6 +62,12 @@
   .addrow { display:flex; gap:6px; margin-bottom:8px; }
   .addrow input, .addrow select, .full { flex:1; min-width:0; padding:8px; border-radius:10px; border:1px solid var(--line); background:var(--bg); color:var(--ink); font:inherit; }
   .full { width:100%; margin-bottom:8px; }
+  .seg { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:8px; }
+  .seg button { padding:8px 6px; font-size:14px; }
+  .seg button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .seg button.on[data-t="in"] { background:#2a9d4b; border-color:#2a9d4b; }
+  .row-in > span { color:#2a9d4b; }
+  .row-in > span small { color:var(--muted); }
   .muted { color:var(--muted); font-size:14px; }
   .card { border:1px solid var(--line); border-radius:12px; padding:10px; margin-bottom:10px; font-size:14px; line-height:1.5; white-space:pre-line; }
   .task { display:flex; align-items:flex-start; gap:8px; padding:8px 0; border-bottom:1px solid var(--line); }
@@ -234,6 +240,10 @@
     </div>
 
     <div class="pane" id="pane-money">
+      <div class="seg" id="expType">
+        <button type="button" data-t="out" class="on">Pengeluaran</button>
+        <button type="button" data-t="in">Pemasukan</button>
+      </div>
       <div class="addrow">
         <input id="expAmt" type="number" inputmode="numeric" min="0" placeholder="Jumlah (Rp)">
         <select id="expCat">
@@ -319,6 +329,11 @@ let messages = [];
 let tasks = [];
 let notes = [];
 let expenses = [];
+let incomes = [];
+let money = null;
+let moneyType = "out";
+const OUT_CATS = ["makan", "transport", "belanja", "tagihan", "hiburan", "kesehatan", "lainnya"];
+const IN_CATS = ["gaji", "bonus", "usaha", "hadiah", "lainnya"];
 let reminders = [];
 let botLinked = true;
 let profile = { name: "", assistantName: "Asisten", notes: "" };
@@ -501,26 +516,47 @@ function renderNotes() {
 }
 
 /* ---------- Pengeluaran ---------- */
+const rpSigned = (n) => (n < 0 ? "-" : "") + rupiah(Math.abs(n));
 function renderMoney() {
-  const total = expenses.reduce((s, e) => s + e.amt, 0);
+  const sum = (a) => a.reduce((t, e) => t + e.amt, 0);
+  const te = sum(expenses), ti = sum(incomes), net = ti - te;
   const by = {};
   expenses.forEach((e) => { by[e.cat] = (by[e.cat] || 0) + e.amt; });
-  const lines = Object.entries(by).sort((a, b) => b[1] - a[1]).map(([c, v]) => c + ": " + rupiah(v));
-  $("recap").textContent = expenses.length
-    ? "Bulan ini: " + rupiah(total) + " (" + expenses.length + " transaksi)\n" + lines.join("\n")
-    : "Belum ada pengeluaran bulan ini.";
+  const lines = Object.entries(by).sort((a, b) => b[1] - a[1]).map(([c, v]) => "  " + c + ": " + rupiah(v));
+  let t = "Bulan ini\nPemasukan: " + rupiah(ti) + " (" + incomes.length + ")\nPengeluaran: " + rupiah(te) + " (" + expenses.length + ")\nSelisih: " + rpSigned(net);
+  if (money && money.remaining != null) t += "\nSisa uang: " + rpSigned(money.remaining);
+  else t += "\nSisa uang: belum diketahui (bilang ke chat, mis. \"uangku sekarang 500rb\")";
+  if (lines.length) t += "\n\nPengeluaran per kategori:\n" + lines.join("\n");
+  $("recap").textContent = t;
+
+  const all = expenses.map((e) => ({ ...e, t: "out" })).concat(incomes.map((e) => ({ ...e, t: "in" }))).sort((a, b) => b.ts - a.ts).slice(0, 20);
   const box = $("exps");
   box.innerHTML = "";
-  expenses.slice(0, 15).forEach((e) => {
-    box.appendChild(makeRow(
-      (e.note || e.cat) + " - " + rupiah(e.amt),
-      fmtDate(e.ts) + " · " + e.cat,
+  all.forEach((e) => {
+    const isIn = e.t === "in";
+    const row = makeRow(
+      (isIn ? "+ " : "- ") + (e.note || e.cat) + " - " + rupiah(e.amt),
+      fmtDate(e.ts) + " · " + e.cat + (isIn ? " · pemasukan" : ""),
       async () => {
-        try { await api("/api/state", { method: "POST", body: JSON.stringify({ op: "deleteExpense", id: e.id }) }); expenses = expenses.filter((x) => x.id !== e.id); renderMoney(); }
-        catch (err) { alert(err.message); }
+        try {
+          await api("/api/state", { method: "POST", body: JSON.stringify({ op: isIn ? "deleteIncome" : "deleteExpense", id: e.id }) });
+          if (isIn) incomes = incomes.filter((x) => x.id !== e.id); else expenses = expenses.filter((x) => x.id !== e.id);
+          if (money && money.remaining != null && e.ts >= money.saldoTs) money.remaining += isIn ? -e.amt : e.amt;
+          renderMoney();
+        } catch (err) { alert(err.message); }
       }
-    ));
+    );
+    if (isIn) row.classList.add("row-in");
+    box.appendChild(row);
   });
+}
+function setMoneyType(t) {
+  moneyType = t;
+  document.querySelectorAll("#expType button").forEach((b) => b.classList.toggle("on", b.dataset.t === t));
+  const sel = $("expCat");
+  sel.innerHTML = "";
+  (t === "in" ? IN_CATS : OUT_CATS).forEach((c) => { const o = document.createElement("option"); o.textContent = c; sel.appendChild(o); });
+  $("expNote").placeholder = t === "in" ? "Keterangan (mis. gajian)" : "Keterangan";
 }
 
 /* ---------- Info: cuaca & berita (lokal, tidak terkait sinkronisasi) ---------- */
@@ -685,7 +721,7 @@ async function send(text) {
     messages.push({ role: "model", text: d.reply || "(dicatat)", ts: gotAt });
     if (d.tasks) { tasks = d.tasks; renderTasks(); }
     if (d.notes) { notes = d.notes; renderNotes(); }
-    if (d.expenses) { expenses = d.expenses; renderMoney(); }
+    if (d.expenses) { expenses = d.expenses; incomes = d.incomes || incomes; money = d.money || money; renderMoney(); }
     if (d.reminders) { reminders = d.reminders; renderReminders(); }
     showQuota(d.quota);
   } catch (e) {
@@ -726,11 +762,17 @@ $("noteSearch").addEventListener("input", renderNotes);
 const doAddExp = async () => {
   const amt = Number($("expAmt").value);
   if (!Number.isFinite(amt) || amt <= 0) { alert("Jumlah tidak valid"); return; }
+  const isIn = moneyType === "in";
   try {
-    const { result } = await api("/api/state", { method: "POST", body: JSON.stringify({ op: "addExpense", amt, cat: $("expCat").value, note: $("expNote").value }) });
-    if (result) { expenses.unshift(result); renderMoney(); $("expAmt").value = ""; $("expNote").value = ""; }
+    const { result } = await api("/api/state", { method: "POST", body: JSON.stringify({ op: isIn ? "addIncome" : "addExpense", amt, cat: $("expCat").value, note: $("expNote").value }) });
+    if (result) {
+      if (isIn) incomes.unshift(result); else expenses.unshift(result);
+      if (money && money.remaining != null) money.remaining += isIn ? result.amt : -result.amt;
+      renderMoney(); $("expAmt").value = ""; $("expNote").value = "";
+    }
   } catch (e) { alert(e.message); }
 };
+document.querySelectorAll("#expType button").forEach((b) => { b.onclick = () => setMoneyType(b.dataset.t); });
 $("expAddBtn").onclick = doAddExp; onEnter("expNote", doAddExp);
 
 const doCity = () => {
@@ -791,6 +833,8 @@ async function loadState() {
   tasks = d.tasks || [];
   notes = d.notes || [];
   expenses = d.expenses || [];
+  incomes = d.incomes || [];
+  money = d.money || null;
   profile = d.profile || profile;
   mode = d.mode || "asisten";
   messages = d.messages || [];
@@ -806,7 +850,7 @@ async function refreshFromServer() {
     const d = await api("/api/state?light=1");
     if (busy) return; // pesan sedang dikirim, jangan timpa
     const before = sig(messages), oldMode = mode;
-    tasks = d.tasks || []; notes = d.notes || []; expenses = d.expenses || [];
+    tasks = d.tasks || []; notes = d.notes || []; expenses = d.expenses || []; incomes = d.incomes || []; money = d.money || null;
     reminders = d.reminders || []; botLinked = d.botLinked !== false;
     mode = d.mode || "asisten"; messages = d.messages || [];
     if (sig(messages) !== before) renderChat();
