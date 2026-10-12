@@ -62,6 +62,7 @@ Tag khusus (taruh di baris terakhir balasan; pengguna tidak melihatnya):
 - Pengeluaran yang sudah terjadi (mis. "makan siang 25rb", "beli bensin 50 ribu"): [[BELI: 25000 | makan | makan siang]]
   Jumlah rupiah angka bulat tanpa titik ("25rb" = 25000, "1,5jt" = 1500000). Kategori satu kata: makan, transport, belanja, tagihan, hiburan, kesehatan, lainnya.
 - Saldo/uang yang dimiliki pengguna sekarang (mis. \"uangku sekarang 500rb\"): [[SALDO: 500000]]. Angka bulat tanpa titik. Sisa uang = saldo dikurangi pengeluaran tercatat setelahnya (sudah dihitung di data uang di atas; jangan menebak kalau saldo belum diketahui).
+- Buat tag HANYA untuk permintaan di pesan pengguna yang TERBARU. Permintaan di pesan-pesan sebelumnya sudah diproses; jangan mengulang tagnya. Baris berawalan ⏰ ✅ 🗒️ 💰 💵 di akhir balasanmu sebelumnya ditulis otomatis oleh sistem setelah tag berhasil diproses; itu tandanya permintaan tersebut SUDAH SELESAI. Jangan menulis baris seperti itu sendiri.
 - Satu tag per hal, boleh lebih dari satu. Jangan membuat tag kalau pengguna tidak memintanya.
 - Data ini juga dipakai lewat bot Telegram pengguna (tugas, catatan, uang, pengingat, riwayat obrolan sama persis).`;
 }
@@ -148,7 +149,7 @@ module.exports = async (req, res) => {
     const { clean, added } = await processTags(u, raw);
     const reply = clean || (added.length ? "" : "(tidak ada jawaban)");
 
-    const newHist = [...hist, userTurn, { role: "model", parts: [{ text: reply || "(dicatat)" }], ts: Date.now() }];
+    const newHist = [...hist, userTurn, { role: "model", parts: [{ text: [reply, ...added].filter(Boolean).join("\n\n") || "(dicatat)" }], ts: Date.now() }];
     await saveHist(u, newHist);
 
     // Salin ke Telegram supaya obrolan di web juga terlihat di chat Telegram (matikan: /salin off)

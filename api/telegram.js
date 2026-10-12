@@ -451,7 +451,7 @@ module.exports = async (req, res) => {
     const { clean, notes } = await processTags(u, raw);
     const reply = clean || (notes.length ? "" : "(tidak ada jawaban)");
 
-    hist.push({ role: "model", parts: [{ text: reply || "(dicatat)" }], ts: Date.now() });
+    hist.push({ role: "model", parts: [{ text: [reply, ...notes].filter(Boolean).join("\n\n") || "(dicatat)" }], ts: Date.now() }); // sertakan hasil tag: tanda bahwa permintaan sudah selesai
     await redis("SET", key(u, "hist"), JSON.stringify(hist.slice(-30)));
 
     const echo = voice && mode !== "curhat" ? `🎙️ "${text}"\n\n` : "";
