@@ -1422,6 +1422,23 @@ async function unlinkPartner(u) {
   return linkStatus(u);
 }
 
+// Keterangan kiriman dari Gemini sering cuma mengulang kalimat pengguna ("kirim ke risma").
+// Itu dibuang: sudah tercantum otomatis ("kirim ke <nama>" di pengirim, "dari <nama>" di penerima),
+// dan kalau dibiarkan jadi dobel di pengirim dan menyesatkan di sisi penerima. Yang disimpan hanya info tambahan (mis. "uang jajan").
+function cleanTransferNote(note, toName, fromName) {
+  let t = String(note || "").trim();
+  if (!t) return "";
+  const esc = (x) => String(x || "").trim().split(/\s+/)[0].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const names = [esc(toName), esc(fromName)].filter(Boolean).join("|");
+  const verb = "(?:tolong\\s+)?(?:kirim(?:kan)?|transfer|tf|kasih|bayar(?:kan)?|setor|dikirim|ditransfer)(?:\\s+uang)?";
+  // "kirim ke risma", "transfer ke risma", "kirim uang ke pasangan", "dari eko"
+  const only = new RegExp("^(?:" + verb + "\\s+(?:ke|buat|untuk)|dari|ke)\\s+(?:" + (names ? names + "|" : "") + "pasangan|istri|suami|teman)\\w*\\s*$", "i");
+  if (only.test(t)) return "";
+  const lead = new RegExp("^" + verb + "\\s+(?:ke|buat|untuk)\\s+(?:" + (names ? names + "|" : "") + "pasangan|istri|suami|teman)\\w*\\s*[-,:]?\\s*", "i");
+  t = t.replace(lead, "").trim();
+  return t.slice(0, 100);
+}
+
 // u mengirim uang ke pasangan: tercatat sebagai pengeluaran u, pasangan diminta konfirmasi (tidak otomatis masuk ke akunnya)
 async function sendTransfer(u, amt, note) {
   const n = Math.round(Number(amt));
@@ -1430,7 +1447,7 @@ async function sendTransfer(u, amt, note) {
   const pending = (await xferList(l.pid, true)).filter((x) => x.from === u);
   if (pending.length >= XFER_MAX_PENDING) return { error: "Terlalu banyak kiriman yang belum dikonfirmasi pasanganmu. Tunggu dia menjawab dulu." };
   const name = await usernameOf(l.pid);
-  const cleanNote = String(note || "").slice(0, 100);
+  const cleanNote = cleanTransferNote(note, name, await usernameOf(u));
   const exp = await addExpense(u, n, "transfer", ("kirim ke " + name + (cleanNote ? " - " + cleanNote : "")).slice(0, 100));
   const x = { id: uid(), from: u, to: l.pid, amt: n, note: cleanNote, ts: Date.now(), status: "pending", expId: exp ? exp.id : null };
   await saveXfer(x);
@@ -1540,7 +1557,7 @@ async function partnerContext(u) {
   }
   const name = await usernameOf(l.pid);
   return `Akun terhubung (pasangan atau teman): ${name}. Kalau pengguna menyebut suami/istri/pasangan/teman/ayah/bunda atau nama itu, yang dimaksud dia.
-- Pengguna MENGIRIM uang ke pasangan (mis. "kasih istri 5jt", "transfer ke suami 200rb"): [[KIRIM: 5000000 | keterangan singkat]]
+- Pengguna MENGIRIM uang ke pasangan (mis. "kasih istri 5jt", "transfer ke suami 200rb"): [[KIRIM: 5000000 | keterangan singkat]]  (keterangan HANYA untuk info tambahan seperti "uang jajan"; JANGAN diisi "kirim ke <nama>" atau nama penerima, kosongkan kalau tidak ada info tambahan)
   Sistem mencatatnya sebagai pengeluaran pengguna dan mengabari pasangan untuk konfirmasi. Jangan buat BELI untuk ini.
 - Pengguna MENERIMA uang dari pasangan (mis. "dapet 5jt dari suami", "istri transfer 1jt"): [[PASANGAN_MASUK: 5000000 | keterangan singkat]]
   Pakai ini, bukan MASUK. Sistem mengecek apakah kiriman itu sudah tercatat supaya tidak dobel. Format angka sama seperti BELI.
