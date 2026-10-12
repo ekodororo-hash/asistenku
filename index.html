@@ -56,7 +56,22 @@
   .task span { flex:1; font-size:14px; word-break:break-word; }
   .task.done span { text-decoration:line-through; color:var(--muted); }
   .task button { padding:2px 8px; font-size:12px; }
-  .news a { display:block; padding:8px 0; border-bottom:1px solid var(--line); color:var(--ink); text-decoration:none; font-size:14px; line-height:1.4; }
+  .card.wx { white-space:normal; }
+  .wx-top { display:flex; align-items:center; gap:12px; }
+  .wx-ico { font-size:44px; line-height:1; }
+  .wx-temp { font-size:30px; font-weight:600; line-height:1.1; }
+  .wx-place { font-size:13px; color:var(--muted); }
+  .wx-meta { margin-top:8px; color:var(--muted); font-size:13px; line-height:1.5; }
+  .hours { display:flex; gap:6px; overflow-x:auto; margin-top:10px; padding-bottom:2px; }
+  .hours div { flex:0 0 auto; text-align:center; font-size:12px; padding:6px 8px; border:1px solid var(--line); border-radius:10px; min-width:52px; }
+  .hours b { display:block; font-size:16px; font-weight:400; margin:2px 0; }
+  .cats { display:flex; gap:6px; overflow-x:auto; margin-bottom:8px; padding-bottom:2px; }
+  .cats button { white-space:nowrap; font-size:13px; padding:5px 10px; }
+  .cats button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .news a { display:flex; gap:10px; align-items:flex-start; padding:10px 0; border-bottom:1px solid var(--line); color:var(--ink); text-decoration:none; }
+  .news img { width:88px; height:64px; object-fit:cover; border-radius:8px; flex:none; background:var(--line); }
+  .news .t { font-size:14px; line-height:1.35; }
+  .news .meta { font-size:12px; color:var(--muted); margin-top:4px; }
   .side-head { display:flex; align-items:center; justify-content:space-between; }
   #tasksToggle, #closeSide, #backdrop { display:none; }
 
@@ -169,8 +184,9 @@
         <button id="cityBtn">Cuaca</button>
       </div>
       <div class="card" id="weather">Belum dimuat.</div>
+      <div class="cats" id="cats"></div>
       <div class="addrow">
-        <input id="topicInput" placeholder="Topik berita (kosong = terkini)">
+        <input id="topicInput" placeholder="Cari topik berita...">
         <button id="newsBtn">Cari</button>
       </div>
       <div class="news" id="news"></div>
@@ -358,39 +374,106 @@ function moneySummary() {
 }
 
 /* ---------- Info: cuaca & berita ---------- */
+const el = (tag, cls, text) => {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+};
+
 async function loadWeather() {
-  $("weather").textContent = "Memuat cuaca...";
+  const box = $("weather");
+  box.className = "card";
+  box.textContent = "Memuat cuaca...";
   try {
     const r = await fetch("/api/info?type=weather&city=" + encodeURIComponent(city));
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || "Gagal");
-    $("weather").textContent = d.text;
+    box.className = "card wx";
+    box.textContent = "";
+    const top = el("div", "wx-top");
+    top.appendChild(el("div", "wx-ico", d.icon));
+    const mid = el("div");
+    mid.appendChild(el("div", "wx-temp", d.temp + "°C"));
+    mid.appendChild(el("div", "wx-place", d.city + (d.country ? ", " + d.country : "") + " · " + d.desc));
+    top.appendChild(mid);
+    box.appendChild(top);
+    box.appendChild(el("div", "wx-meta",
+      "Terasa " + d.feels + "°C · Hari ini " + d.min + "-" + d.max + "°C · Peluang hujan " + d.rain + "%"));
+    const hours = el("div", "hours");
+    (d.hours || []).forEach((h) => {
+      const c = el("div");
+      c.appendChild(el("span", "", h.time));
+      c.appendChild(el("b", "", h.icon));
+      c.appendChild(el("span", "", h.temp + "°"));
+      hours.appendChild(c);
+    });
+    box.appendChild(hours);
   } catch (e) {
-    $("weather").textContent = "Gagal memuat cuaca: " + e.message;
+    box.className = "card";
+    box.textContent = "Gagal memuat cuaca: " + e.message;
   }
+}
+
+function ago(iso) {
+  const t = Date.parse(iso);
+  if (isNaN(t)) return "";
+  const m = Math.round((Date.now() - t) / 60000);
+  if (m < 1) return "baru saja";
+  if (m < 60) return m + " menit lalu";
+  const h = Math.round(m / 60);
+  if (h < 24) return h + " jam lalu";
+  return Math.round(h / 24) + " hari lalu";
+}
+
+const CATS = [["terkini", "Terkini"], ["nasional", "Nasional"], ["detik", "detikNews"], ["ekonomi", "Ekonomi"], ["teknologi", "Teknologi"], ["olahraga", "Olahraga"]];
+let cat = load("cat", "terkini");
+if (!CATS.some((c) => c[0] === cat)) cat = "terkini";
+
+function renderCats(active) {
+  const box = $("cats");
+  box.innerHTML = "";
+  CATS.forEach(([key, label]) => {
+    const b = el("button", key === active ? "on" : "", label);
+    b.onclick = () => {
+      cat = key; save("cat", cat);
+      $("topicInput").value = "";
+      renderCats(cat);
+      loadNews("");
+    };
+    box.appendChild(b);
+  });
 }
 
 async function loadNews(topic) {
   const box = $("news");
-  box.innerHTML = '<p class="muted">Memuat berita...</p>';
+  box.innerHTML = "";
+  box.appendChild(el("p", "muted", "Memuat berita..."));
   try {
-    const r = await fetch("/api/info?type=news&topic=" + encodeURIComponent(topic || ""));
+    const r = await fetch("/api/info?type=news&cat=" + encodeURIComponent(cat) + "&topic=" + encodeURIComponent(topic || ""));
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || "Gagal");
     box.innerHTML = "";
-    if (!d.items.length) { box.innerHTML = '<p class="muted">Tidak ada berita ditemukan.</p>'; return; }
+    if (!d.items.length) { box.appendChild(el("p", "muted", "Tidak ada berita ditemukan.")); return; }
     d.items.forEach((it) => {
       const a = document.createElement("a");
-      a.textContent = it.title;
       if (/^https:\/\//.test(it.link)) { a.href = it.link; a.target = "_blank"; a.rel = "noopener noreferrer"; }
+      if (it.img && /^https:\/\//.test(it.img)) {
+        const img = document.createElement("img");
+        img.src = it.img; img.alt = ""; img.loading = "lazy"; img.referrerPolicy = "no-referrer";
+        img.onerror = () => img.remove();
+        a.appendChild(img);
+      }
+      const body = el("div");
+      body.appendChild(el("div", "t", it.title));
+      const meta = [it.source, ago(it.date)].filter(Boolean).join(" · ");
+      if (meta) body.appendChild(el("div", "meta", meta));
+      a.appendChild(body);
       box.appendChild(a);
     });
   } catch (e) {
     box.innerHTML = "";
-    const p = document.createElement("p");
-    p.className = "muted";
-    p.textContent = "Gagal memuat berita: " + e.message;
-    box.appendChild(p);
+    box.appendChild(el("p", "muted", "Gagal memuat berita: " + e.message));
   }
 }
 
@@ -398,7 +481,9 @@ function loadInfo() {
   infoLoaded = true;
   $("cityInput").value = city;
   loadWeather();
-  loadNews($("topicInput").value.trim());
+  const topic = $("topicInput").value.trim();
+  renderCats(topic ? "" : cat);
+  loadNews(topic);
 }
 
 /* ---------- Tab panel ---------- */
@@ -510,7 +595,11 @@ const doCity = () => {
 };
 $("cityBtn").onclick = doCity; onEnter("cityInput", doCity);
 
-const doNews = () => loadNews($("topicInput").value.trim());
+const doNews = () => {
+  const topic = $("topicInput").value.trim();
+  renderCats(topic ? "" : cat);
+  loadNews(topic);
+};
 $("newsBtn").onclick = doNews; onEnter("topicInput", doNews);
 
 $("tasksToggle").onclick = () => toggleSide(!$("side").classList.contains("open"));
