@@ -38,6 +38,8 @@
   .msg .ts { font-size:11px; opacity:.65; text-align:right; margin-top:4px; line-height:1; }
   .msg.err { color:#d33; }
   .msg.note { align-self:center; background:transparent; border:1px dashed var(--line); color:var(--muted); font-size:13px; }
+  .quota { margin:0 16px 8px; padding:8px 12px; border-radius:10px; font-size:13px; line-height:1.4; border:1px solid #e0a030; background:rgba(224,160,48,.15); color:var(--ink); }
+  .quota[hidden] { display:none; }
   .chips { display:flex; gap:8px; padding:0 16px 8px; overflow-x:auto; }
   .chips button { white-space:nowrap; font-size:13px; padding:6px 10px; }
   #form { display:flex; gap:8px; padding:12px 16px; background:var(--card); border-top:1px solid var(--line); }
@@ -156,6 +158,7 @@
 <main>
   <section id="chatCol">
     <div id="chat"></div>
+    <div id="quotaBar" class="quota" hidden></div>
     <div class="chips">
       <button data-q="Bantu aku susun rencana hari ini berdasarkan daftar tugasku.">Rencana hari ini</button>
       <button data-q="Tugas mana yang sebaiknya kukerjakan dulu? Urutkan berdasarkan prioritas.">Prioritas tugas</button>
@@ -624,6 +627,23 @@ function toggleSide(open) {
   $("backdrop").classList.toggle("show", open);
 }
 
+/* ---------- Peringatan kuota ---------- */
+function resetWib() { // tengah malam waktu Pasifik berikutnya, ditampilkan dalam WIB
+  const now = new Date();
+  const pac = new Date(now.toLocaleString("en-US", { timeZone: "America/Los_Angeles" }));
+  const next = new Date(pac); next.setHours(24, 0, 0, 0);
+  return new Date(now.getTime() + (next - pac)).toLocaleTimeString("id-ID", { timeZone: "Asia/Jakarta", hour: "2-digit", minute: "2-digit" });
+}
+function showQuota(q) {
+  const bar = $("quotaBar");
+  if (!q || !q.total || q.left > Math.max(3, Math.ceil(q.total * 0.2))) { bar.hidden = true; return; }
+  bar.textContent = (q.left === 0
+    ? "Kuota gratis hari ini kemungkinan habis (" + q.used + " dari ±" + q.total + " permintaan). "
+    : "Sisa kuota gratis hari ini kira-kira " + q.left + " dari ±" + q.total + " permintaan. ") +
+    "Reset sekitar pukul " + resetWib() + " WIB.";
+  bar.hidden = false;
+}
+
 /* ---------- Kirim pesan ---------- */
 async function send(text) {
   text = text.trim();
@@ -645,6 +665,7 @@ async function send(text) {
     if (d.notes) { notes = d.notes; renderNotes(); }
     if (d.expenses) { expenses = d.expenses; renderMoney(); }
     if (d.reminders) { reminders = d.reminders; renderReminders(); }
+    showQuota(d.quota);
   } catch (e) {
     setBubble(wait, "Error: " + e.message);
     wait.classList.add("err");

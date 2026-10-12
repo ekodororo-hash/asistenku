@@ -331,7 +331,9 @@ module.exports = async (req, res) => {
 
     // Tombol permanen mengirim teks biasa; ubah jadi perintah
     const map = {
+      [BTN.tasks]: "/tugas",
       [BTN.remind]: "/pengingat",
+      "💰 Rekap": "/rekap", // label lama, kalau keyboard di HP belum diperbarui
       [BTN.reset]: "/reset",
       [BTN.curhat]: "/curhat",
       [BTN.asisten]: "/asisten",

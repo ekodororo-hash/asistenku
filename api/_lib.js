@@ -44,7 +44,8 @@ const BTN = {
   plan: "📝 Rencana hari ini",
   weather: "⛅ Cuaca",
   news: "📰 Berita",
-  recap: "💰 Rekap",
+  tasks: "✅ Tugas",
+  recap: "💰 Uang",
   notes: "🗒️ Catatan",
   curhat: "💬 Mode Curhat",
   asisten: "🤖 Mode Asisten",
@@ -52,9 +53,8 @@ const BTN = {
 };
 const KEYBOARD = {
   keyboard: [
-    [BTN.remind, BTN.plan],
-    [BTN.weather, BTN.news],
-    [BTN.recap, BTN.notes],
+    [BTN.tasks, BTN.remind],
+    [BTN.notes, BTN.recap],
     [BTN.curhat, BTN.asisten, BTN.reset],
   ],
   resize_keyboard: true,
@@ -322,6 +322,33 @@ async function clearKeyHistory(u) {
 async function keyState(u) {
   const [keys, history] = await Promise.all([listGeminiKeys(u), getKeyHistory(u)]);
   return { keys, history };
+}
+
+// Kuota gratis per hari per project (dari halaman Rate limits AI Studio, Okt 2026). 0 = tidak ada kuota gratis / tidak diketahui.
+function modelDailyLimit(m) {
+  const n = String(m || "").toLowerCase();
+  if (/image|tts|veo|imagen|embed|live|audio|aqa|robotics|computer-use|omni|banana|lyria|transcribe|translate|deep-research/.test(n)) return 0;
+  if (/gemini-1\.|gemini-2\.0|gemini-exp/.test(n) || /pro/.test(n)) return 0;
+  if (/gemma-4/.test(n)) return 14400;
+  const v = parseFloat((n.match(/gemini-(\d+(?:\.\d+)?)/) || [])[1]);
+  if (/flash-lite/.test(n)) return (isNaN(v) || v >= 3) ? 500 : 20;
+  if (/flash/.test(n)) return 20;
+  return 0;
+}
+
+// Perkiraan sisa kuota gratis hari ini: batas model utama x jumlah key, dikurangi total pemakaian hari ini.
+// Hanya perkiraan: key dari project yang sama berbagi kuota, dan hitungan mencakup model cadangan juga.
+async function quotaStatus(u) {
+  try {
+    const [recs, st, use] = await Promise.all([loadKeyRecords(u), loadKeyStats(u), loadUseToday(u)]);
+    const model = (st[MODEL_FIELD] || {}).model || DEFAULT_MODEL();
+    const limit = modelDailyLimit(model);
+    const n = recs.length + (process.env.GEMINI_API_KEY ? 1 : 0);
+    if (!limit || !n) return null;
+    const used = Object.values(use).reduce((a, b) => a + b, 0);
+    const total = limit * n;
+    return { model, used, total, left: Math.max(0, total - used) };
+  } catch { return null; }
 }
 
 // Uji satu key dengan permintaan kecil sungguhan (status hasilnya langsung tercatat)
@@ -906,7 +933,7 @@ ${COMMON}`;
 
 module.exports = {
   TZ, DAY, HOUR, HOURS, BTN,
-  uid, key, MAX_KEYS, getBot, saveBot, setupBot, removeBot, relinkBot, botStatus, botUsers, listGeminiKeys, getModelCfg, saveModelCfg, listGeminiModels, keyState, getKeyHistory, clearKeyHistory, testGeminiKey, addGeminiKey, renameGeminiKey, deleteGeminiKey, moveGeminiKey,
+  uid, key, MAX_KEYS, getBot, saveBot, setupBot, removeBot, relinkBot, botStatus, botUsers, listGeminiKeys, getModelCfg, saveModelCfg, listGeminiModels, keyState, quotaStatus, getKeyHistory, clearKeyHistory, testGeminiKey, addGeminiKey, renameGeminiKey, deleteGeminiKey, moveGeminiKey,
   redis, sendTelegram, downloadTelegramFile, gemini, geminiRaw, trimHist, appendModelToHist,
   fmtWib, fmtTime, fmtDateShort, wib, startOfDayWib, nextRepeat, rupiah,
   cfgOn, getLocation, setLocation, getWeather, getNews,

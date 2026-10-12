@@ -6,7 +6,7 @@ const {
   trimHist, geminiRaw, fmtWib, rupiah,
   getMode, getHist, saveHist, getProfile,
   getTasks, addTask, getNotes, addNote, getExpenses, addExpense,
-  getReminders, addReminder, getBot, sendTelegram, cfgOn,
+  getReminders, addReminder, getBot, sendTelegram, cfgOn, quotaStatus,
 } = require("./_lib");
 
 const REPEAT_LABEL = { harian: "tiap hari", mingguan: "tiap minggu", bulanan: "tiap bulan" };
@@ -146,9 +146,9 @@ module.exports = async (req, res) => {
       try { await sendTelegram(u, String(bot.chatId), body); } catch {}
     }
 
-    const [freshTasks, freshNotes, freshExpenses, freshReminders] = await Promise.all([getTasks(u), getNotes(u), getExpenses(u), getReminders(u)]);
+    const [freshTasks, freshNotes, freshExpenses, freshReminders, quota] = await Promise.all([getTasks(u), getNotes(u), getExpenses(u), getReminders(u), quotaStatus(u)]);
     return res.status(200).json({
-      reply, added,
+      reply, added, quota,
       tasks: freshTasks,
       reminders: freshReminders,
       notes: freshNotes.slice(-100).reverse(),
