@@ -24,7 +24,7 @@ const START_TEXT =
   "- kirim foto struk, atau voice note\n\n" +
   "Perintah:\n" +
   "/pengingat  /hapus N\n" +
-  "/tugas  /tugasdone N  /hapustugas N\n" +
+  "/tugas  /tugasdone  /hapustugas (lalu balas nomor)\n" +
   "/rekap (lalu balas nomor untuk hapus)  /batal\n" +
   "/catatan  /cari kata  /hapuscatatan (lalu balas nomor)\n" +
   "/cuaca  /lokasi kota  /berita topik\n" +
@@ -83,6 +83,49 @@ async function mulaiHapusCatatan(u, say) {
   const r = await noteListText(u, true);
   await say(r.text);
   if (r.count) await redis("SET", key(u, "pending"), "hapuscatatan", "EX", "180");
+}
+
+
+// ---------- Tugas: daftar rapi + selesai/hapus (balas nomor, sama seperti catatan & uang) ----------
+async function taskListText(u, mode) {
+  const tasks = await getTasks(u);
+  if (!tasks.length) return { text: "Belum ada tugas. Tulis: tambah tugas <isi>, atau pakai web.", count: 0 };
+  const row = (t, i) => `  ${i + 1}. ${t.text}${t.due && !t.done ? "\n      ⏰ " + fmtDue(t.due) : ""}`;
+  const todo = [], done = [];
+  tasks.forEach((t, i) => (t.done ? done : todo).push(row(t, i)));
+  let text = `✅ Tugas (${tasks.length} total)\n`;
+  if (todo.length) text += `\nBelum selesai (${todo.length}):\n${todo.join("\n")}\n`;
+  if (done.length) text += `\nSelesai (${done.length}):\n${done.join("\n")}\n`;
+  text += "\n" + (
+    mode === "hapustugas" ? "Balas dengan nomornya saja (contoh: 2) untuk menghapus tugas itu. Batal: /batal"
+    : mode === "tugasdone" ? "Balas dengan nomornya saja (contoh: 2) untuk menandai selesai / belum selesai. Batal: /batal"
+    : "Selesai: /tugasdone lalu balas nomornya\nHapus: /hapustugas lalu balas nomornya");
+  return { text, count: tasks.length };
+}
+
+// true = selesai, false = nomor salah (boleh coba lagi)
+async function hapusTugas(u, n, say) {
+  const tasks = await getTasks(u);
+  if (!tasks.length) { await say("Belum ada tugas yang bisa dihapus."); return true; }
+  if (!n || n < 1 || n > tasks.length) { await say(`Nomor ${n || "?"} tidak ada. Ada ${tasks.length} tugas; balas dengan nomor yang tertera di daftar.`); return false; }
+  const ok = await deleteTask(u, tasks[n - 1].id);
+  await say(ok ? `🗑️ Dihapus: ${tasks[n - 1].text}` : "Gagal menghapus tugas.");
+  return true;
+}
+
+async function selesaiTugas(u, n, say) {
+  const tasks = await getTasks(u);
+  if (!tasks.length) { await say("Belum ada tugas."); return true; }
+  if (!n || n < 1 || n > tasks.length) { await say(`Nomor ${n || "?"} tidak ada. Ada ${tasks.length} tugas; balas dengan nomor yang tertera di daftar.`); return false; }
+  const t = await toggleTask(u, tasks[n - 1].id);
+  await say(t ? `${t.done ? "✅ Selesai" : "↩️ Dibuka lagi"}: ${t.text}${t.done ? "\n(pengingatnya ikut batal)" : ""}` : "Gagal mengubah tugas.");
+  return true;
+}
+
+async function mulaiModeTugas(u, mode, say) {
+  const r = await taskListText(u, mode);
+  await say(r.text);
+  if (r.count) await redis("SET", key(u, "pending"), mode, "EX", "180");
 }
 
 // ---------- Perintah ----------
@@ -156,28 +199,24 @@ async function handleCommand(u, cmd, arg, say) {
     }
 
     case "/tugas": {
-      const tasks = await getTasks(u);
-      if (!tasks.length) { await say("Belum ada tugas. Tulis: tambah tugas <isi>, atau pakai web."); return; }
-      const lines = tasks.map((t, i) => `${i + 1}. ${t.done ? "[selesai]" : "[belum]"} ${t.text}${t.due ? " ⏰ " + fmtDue(t.due) : ""}`);
-      await say("Tugas (sama dengan di web):\n\n" + lines.join("\n") + "\n\nTandai selesai: /tugasdone N (pengingatnya ikut batal)\nHapus: /hapustugas N");
+      const r = await taskListText(u, "lihat");
+      await say(r.text);
       return;
     }
 
     case "/tugasdone": {
+      if (!arg) { await mulaiModeTugas(u, "tugasdone", say); return; }
       const n = parseInt(arg, 10);
-      const tasks = await getTasks(u);
-      if (!n || n < 1 || n > tasks.length) { await say("Pakai: /tugasdone <nomor>. Lihat nomornya di /tugas."); return; }
-      const t = await toggleTask(u, tasks[n - 1].id);
-      await say(t ? `Tugas "${t.text}" ditandai ${t.done ? "selesai" : "belum selesai"}.` : "Gagal mengubah tugas.");
+      if (!n || n < 1) { await say("Pakai: /tugasdone <nomor>, atau ketik /tugasdone saja lalu balas nomornya."); return; }
+      await selesaiTugas(u, n, say);
       return;
     }
 
     case "/hapustugas": {
+      if (!arg) { await mulaiModeTugas(u, "hapustugas", say); return; }
       const n = parseInt(arg, 10);
-      const tasks = await getTasks(u);
-      if (!n || n < 1 || n > tasks.length) { await say("Pakai: /hapustugas <nomor>. Lihat nomornya di /tugas."); return; }
-      const ok = await deleteTask(u, tasks[n - 1].id);
-      await say(ok ? `Tugas dihapus: ${tasks[n - 1].text}` : "Gagal menghapus tugas.");
+      if (!n || n < 1) { await say("Pakai: /hapustugas <nomor>, atau ketik /hapustugas saja lalu balas nomornya."); return; }
+      await hapusTugas(u, n, say);
       return;
     }
 
@@ -302,6 +341,7 @@ async function processTags(u, reply) {
 
   // Tugas/checklist (boleh dengan jam -> otomatis jadi pengingat terhubung)
   for (const m of reply.matchAll(/\[\[TASK:\s*([^\]|]+?)\s*(?:\|\s*([^\]|]+?)\s*)?\]\]/g)) {
+    if (/^(hapus|buang|delete|selesai)(\s+(tugas|task))?(\s+\d+)?$/i.test(m[1].trim())) continue; // perintah, bukan isi tugas
     const when = m[2] ? parseWib(m[2]) : null;
     const t = await addTask(u, m[1], when);
     if (!t) continue;
@@ -413,18 +453,32 @@ module.exports = async (req, res) => {
     if (isText) {
       const isNum = /^[1-9]\d{0,2}$/.test(text);
       const pend = isNum ? await redis("GET", key(u, "pending")) : null;
-      if (isNum && (pend === "hapusbeli" || pend === "hapuscatatan")) {
-        const done = pend === "hapusbeli" ? await hapusBeli(u, parseInt(text, 10), say) : await hapusCatatan(u, parseInt(text, 10), say);
+      const PEND = { hapusbeli: hapusBeli, hapuscatatan: hapusCatatan, hapustugas: hapusTugas, tugasdone: selesaiTugas };
+      if (isNum && PEND[pend]) {
+        const done = await PEND[pend](u, parseInt(text, 10), say);
         if (done) await redis("DEL", key(u, "pending"));
         return res.status(200).end();
       }
-      if (!isNum && text !== "/rekap" && text !== "/batal" && text !== "/hapuscatatan") await redis("DEL", key(u, "pending"));
+      if (!isNum && text !== "/rekap" && text !== "/batal" && text !== "/hapuscatatan" && text !== "/hapustugas" && text !== "/tugasdone") await redis("DEL", key(u, "pending"));
 
       // "hapus catatan" / "hapus catatan 2" ditangani langsung, tanpa Gemini (Gemini tidak bisa menghapus)
       const hm = text.match(/^(?:hapus|buang|delete)\s+(?:catatan|note)(?:\s+(?:nomor|no\.?|ke)?\s*(\d{1,3}))?\s*$/i);
       if (hm) {
         if (hm[1]) await hapusCatatan(u, parseInt(hm[1], 10), say);
         else await mulaiHapusCatatan(u, say);
+        return res.status(200).end();
+      }
+      const NUM = "(?:\\s+(?:nomor|no\\.?|ke)?\\s*(\\d{1,3}))?\\s*$";
+      const ht = text.match(new RegExp("^(?:hapus|buang|delete)\\s+tugas" + NUM, "i"));
+      if (ht) {
+        if (ht[1]) await hapusTugas(u, parseInt(ht[1], 10), say);
+        else await mulaiModeTugas(u, "hapustugas", say);
+        return res.status(200).end();
+      }
+      const st = text.match(new RegExp("^(?:selesai(?:kan)?|centang|done)\\s+tugas" + NUM, "i"));
+      if (st) {
+        if (st[1]) await selesaiTugas(u, parseInt(st[1], 10), say);
+        else await mulaiModeTugas(u, "tugasdone", say);
         return res.status(200).end();
       }
     }
