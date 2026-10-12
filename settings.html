@@ -38,9 +38,11 @@
   .item span { flex:1; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:14px; }
   .item button { padding:6px 10px; min-width:36px; }
   .status { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; border:1px solid var(--line); }
+  .status::before { content:""; display:inline-block; width:7px; height:7px; border-radius:50%; background:currentColor; margin-right:6px; vertical-align:1px; }
   .status.on { color:var(--ok); border-color:var(--ok); }
   .status.wait { color:var(--muted); }
   .who { font-size:14px; margin:0 0 4px; }
+  code { font-family:ui-monospace,Menlo,Consolas,monospace; background:var(--bg); padding:1px 5px; border-radius:6px; }
   hr { border:none; border-top:1px solid var(--line); margin:16px 0 4px; }
 </style>
 </head>
@@ -164,10 +166,14 @@ function renderBot() {
   box.innerHTML = "";
   const p = (html) => { const e = document.createElement("p"); e.className = "hint"; e.innerHTML = html; box.appendChild(e); return e; };
   const btn = (txt, fn, cls) => { const b = document.createElement("button"); b.textContent = txt; if (cls) b.className = cls; b.onclick = fn; return b; };
+  const who = () => botState.chatId
+    ? "Terhubung ke: <b>" + [botState.chatName, botState.chatUsername ? "(@" + botState.chatUsername + ")" : ""].filter(Boolean).join(" ") + "</b> &middot; ID <code>" + botState.chatId + "</code>"
+    : "";
   const label = () => (botState.name ? botState.name + " " : "") + "(@" + botState.username + ")";
   if (!botState.installed) {
     if (botState.legacy && botState.username) {
-      p("Bot bawaan server: <b>" + label() + "</b> &nbsp;<span class=\"status " + (botState.linked ? "on\">✅ terhubung" : "wait\">⏳ belum terhubung") + "</span>");
+      p("Bot bawaan server: <b>" + label() + "</b> &nbsp;<span class=\"status " + (botState.linked ? "on\">Terhubung" : "wait\">Belum terhubung") + "</span>");
+      if (botState.linked) p(who());
       p("Ingin pakai bot sendiri? Tempel token baru dari @BotFather di bawah. Bot bawaan akan diganti.");
     } else {
       p("Buat bot di <b>@BotFather</b>, lalu tempel token-nya di sini. Webhook dipasang otomatis.");
@@ -181,7 +187,8 @@ function renderBot() {
     row.append(inp, go); box.appendChild(row);
     return;
   }
-  p("Bot: <b>" + label() + "</b> &nbsp;<span class=\"status " + (botState.linked ? "on\">✅ terhubung" : "wait\">⏳ belum terhubung") + "</span>");
+  p("Bot: <b>" + label() + "</b> &nbsp;<span class=\"status " + (botState.linked ? "on\">Terhubung" : "wait\">Belum terhubung") + "</span>");
+  if (botState.linked) p(who());
   if (!botState.linked) {
     const a = document.createElement("a");
     a.className = "btn primary"; a.href = botState.linkUrl; a.target = "_blank"; a.rel = "noopener"; a.textContent = "Hubungkan Telegram";

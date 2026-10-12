@@ -156,22 +156,26 @@ async function relinkBot(u) {
 }
 
 async function botStatus(u) {
-  const raw = await redis("GET", key(u, "bot"));
-  if (!raw) {
-    const legacy = await getBot(u);
-    if (!legacy) return { installed: false, legacy: false };
-    // Bot bawaan server (env): tampilkan nama dan status dari Telegram
-    let me = {};
-    try { me = (await tg(legacy.token, "getMe")).result || {}; } catch {}
-    return { installed: false, legacy: true, username: me.username || "", name: me.first_name || "", linked: !!legacy.chatId };
+  const bot = await getBot(u);
+  if (!bot) return { installed: false, legacy: false };
+
+  // Nama bot dan akun Telegram yang terhubung, diambil langsung dari Telegram
+  let me = {}, chat = {};
+  try { me = (await tg(bot.token, "getMe")).result || {}; } catch {}
+  if (bot.chatId) {
+    try { chat = (await tg(bot.token, "getChat", { chat_id: bot.chatId })).result || {}; } catch {}
   }
-  const b = JSON.parse(raw);
+  const username = me.username || bot.username || "";
   return {
-    installed: true,
-    username: b.username,
-    name: b.name || "",
-    linked: !!b.chatId,
-    linkUrl: b.chatId ? null : `https://t.me/${b.username}?start=${b.linkCode}`,
+    installed: !bot.legacy,
+    legacy: !!bot.legacy,
+    username,
+    name: me.first_name || bot.name || "",
+    linked: !!bot.chatId,
+    chatId: bot.chatId ? String(bot.chatId) : null,
+    chatName: [chat.first_name, chat.last_name].filter(Boolean).join(" ") || chat.title || "",
+    chatUsername: chat.username || "",
+    linkUrl: !bot.legacy && !bot.chatId && username ? `https://t.me/${username}?start=${bot.linkCode}` : null,
   };
 }
 
