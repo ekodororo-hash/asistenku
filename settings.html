@@ -76,8 +76,8 @@
   <section id="secKeys">
     <h2>API key Gemini <small id="keyCount"></small></h2>
     <p class="hint">Maksimal 5. Dicoba berurutan; kalau kena limit otomatis lompat ke key berikutnya. <span id="globalKeyNote"></span></p>
-    <details class="guide" open>
-      <summary>📘 Cara mendapat API key Gemini (gratis)</summary>
+    <details class="guide">
+      <summary>Cara mendapat API key Gemini (gratis)</summary>
       <ol>
         <li>Buka <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> dan masuk dengan akun Google.</li>
         <li>Klik <b>Create API key</b>, lalu pilih atau buat project.</li>
@@ -197,8 +197,8 @@ function renderBot() {
     d.innerHTML = "<summary>" + title + "</summary>" + html;
     box.appendChild(d);
   };
-  if (!botState.installed) {
-    guide(true, "📘 Cara membuat dan memasang bot",
+  if (!botState.linked) {
+    guide(false, "Cara membuat dan memasang bot",
       "<ol>" +
       "<li>Buka Telegram, cari <b>@BotFather</b> (ada centang biru), lalu kirim <code>/newbot</code>.</li>" +
       "<li>Ketik nama bot (bebas), lalu username bot. Username harus berakhiran <code>bot</code>, mis. <code>namakamu_bot</code>.</li>" +
@@ -207,15 +207,6 @@ function renderBot() {
       "<li>Klik <b>Hubungkan Telegram</b>, lalu tekan <b>Start</b> di Telegram. Tombol menu akan muncul di chat.</li>" +
       "</ol>" +
       "<p>Token itu kunci bot-mu, jangan dibagikan. Kalau sempat bocor, kirim <code>/revoke</code> ke BotFather lalu pasang token baru.</p>");
-  } else {
-    guide(false, "📘 Cara memakai bot",
-      "<ul>" +
-      "<li>Langsung tulis seperti ngobrol: <i>\"Ingatkan aku besok jam 8 bayar listrik\"</i>, <i>\"makan siang 25rb\"</i>, <i>\"catat: ide konten\"</i>. Bisa juga kirim foto struk atau voice note.</li>" +
-      "<li>Ketik <code>/start</code> kapan saja untuk melihat daftar perintah dan contoh.</li>" +
-      "<li><code>/atur</code> untuk mengatur ringkasan pagi, check-in malam, dan rekap mingguan. <code>/lokasi kota</code> untuk mengganti kota cuaca.</li>" +
-      "<li>Tugas, catatan, uang, dan obrolan di bot sama dengan di web.</li>" +
-      "<li>Bot tidak membalas? Pastikan sudah menekan <b>Start</b> lewat tombol <b>Hubungkan Telegram</b>, lalu klik <b>Segarkan status</b>.</li>" +
-      "</ul>");
   }
   if (!botState.installed) {
     if (botState.legacy && botState.username) {
