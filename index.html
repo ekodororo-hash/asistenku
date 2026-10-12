@@ -71,7 +71,9 @@
   @keyframes dotbounce { 0%,60%,100% { transform:translateY(0); opacity:.4; } 30% { transform:translateY(-5px); opacity:1; } }
   .msg.streaming > .dots::after { content:none; }
   /* lampiran foto & rekam suara */
-  .iconbtn { flex:none; padding:0 12px; font-size:18px; line-height:1; }
+  .iconbtn { flex:none; display:inline-flex; align-items:center; justify-content:center; padding:0 12px; line-height:1; color:var(--muted); }
+  .iconbtn svg { display:block; }
+  .iconbtn:hover:not(:disabled) { color:var(--accent); }
   .iconbtn:disabled { opacity:.5; }
   .attachprev, .recbar { display:flex; align-items:center; gap:10px; padding:8px 16px; background:var(--card); border-top:1px solid var(--line); font-size:13px; color:var(--muted); }
   .attachprev[hidden], .recbar[hidden] { display:none; }
@@ -300,10 +302,10 @@
       <button type="button" id="recSend" class="primary">Kirim</button>
     </div>
     <form id="form">
-      <button type="button" id="attachBtn" class="iconbtn" title="Kirim foto / struk" aria-label="Kirim foto atau struk">📎</button>
+      <button type="button" id="attachBtn" class="iconbtn" title="Kirim foto / struk" aria-label="Kirim foto atau struk"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="1.6"/><path d="m21 16-4.6-4.6a1.5 1.5 0 0 0-2.1 0L6 19.5"/></svg></button>
       <input type="file" id="fileIn" accept="image/*" hidden>
       <textarea id="input" rows="1" placeholder="Tulis pesan..."></textarea>
-      <button type="button" id="micBtn" class="iconbtn" title="Rekam suara" aria-label="Rekam suara">🎙️</button>
+      <button type="button" id="micBtn" class="iconbtn" title="Rekam suara" aria-label="Rekam suara"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg></button>
       <button class="primary" id="sendBtn">Kirim</button>
     </form>
   </section>
@@ -508,7 +510,24 @@ function renderChat() {
       ? "Mode curhat. Cerita aja, aku dengerin. Pelan-pelan juga gapapa.\n\nObrolan di sini terpisah dari mode asisten: tidak membuat tugas, catatan, pengingat, atau pengeluaran, tidak masuk memori, dan tidak disalin ke Telegram."
       : "Halo! Aku asisten pribadimu. Aku bisa bantu atur rencana, catat tugas dan catatan, mencatat pengeluaran, tulis pesan, atau jadi teman cerita.\n\nObrolan asisten, tugas, catatan, dan uang di sini sama persis dengan bot Telegram-mu. Mau curhat? Pakai tombol Curhat: riwayatnya terpisah.\n\nCoba: \"makan siang 25rb\", \"catat: ide konten minggu depan\", atau \"tambah tugas bayar listrik besok\".");
   }
-  messages.forEach((m) => addBubble(m.role, m.text, "", m.ts));
+  // Server hanya menyimpan teks "[Foto] ...", jadi thumbnail dipasang lagi dari simpanan di browser
+  const pool = load("photoThumbs", []).slice();
+  const thumbFor = new Map();
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role !== "user" || !String(m.text).startsWith("[Foto]")) continue;
+    const k = pool.map((t) => t.text).lastIndexOf(m.text);
+    if (k >= 0) { thumbFor.set(i, pool[k].url); pool.splice(k, 1); }
+  }
+  messages.forEach((m, i) => {
+    const b = addBubble(m.role, m.text, "", m.ts);
+    const url = thumbFor.get(i);
+    if (url) {
+      const im = new Image();
+      im.className = "thumb"; im.alt = "Foto"; im.src = url;
+      b.insertBefore(im, b.firstChild);
+    }
+  });
 }
 
 function renderMode() {
@@ -966,6 +985,21 @@ async function chatStream(text, bubble, extra, onTranscript) {
   throw new Error("Koneksi terputus sebelum jawaban selesai. Muat ulang untuk melihat hasilnya.");
 }
 
+// Simpan thumbnail kecil (maks 240 px) di browser supaya foto tidak hilang saat chat dimuat ulang
+function rememberThumb(text, dataUrl) {
+  const im = new Image();
+  im.onload = () => {
+    const k = Math.min(1, 240 / Math.max(im.width, im.height));
+    const c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(im.width * k)); c.height = Math.max(1, Math.round(im.height * k));
+    c.getContext("2d").drawImage(im, 0, 0, c.width, c.height);
+    const list = load("photoThumbs", []);
+    list.push({ text, url: c.toDataURL("image/jpeg", 0.7) });
+    save("photoThumbs", list.slice(-20));
+  };
+  im.src = dataUrl;
+}
+
 async function send(text, media) {
   text = (text || "").trim();
   media = media || {};
@@ -982,6 +1016,7 @@ async function send(text, media) {
     im.className = "thumb"; im.alt = "Foto"; im.src = image.url;
     ub.insertBefore(im, ub.firstChild);
   }
+  if (image) rememberThumb(um.text, image.url);
   const extra = {};
   if (image) extra.image = { mime: image.mime, data: image.data };
   if (audio) extra.audio = { mime: audio.mime, data: audio.data };
