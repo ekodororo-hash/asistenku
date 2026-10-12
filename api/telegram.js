@@ -97,24 +97,40 @@ const START_TEXT =
   "• catat: ide konten minggu depan\n\n" +
   "Lihat semua perintah: /help";
 
-// Daftar lengkap perintah, untuk /help
+// Daftar lengkap perintah, untuk /help — satu command per baris, keterangan singkat + contoh konkret
 const HELP_TEXT =
   "📋 SEMUA PERINTAH\n\n" +
   "⏰ Pengingat & tugas\n" +
-  "/pengingat · /hapus <no> · /tugas · /tugasdone · /hapustugas\n\n" +
+  "/pengingat → lihat daftar pengingat\n" +
+  "/hapus → hapus pengingat, misal /hapus 2\n" +
+  "/tugas → lihat daftar tugas\n" +
+  "/tugasdone → tandai tugas selesai\n" +
+  "/hapustugas → hapus tugas\n\n" +
   "💸 Uang\n" +
-  "/rekap · /masuk — balas nomor di daftar buat hapus entri\n" +
-  "/batal — batalkan aksi yang sedang jalan\n\n" +
+  "/rekap → pengeluaran bulan ini\n" +
+  "/masuk → pemasukan bulan ini\n" +
+  "/hapusbeli → hapus pengeluaran, misal /hapusbeli 2 (tanpa nomor = hapus yang terakhir)\n" +
+  "/hapusmasuk → hapus pemasukan, misal /hapusmasuk 2 (tanpa nomor = hapus yang terakhir)\n" +
+  "/batal → batalkan aksi yang sedang jalan\n" +
+  "Cara lain: buka /rekap atau /masuk dulu, lalu balas angka nomornya langsung\n\n" +
   "📝 Catatan\n" +
-  "/catatan · /cari <kata> · /hapuscatatan\n\n" +
+  "/catatan → lihat daftar catatan\n" +
+  "/cari → cari catatan, misal /cari rapat\n" +
+  "/hapuscatatan → hapus catatan, misal /hapuscatatan 2 (tanpa nomor = tampil daftar dulu)\n\n" +
   "🌤️ Info\n" +
-  "/cuaca · /lokasi <kota> · /berita <topik>\n\n" +
+  "/cuaca → cuaca di kotamu\n" +
+  "/lokasi → ganti kota, misal /lokasi Bandung\n" +
+  "/berita → berita terbaru, misal /berita teknologi\n\n" +
   "🧠 Memori & pengaturan\n" +
-  "/memori · /lupakan · /atur (notifikasi otomatis, tombol toggle)\n\n" +
+  "/memori → lihat yang kuingat soal kamu\n" +
+  "/lupakan → hapus memori\n" +
+  "/atur → nyalain/matiin notifikasi otomatis\n\n" +
   "💬 Mode\n" +
-  "/asisten · /curhat · /reset\n\n" +
-  "🔄 Sinkron web: tugas, catatan, uang & obrolan asisten sama kayak di web (matikan: /salin off)\n" +
-  "🔒 Curhat terpisah: riwayat sendiri, tidak masuk tugas/catatan/memori, tidak sinkron ke web.";
+  "/asisten → mode asisten (default)\n" +
+  "/curhat → mode curhat\n" +
+  "/reset → hapus riwayat obrolan mode yang aktif\n\n" +
+  "🔄 Tugas, catatan, uang & obrolan asisten sinkron sama web (matikan: /salin off)\n" +
+  "🔒 Curhat terpisah: riwayat sendiri, gak nyambung ke tugas/catatan/memori/web.";
 
 // ---------- Hapus pengeluaran (dipakai /hapusbeli dan balasan angka setelah /rekap) ----------
 // Mengembalikan true kalau selesai (berhasil / memang kosong), false kalau nomor salah (pengguna boleh coba lagi).
