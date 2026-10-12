@@ -60,6 +60,33 @@ function withImage(contents, image, text) {
 
 const TOGGLES = { "/pagi": "pagi", "/checkin": "checkin", "/rekapauto": "rekapauto", "/salin": "mirror" };
 
+// /atur: daftar pengaturan on/off dengan tombol toggle (callback_data cfg:<key>)
+const CFG_ORDER = ["pagi", "checkin", "rekapauto", "mirror"];
+function cfgDesc() {
+  const jam = (h) => String(h).padStart(2, "0") + ".00";
+  return {
+    pagi: `Ringkasan pagi (${jam(HOURS.morning)} WIB)`,
+    checkin: `Check-in malam (${jam(HOURS.checkin)} WIB)`,
+    rekapauto: `Rekap uang (Minggu ${jam(HOURS.recap)})`,
+    mirror: "Salin obrolan web ke sini",
+  };
+}
+async function aturView(u) {
+  const [p, c, r, m, loc] = await Promise.all([cfgOn(u, "pagi"), cfgOn(u, "checkin"), cfgOn(u, "rekapauto"), cfgOn(u, "mirror"), getLocation(u)]);
+  const val = { pagi: p, checkin: c, rekapauto: r, mirror: m };
+  const desc = cfgDesc();
+  const s = (b) => (b ? "aktif" : "mati");
+  const text =
+    "Pengaturan otomatis:\n" +
+    CFG_ORDER.map((k) => `- ${desc[k]}: ${s(val[k])}`).join("\n") +
+    `\n- Lokasi cuaca: ${loc.name}  -> /lokasi <kota>` +
+    "\n\nPencet tombol buat nyalain/matiin.";
+  const inline_keyboard = CFG_ORDER.map((k) => [
+    { text: `${val[k] ? "✅" : "⬜"} ${desc[k].replace(/\s*\(.*\)$/, "")}`, callback_data: `cfg:${k}` },
+  ]);
+  return { text, reply_markup: { inline_keyboard } };
+}
+
 const START_TEXT =
   "👋 Halo! Aku asisten pribadi sekaligus teman ceritamu.\n" +
   "Tinggal tulis, kirim foto, atau voice note. Atau pakai tombol di bawah.\n\n" +
@@ -437,17 +464,9 @@ async function handleCommand(u, cmd, arg, say, ensureCb) {
     }
 
     case "/atur": {
-      const [p, c, r, m, loc] = await Promise.all([cfgOn(u, "pagi"), cfgOn(u, "checkin"), cfgOn(u, "rekapauto"), cfgOn(u, "mirror"), getLocation(u)]);
-      const s = (b) => (b ? "aktif" : "mati");
-      const jam = (h) => String(h).padStart(2, "0") + ".00";
-      await say(
-        "Pengaturan otomatis:\n" +
-          `- Ringkasan pagi (${jam(HOURS.morning)} WIB): ${s(p)}  -> /pagi on | off\n` +
-          `- Check-in malam (${jam(HOURS.checkin)} WIB): ${s(c)}  -> /checkin on | off\n` +
-          `- Rekap uang (Minggu ${jam(HOURS.recap)}): ${s(r)}  -> /rekapauto on | off\n` +
-          `- Salin obrolan web ke sini: ${s(m)}  -> /salin on | off\n` +
-          `- Lokasi cuaca: ${loc.name}  -> /lokasi <kota>`
-      );
+      if (ensureCb) await ensureCb(); // tombol butuh webhook terdaftar untuk callback_query
+      const v = await aturView(u);
+      await say(v.text, { reply_markup: v.reply_markup });
       return;
     }
 
@@ -612,6 +631,16 @@ module.exports = async (req, res) => {
       if (m) {
         const result = await resolveExit(u, m[1]);
         await tg(bot.token, "editMessageText", { chat_id: chatId, message_id: msg.message_id, text: result }); // tombol hilang, tidak bisa ditekan dua kali
+        return res.status(200).end();
+      }
+      const cm = String(cq.data || "").match(/^cfg:(pagi|checkin|rekapauto|mirror)$/);
+      if (cm) { // toggle di /atur: ganti nilai, lalu edit pesan yang sama (tombol tetap ada, bisa dipencet lagi)
+        const cur = await cfgOn(u, cm[1]);
+        await redis("HSET", key(u, "cfg"), cm[1], cur ? "off" : "on");
+        const v = await aturView(u);
+        try {
+          await tg(bot.token, "editMessageText", { chat_id: chatId, message_id: msg.message_id, text: v.text, reply_markup: v.reply_markup });
+        } catch {} // abaikan error "message not modified" kalau race condition tap ganda
       }
       return res.status(200).end();
     }
