@@ -34,7 +34,7 @@
   .hrow { padding:10px 0; border-bottom:1px solid var(--line); }
   .hrow:last-child { border-bottom:none; }
   .htop { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-  .hwho { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:14px; }
+  .hwho { font-size:14px; font-weight:600; word-break:break-word; }
   .hmeta { color:var(--muted); font-size:12px; margin-top:3px; }
   .herr { color:var(--muted); font-size:12px; margin-top:3px; word-break:break-word; }
   .empty { color:var(--muted); font-size:14px; text-align:center; padding:18px 0 8px; }
@@ -54,7 +54,7 @@
 <main>
   <section>
     <h2>API key Gemini <small id="count"></small></h2>
-    <p class="hint">Dicatat setiap kali API key dipakai (web, Telegram, pesan otomatis, atau tombol Uji). Dihapus otomatis setelah 1 hari, maksimal 50 entri. Isi pesan tidak disimpan.</p>
+    <p class="hint">Dicatat setiap kali API key dipakai (web, Telegram, pesan otomatis, atau tombol Test). Dihapus otomatis setelah 1 hari, maksimal 50 entri. Isi pesan tidak disimpan.</p>
     <div class="chips" id="chips"></div>
     <div id="list"></div>
     <div class="actions">
@@ -82,7 +82,7 @@ async function op(name, extra) {
 function say(text, kind) { const m = $("msg"); m.textContent = text || ""; m.className = "msg" + (kind ? " " + kind : ""); }
 
 const STATUS = { ok: ["Berfungsi", "ok"], limit: ["Kena limit", "limit"], invalid: ["Tidak valid", "invalid"], error: ["Error", "invalid"] };
-const SRC = { web: "Web", telegram: "Telegram", otomatis: "Otomatis", uji: "Uji" };
+const SRC = { web: "Web", telegram: "Telegram", otomatis: "Otomatis", uji: "Test" };
 const FILTERS = [
   ["all", "Semua", () => true],
   ["ok", "Berfungsi", (h) => h.st === "ok"],
@@ -132,7 +132,7 @@ function render() {
     top.className = "htop";
     const who = document.createElement("span");
     who.className = "hwho";
-    who.textContent = h.k === "server" ? "Key server" : "•••• " + h.k;
+    who.textContent = h.k === "server" ? "Key server" : (h.n || "•••• " + h.k);
     const [t, c] = STATUS[h.st] || STATUS.error;
     const b = document.createElement("span");
     b.className = "status " + c; b.textContent = t;
@@ -141,7 +141,7 @@ function render() {
     const meta = document.createElement("div");
     meta.className = "hmeta";
     const time = d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
-    meta.textContent = (SRC[h.src] || h.src) + " · " + (d.toDateString() === today ? "" : "kemarin ") + time + " · " + ago(h.ts);
+    meta.textContent = (h.n && h.k !== "server" ? "•••• " + h.k + " · " : "") + (SRC[h.src] || h.src) + " · " + (d.toDateString() === today ? "" : "kemarin ") + time + " · " + ago(h.ts);
 
     row.append(top, meta);
     if (h.err) { const e = document.createElement("div"); e.className = "herr"; e.textContent = h.err; row.appendChild(e); }

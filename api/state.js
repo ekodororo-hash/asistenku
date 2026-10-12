@@ -2,7 +2,7 @@
 // Dipakai web untuk memuat state awal (GET) dan melakukan satu aksi (POST),
 // semua baca/tulis ke Redis yang sama dipakai bot Telegram.
 
-const { redis, key, MAX_KEYS, keyState, clearKeyHistory, testGeminiKey, addGeminiKey, deleteGeminiKey, moveGeminiKey, setupBot, removeBot, relinkBot, botStatus } = require("./_lib");
+const { redis, key, MAX_KEYS, keyState, clearKeyHistory, testGeminiKey, addGeminiKey, renameGeminiKey, deleteGeminiKey, moveGeminiKey, setupBot, removeBot, relinkBot, botStatus } = require("./_lib");
 const { requireUser } = require("./_auth");
 const {
   getTasks, addTask, toggleTask, deleteTask,
@@ -59,7 +59,8 @@ module.exports = async (req, res) => {
         case "addExpense": result = await addExpense(u, p.amt, p.cat, p.note); break;
         case "deleteExpense": result = await deleteExpenseById(u, p.id); break;
         case "saveProfile": result = await saveProfile(u, p.profile || {}); break;
-        case "addKey": result = await addGeminiKey(u, p.value); break;
+        case "addKey": result = await addGeminiKey(u, p.value, p.name); break;
+        case "renameKey": result = await renameGeminiKey(u, p.id, p.name); break;
         case "deleteKey": result = await deleteGeminiKey(u, p.id); break;
         case "moveKey": result = await moveGeminiKey(u, p.id, p.dir); break;
         case "keyHistory": result = await keyState(u); break;

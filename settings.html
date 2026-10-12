@@ -38,14 +38,14 @@
   .item .kmain { flex:1 1 100%; min-width:0; }
   .item .klabel { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:14px; margin-right:6px; }
   .ksub { display:block; font-size:12px; color:var(--muted); margin-top:4px; word-break:break-word; }
-  .kbtns { display:flex; gap:6px; flex:1 1 100%; }
-  .kbtns button { flex:1; padding:8px 4px; min-width:0; white-space:nowrap; font-size:14px; }
-  @media (max-width:520px) {
-    .row { flex-wrap:wrap; }
-    .row > .pw, .row > input { flex:1 1 100%; }
-    .row > button { flex:1 1 100%; }
-    .actions > button, .actions > a.btn { flex:1 1 100%; }
-  }
+  .kbtns { display:flex; flex-wrap:wrap; gap:6px; flex:1 1 100%; }
+  .kbtns button { flex:1 1 72px; padding:8px 4px; min-width:0; white-space:nowrap; font-size:14px; }
+  .kname { font-weight:600; font-size:15px; margin-right:6px; }
+  .klast { font-family:ui-monospace,Menlo,Consolas,monospace; }
+  .row { flex-wrap:wrap; }
+  .row > .pw, .row > input { flex:1 1 100%; }
+  .row > button { flex:1 1 100%; }
+  .actions > button, .actions > a.btn { flex:1 1 100%; }
   .status { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; border:1px solid var(--line); }
   .status::before { content:""; display:inline-block; width:7px; height:7px; border-radius:50%; background:currentColor; margin-right:6px; vertical-align:1px; }
   .status.on { color:var(--ok); border-color:var(--ok); }
@@ -103,6 +103,7 @@
     </details>
     <div id="keyList"></div>
     <div class="row" id="keyAddRow" style="margin-top:8px">
+      <input id="keyName" autocomplete="off" maxlength="40" placeholder="Nama key (opsional), mis. Gmail utama">
       <input id="keyInput" type="password" autocomplete="off" placeholder="Tempel API key Gemini">
       <button id="keyAddBtn">Tambah</button>
     </div>
@@ -184,14 +185,14 @@ function renderKeys() {
     const main = document.createElement("div");
     main.className = "kmain";
     const label = document.createElement("span");
-    label.className = "klabel";
-    label.textContent = (i + 1) + ". •••• " + k.last4;
+    if (k.name) { label.className = "kname"; label.textContent = (i + 1) + ". " + k.name; }
+    else { label.className = "klabel"; label.textContent = (i + 1) + ". •••• " + k.last4; }
     main.appendChild(label);
     const [stLabel, stCls] = statusOf(k);
     main.appendChild(badge(stLabel, stCls));
     const sub = document.createElement("span");
     sub.className = "ksub";
-    sub.textContent = (k.lastUsed ? "Terakhir digunakan " + ago(k.lastUsed) : "Belum pernah digunakan") +
+    sub.textContent = (k.name ? "•••• " + k.last4 + " · " : "") + (k.lastUsed ? "Terakhir digunakan " + ago(k.lastUsed) : "Belum pernah digunakan") +
       ((k.status === "invalid" || k.status === "error") && k.error ? " · " + k.error : "");
     main.appendChild(sub);
     row.appendChild(main);
@@ -202,17 +203,21 @@ function renderKeys() {
       const b = document.createElement("button");
       b.textContent = txt; b.title = title; b.disabled = !!disabled; b.onclick = fn; btns.appendChild(b);
     };
-    mk("Uji", "Uji key ini", async () => {
-      say("keyMsg", "Menguji key …" + k.last4 + "...");
+    mk("Test", "Test key ini", async () => {
+      say("keyMsg", "Testing " + (k.name || "key …" + k.last4) + "...");
       if (await keyOp("testKey", { id: k.id })) {
         const n = geminiKeys.find((x) => x.id === k.id) || {};
         const [t, c] = statusOf(n);
-        say("keyMsg", "Key …" + k.last4 + ": " + t + (n.error ? " (" + n.error + ")" : "") + ".", c === "ok" ? "ok" : c === "wait" ? "" : "err");
+        say("keyMsg", (k.name || "Key …" + k.last4) + ": " + t + (n.error ? " (" + n.error + ")" : "") + ".", c === "ok" ? "ok" : c === "wait" ? "" : "err");
       }
     });
     mk("↑ Naik", "Naikkan", () => keyOp("moveKey", { id: k.id, dir: "up" }), i === 0);
     mk("↓ Turun", "Turunkan", () => keyOp("moveKey", { id: k.id, dir: "down" }), i === geminiKeys.length - 1);
-    mk("✕ Hapus", "Hapus", () => { if (confirm("Hapus key …" + k.last4 + "?")) keyOp("deleteKey", { id: k.id }); });
+    mk("✎ Nama", "Ganti nama key", () => {
+      const v = prompt("Nama untuk key …" + k.last4 + " (kosongkan untuk menghapus nama):", k.name || "");
+      if (v !== null) keyOp("renameKey", { id: k.id, name: v });
+    });
+    mk("✕ Hapus", "Hapus", () => { if (confirm("Hapus key " + (k.name ? k.name + " (…" + k.last4 + ")" : "…" + k.last4) + "?")) keyOp("deleteKey", { id: k.id }); });
     box.appendChild(row);
   });
   $("keyCount").textContent = "(" + geminiKeys.length + "/" + maxKeys + ")";
@@ -230,12 +235,13 @@ async function keyOp(name, extra) {
   try { const r = await op(name, extra); geminiKeys = r.keys; histCount = (r.history || []).length; renderKeys(); renderHistLink(); return true; }
   catch (e) { say("keyMsg", e.message, "err"); return false; }
 }
+$("keyName").addEventListener("keydown", (e) => { if (e.key === "Enter") $("keyInput").focus(); });
 $("keyInput").addEventListener("keydown", (e) => { if (e.key === "Enter") $("keyAddBtn").click(); });
 $("keyAddBtn").onclick = async () => {
   const v = $("keyInput").value.trim();
   if (!v) return;
   $("keyAddBtn").disabled = true; say("keyMsg", "Memeriksa key...");
-  if (await keyOp("addKey", { value: v })) { $("keyInput").value = ""; say("keyMsg", "Key ditambahkan.", "ok"); }
+  if (await keyOp("addKey", { value: v, name: $("keyName").value.trim() })) { $("keyInput").value = ""; $("keyName").value = ""; say("keyMsg", "Key ditambahkan.", "ok"); }
   $("keyAddBtn").disabled = false;
 };
 

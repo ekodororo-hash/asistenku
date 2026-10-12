@@ -258,7 +258,7 @@ async function listGeminiKeys(u) {
   const [list, st] = await Promise.all([loadKeyRecords(u), loadKeyStats(u)]);
   return list.map((k) => {
     const s = st[k.id] || {};
-    return { id: k.id, last4: k.last4, status: s.status || "unused", lastUsed: s.lastUsed || null, until: s.until || null, error: s.error || "" };
+    return { id: k.id, last4: k.last4, name: k.name || "", status: s.status || "unused", lastUsed: s.lastUsed || null, until: s.until || null, error: s.error || "" };
   });
 }
 
@@ -282,7 +282,7 @@ async function recordKeyUse(u, c, outcome) {
       }));
     }
     await redis("ZADD", key(u, "ghist"), now, JSON.stringify({
-      id: uid(), ts: now, k: c.id ? c.last4 : "server", src: outcome.src || "web", st: status, err: error,
+      id: uid(), ts: now, k: c.id ? c.last4 : "server", n: c.id ? (c.name || "") : "", src: outcome.src || "web", st: status, err: error,
     }));
     await redis("ZREMRANGEBYSCORE", key(u, "ghist"), "-inf", now - HIST_TTL); // buang yang lebih tua dari 1 hari
     await redis("ZREMRANGEBYRANK", key(u, "ghist"), 0, -(HIST_MAX + 1));      // sisakan 50 terbaru
@@ -311,7 +311,7 @@ async function testGeminiKey(u, id) {
   const rec = list.find((x) => x.id === id);
   if (!rec) throw new Error("Key tidak ditemukan.");
   const gate = await redis("SET", key(u, "gtest:" + id), "1", "NX", "EX", "5");
-  if (gate !== "OK") throw new Error("Tunggu beberapa detik sebelum menguji lagi.");
+  if (gate !== "OK") throw new Error("Tunggu beberapa detik sebelum test lagi.");
   const model = process.env.GEMINI_MODEL || "gemini-flash-latest";
   const r = await fetch(`${GEMINI_BASE}/models/${model}:generateContent`, {
     method: "POST",
@@ -319,7 +319,7 @@ async function testGeminiKey(u, id) {
     body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: "hi" }] }], generationConfig: { maxOutputTokens: 5 } }),
   });
   const data = await r.json().catch(() => ({}));
-  await recordKeyUse(u, { id, last4: rec.last4 }, { ok: r.ok, http: r.status, message: data?.error?.message, src: "uji" });
+  await recordKeyUse(u, { id, last4: rec.last4, name: rec.name }, { ok: r.ok, http: r.status, message: data?.error?.message, src: "uji" });
   if (r.status === 429) await redis("SET", key(u, "gcool:" + id), "1", "EX", String(COOLDOWN_SEC));
   return keyState(u);
 }
@@ -330,14 +330,25 @@ async function checkGeminiKey(k) {
   return false;
 }
 
-async function addGeminiKey(u, value) {
+const cleanName = (n) => String(n || "").replace(/\s+/g, " ").trim().slice(0, 40);
+
+async function addGeminiKey(u, value, name) {
   const k = String(value || "").trim();
   if (!/^[\w.\-]{20,200}$/.test(k)) throw new Error("Format API key tidak valid."); // key baru memakai titik (AQ.xxx), key lama AIza...
   const list = await loadKeyRecords(u);
   if (list.length >= MAX_KEYS) throw new Error(`Maksimal ${MAX_KEYS} API key.`);
   if (list.some((x) => decrypt(x.enc) === k)) throw new Error("API key ini sudah ada.");
   if (!(await checkGeminiKey(k))) throw new Error("API key ditolak Google. Cek lagi key-nya.");
-  list.push({ id: uid(), enc: encrypt(k), last4: k.slice(-4) });
+  list.push({ id: uid(), enc: encrypt(k), last4: k.slice(-4), name: cleanName(name) });
+  await saveKeyRecords(u, list);
+  return keyState(u);
+}
+
+async function renameGeminiKey(u, id, name) {
+  const list = await loadKeyRecords(u);
+  const r = list.find((x) => x.id === id);
+  if (!r) throw new Error("Key tidak ditemukan.");
+  r.name = cleanName(name);
   await saveKeyRecords(u, list);
   return keyState(u);
 }
@@ -364,7 +375,7 @@ async function moveGeminiKey(u, id, dir) {
 async function geminiCandidates(u) {
   const out = [];
   for (const r of await loadKeyRecords(u)) {
-    try { out.push({ id: r.id, last4: r.last4, key: decrypt(r.enc) }); } catch {}
+    try { out.push({ id: r.id, last4: r.last4, name: r.name || "", key: decrypt(r.enc) }); } catch {}
   }
   if (process.env.GEMINI_API_KEY) out.push({ id: null, key: process.env.GEMINI_API_KEY });
   return out;
@@ -809,7 +820,7 @@ ${COMMON}`;
 
 module.exports = {
   TZ, DAY, HOUR, HOURS, BTN,
-  uid, key, MAX_KEYS, getBot, saveBot, setupBot, removeBot, relinkBot, botStatus, botUsers, listGeminiKeys, keyState, getKeyHistory, clearKeyHistory, testGeminiKey, addGeminiKey, deleteGeminiKey, moveGeminiKey,
+  uid, key, MAX_KEYS, getBot, saveBot, setupBot, removeBot, relinkBot, botStatus, botUsers, listGeminiKeys, keyState, getKeyHistory, clearKeyHistory, testGeminiKey, addGeminiKey, renameGeminiKey, deleteGeminiKey, moveGeminiKey,
   redis, sendTelegram, downloadTelegramFile, gemini, geminiRaw, trimHist, appendModelToHist,
   fmtWib, fmtTime, fmtDateShort, wib, startOfDayWib, nextRepeat, rupiah,
   cfgOn, getLocation, setLocation, getWeather, getNews,
