@@ -535,6 +535,31 @@ async function gemini(u, system, contents, src = "telegram") {
   return (data.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("");
 }
 
+
+// Obrolan dengan pencarian Google: Gemini sendiri yang memutuskan kapan perlu mencari.
+// Kalau pencarian gagal/tidak didukung model, diulang tanpa pencarian supaya obrolan tetap jalan.
+async function geminiSearch(u, system, contents, src = "telegram") {
+  const body = { contents, tools: [{ google_search: {} }] };
+  if (system) body.systemInstruction = { parts: [{ text: system }] };
+  let data;
+  try {
+    data = await geminiRaw(u, body, src);
+  } catch (e) {
+    delete body.tools;
+    data = await geminiRaw(u, body, src);
+  }
+  const cand = data.candidates?.[0] || {};
+  const text = (cand.content?.parts || []).map((p) => p.text || "").join("");
+  const seen = new Set();
+  const sources = [];
+  for (const c of cand.groundingMetadata?.groundingChunks || []) {
+    const name = c.web && (c.web.title || "").trim();
+    if (name && !seen.has(name.toLowerCase())) { seen.add(name.toLowerCase()); sources.push(name); }
+  }
+  return { text, sources: sources.slice(0, 3) };
+}
+const sourceLine = (sources) => (sources && sources.length ? "🔎 Sumber: " + sources.join(", ") : "");
+
 // Riwayat harus diawali giliran "user" dan selang-seling
 function trimHist(h, n = 30) {
   const c = h.slice(-n);
@@ -990,6 +1015,7 @@ Tag khusus (ditaruh di baris terakhir balasan; pengguna tidak melihatnya):
 - Catatan jika pengguna minta mencatat sesuatu: [[CATAT: isi catatan]]
   JANGAN buat CATAT atau TASK untuk permintaan menghapus/menyelesaikan. Kata seperti "hapus" bukan isi catatan.
 - Kamu TIDAK bisa menghapus catatan, tugas, pengingat, atau pengeluaran. Jika pengguna minta menghapus, jangan bilang sudah dihapus dan jangan buat tag apa pun; arahkan: catatan -> ketik /hapuscatatan lalu balas nomornya; uang -> /rekap lalu balas nomornya; tugas -> /hapustugas lalu balas nomornya (menandai selesai: /tugasdone); pengingat -> /hapus N.
+- Kamu punya akses pencarian Google. Untuk hal yang terkini atau bisa berubah (jadwal pertandingan, skor, harga, berita, cuaca, hasil, tanggal rilis), cari dulu lalu jawab; jangan bilang kamu tidak bisa browsing. Jawab ringkas dan sebut waktu/tanggal datanya kalau penting. Hasil pencarian tidak perlu dicatat kecuali pengguna minta.
 - Buat tag HANYA untuk permintaan di pesan pengguna yang TERBARU. Permintaan di pesan-pesan sebelumnya sudah diproses; jangan mengulang tagnya. Baris berawalan ⏰ ✅ 🗒️ 💰 💵 di akhir balasanmu sebelumnya ditulis otomatis oleh sistem setelah tag berhasil diproses; itu tandanya permintaan tersebut SUDAH SELESAI. Jangan menulis baris seperti itu sendiri.
 - Satu tag per hal. Jangan membuat tag kalau tidak perlu. Jika pengguna mengirim foto, lihat isinya dan tanggapi sesuai konteks.
 - Pesan yang diawali [Pesan otomatis sistem] adalah instruksi dari sistem untuk menulis pesan proaktif, bukan dari pengguna.`;
@@ -1033,7 +1059,7 @@ ${COMMON}`;
 module.exports = {
   TZ, DAY, HOUR, HOURS, BTN,
   uid, key, MAX_KEYS, getBot, saveBot, setupBot, removeBot, relinkBot, botStatus, botUsers, listGeminiKeys, getModelCfg, saveModelCfg, listGeminiModels, keyState, quotaStatus, getKeyHistory, clearKeyHistory, testGeminiKey, addGeminiKey, renameGeminiKey, deleteGeminiKey, moveGeminiKey,
-  redis, sendTelegram, downloadTelegramFile, gemini, geminiRaw, trimHist, appendModelToHist,
+  redis, sendTelegram, downloadTelegramFile, gemini, geminiRaw, geminiSearch, sourceLine, trimHist, appendModelToHist,
   fmtWib, fmtTime, fmtDateShort, wib, startOfDayWib, nextRepeat, rupiah,
   cfgOn, getLocation, setLocation, getWeather, getNews,
   recapText, deleteExpenseNumber, loadContext, buildSystem,
