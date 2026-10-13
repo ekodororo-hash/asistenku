@@ -7,7 +7,7 @@ const {
   addNote, addExpense, addIncome, setSaldo, addOutsideMoney, fmtDateShort, mentionsAmount,
   sendTransfer, acceptTransfer, declineTransfer, handlePartnerIncome, answerDupMasuk,
   getMode, switchMode, takeCurhatExpiredNotice, getHist, saveHist, clearHist, loadCurhatContext, buildCurhatSystem, stripTags,
-  getFacts, addFacts, clearFacts,
+  getFacts, addFacts, clearFacts, getMochi, mochiChat, takeMochiEvents, mochiText,
 } = require("./_lib");
 const { getOwnerId, safeEq } = require("./_auth");
 
@@ -58,10 +58,10 @@ function withImage(contents, image, text) {
   return contents;
 }
 
-const TOGGLES = { "/pagi": "pagi", "/checkin": "checkin", "/rekapauto": "rekapauto", "/salin": "mirror" };
+const TOGGLES = { "/pagi": "pagi", "/checkin": "checkin", "/rekapauto": "rekapauto", "/salin": "mirror", "/mochiingat": "mochi" };
 
 // /atur: daftar pengaturan on/off dengan tombol toggle (callback_data cfg:<key>)
-const CFG_ORDER = ["pagi", "checkin", "rekapauto", "mirror"];
+const CFG_ORDER = ["pagi", "checkin", "rekapauto", "mirror", "mochi"];
 function cfgDesc() {
   const jam = (h) => String(h).padStart(2, "0") + ".00";
   return {
@@ -69,11 +69,12 @@ function cfgDesc() {
     checkin: `Check-in malam (${jam(HOURS.checkin)} WIB)`,
     rekapauto: `Rekap uang (Minggu ${jam(HOURS.recap)})`,
     mirror: "Salin obrolan web ke sini",
+    mochi: `Pengingat Mochi (${jam(HOURS.checkin - 1)} WIB)`,
   };
 }
 async function aturView(u) {
-  const [p, c, r, m, loc] = await Promise.all([cfgOn(u, "pagi"), cfgOn(u, "checkin"), cfgOn(u, "rekapauto"), cfgOn(u, "mirror"), getLocation(u)]);
-  const val = { pagi: p, checkin: c, rekapauto: r, mirror: m };
+  const [p, c, r, m, mo, loc] = await Promise.all([cfgOn(u, "pagi"), cfgOn(u, "checkin"), cfgOn(u, "rekapauto"), cfgOn(u, "mirror"), cfgOn(u, "mochi"), getLocation(u)]);
+  const val = { pagi: p, checkin: c, rekapauto: r, mirror: m, mochi: mo };
   const desc = cfgDesc();
   const s = (b) => (b ? "aktif" : "mati");
   const text =
@@ -121,6 +122,8 @@ const HELP_TEXT =
   "/cuaca → cuaca di kotamu\n" +
   "/lokasi → ganti kota, misal /lokasi Bandung\n" +
   "/berita → berita terbaru, misal /berita teknologi\n\n" +
+  "🐾 Mochi\n" +
+  "/mochi → lihat Mochi, misi hari ini, dan streak\n\n" +
   "🧠 Memori & pengaturan\n" +
   "/memori → lihat yang kuingat soal kamu\n" +
   "/lupakan → hapus memori\n" +
@@ -246,6 +249,10 @@ async function handleCommand(u, cmd, arg, say, ensureCb) {
 
     case "/help":
       await say(HELP_TEXT);
+      return;
+
+    case "/mochi":
+      await say(mochiText(await getMochi(u)));
       return;
 
     case "/curhat": {
@@ -456,6 +463,7 @@ async function handleCommand(u, cmd, arg, say, ensureCb) {
     case "/pagi":
     case "/checkin":
     case "/rekapauto":
+    case "/mochiingat":
     case "/salin": {
       const cfgKey = TOGGLES[cmd];
       const a = arg.toLowerCase();
@@ -608,7 +616,15 @@ module.exports = async (req, res) => {
   if (!bot.secret || !safeEq(sentSecret, bot.secret)) return res.status(401).end();
 
   const chatId = String(msg.chat.id);
-  const say = (t, extra) => sendTelegram(u, chatId, t, extra);
+  // Setelah membalas, kirim kabar Mochi (misi selesai, naik level, streak) kalau ada
+  const say = async (t, extra) => {
+    const r = await sendTelegram(u, chatId, t, extra);
+    try {
+      const ev = await takeMochiEvents(u);
+      if (ev.length) await sendTelegram(u, chatId, "🐾 Mochi\n" + ev.join("\n"));
+    } catch {}
+    return r;
+  };
 
   try {
     if (cq && !bot.chatId) return res.status(200).end();
@@ -654,7 +670,7 @@ module.exports = async (req, res) => {
         await tg(bot.token, "editMessageText", { chat_id: chatId, message_id: msg.message_id, text: result }); // tombol hilang, tidak bisa ditekan dua kali
         return res.status(200).end();
       }
-      const cm = String(cq.data || "").match(/^cfg:(pagi|checkin|rekapauto|mirror)$/);
+      const cm = String(cq.data || "").match(/^cfg:(pagi|checkin|rekapauto|mirror|mochi)$/);
       if (cm) { // toggle di /atur: ganti nilai, lalu edit pesan yang sama (tombol tetap ada, bisa dipencet lagi)
         const cur = await cfgOn(u, cm[1]);
         await redis("HSET", key(u, "cfg"), cm[1], cur ? "off" : "on");
@@ -793,6 +809,7 @@ module.exports = async (req, res) => {
 
     // Mode aktif menentukan: riwayat mana yang dipakai, prompt, dan apakah tag/memori diproses
     const mode = await getMode(u);
+    await mochiChat(u, mode); // hitung sebagai misi "cerita harimu"
     if (mode !== "curhat") { const n = await takeCurhatExpiredNotice(u); if (n) await say(n); } // curhat kedaluwarsa sendiri
 
     // Jawaban "ya / tidak" untuk pertanyaan "mau tambah lagi sebagai pemasukan terpisah?" (hanya di mode asisten)

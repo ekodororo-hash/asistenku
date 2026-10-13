@@ -15,6 +15,7 @@ const {
   getReminders, addReminder, deleteReminderById,
   linkStatus, makeLinkCode, useLinkCode, unlinkPartner, incomingTransfers, acceptTransfer, declineTransfer,
   getPendingDelete, resolvePendingDelete,
+  getMochi, takeMochiEvents, mochiView,
 } = require("./_lib");
 
 // Riwayat -> bentuk yang dipakai web
@@ -39,6 +40,7 @@ module.exports = async (req, res) => {
         incomingTransfers(u).catch(() => []), light ? null : linkStatus(u).catch(() => null),
         getPendingDelete(u).catch(() => null),
       ]);
+      const mochi = mochiView(await getMochi(u).catch(() => null) || { xp: 0, en: 60, streak: 0, best: 0, frz: 1, day: new Date().toISOString().slice(0, 10), m: {}, week: {}, done: false, ev: [] });
       const botLinked = light ? !!(rawBot && rawBot.chatId) : !!(bot && bot.linked);
       const messages = toMessages(hist); // riwayat milik mode yang sedang aktif
       return res.status(200).json({
@@ -47,7 +49,7 @@ module.exports = async (req, res) => {
         expenses: expenses.slice(-100).reverse(),
         incomes: incomes.slice(-100).reverse(),
         money,
-        profile, mode, messages, reminders, botLinked, xferIn, pendingDelete,
+        profile, mode, messages, reminders, botLinked, xferIn, pendingDelete, mochi,
         ...(light ? {} : { link, geminiKeys: kstate.keys, keyHistoryCount: kstate.history.length, modelCfg: mcfg, maxKeys: MAX_KEYS, globalKey: !!process.env.GEMINI_API_KEY, bot }),
       });
     } catch (e) {
@@ -123,7 +125,9 @@ module.exports = async (req, res) => {
         }
         default: return res.status(400).json({ error: "op tidak dikenal: " + op });
       }
-      return res.status(200).json({ ok: true, result });
+      let mochi = null, mev = [];
+      try { mev = await takeMochiEvents(u); mochi = mochiView(await getMochi(u)); } catch {}
+      return res.status(200).json({ ok: true, result, mochi, mev });
     } catch (e) {
       return res.status(e.status || 500).json({ error: e.status ? e.message : "Server error: " + e.message });
     }

@@ -8,7 +8,7 @@ const {
   getTasks, addTask, getNotes, addNote, getExpenses, addExpense,
   getReminders, addReminder, parseRepeat, repeatLabel, rescheduleReminderNumber, getBot, sendTelegram, cfgOn, quotaStatus, setSaldo, addOutsideMoney, moneyContext, parseWib, addIncome, getIncomes, moneySummary,
   mentionsAmount, partnerContext, incomingTransfers, sendTransfer, handlePartnerIncome, answerDupMasuk,
-  getFacts, addFacts, planDeletes, getPendingDelete,
+  getFacts, addFacts, planDeletes, getPendingDelete, mochiChat, getMochi, takeMochiEvents, mochiView,
 } = require("./_lib");
 
 const { requireUser } = require("./_auth");
@@ -257,8 +257,12 @@ module.exports = async (req, res) => {
   const wantStream = !!(req.body || {}).stream;
   const out = makeOut(res);
   const onText = wantStream ? makeStreamer(out.emit) : undefined;
-  const finish = (payload) => {
+  const finish = async (payload) => {
     if (voice) payload = { ...payload, transcript: text };
+    try { // kabar Mochi (misi selesai, naik level) ikut dikirim ke web
+      const mev = await takeMochiEvents(u);
+      payload = { ...payload, mochi: mochiView(await getMochi(u)), mev };
+    } catch {}
     if (!wantStream) return res.status(200).json(payload);
     out.emit({ t: "done", ...payload });
     return res.end();
@@ -281,6 +285,7 @@ module.exports = async (req, res) => {
     }
     const histText = image ? `[Foto] ${text}`.trim() : text;
     const mode = await getMode(u);
+    await mochiChat(u, mode); // hitung sebagai misi "cerita harimu"
 
     // ---- Mode curhat: riwayat sendiri, tanpa tag, tanpa pencarian, tanpa salinan ke Telegram ----
     if (mode === "curhat") {

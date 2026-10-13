@@ -344,6 +344,44 @@
   .tabs .bdg { position:absolute; top:-6px; right:-3px; min-width:17px; height:17px; padding:0 4px; border-radius:999px; background:var(--accent); color:#fff; font-size:10px; font-weight:700; line-height:17px; text-align:center; pointer-events:none; box-shadow:0 0 0 2px var(--card); }
   .tabs button.on .bdg { background:#fff; color:var(--accent); }
   .tabs .bdg.dot { min-width:10px; width:10px; height:10px; padding:0; top:-3px; right:0; background:#d33; }
+  /* Mochi: peliharaan, misi harian, streak */
+  .tabs button.mochitab { grid-column:1 / -1; display:flex; align-items:center; justify-content:center; gap:8px; padding:9px 8px; font-size:13px; font-weight:600; }
+  @media (max-width:480px) { #tasksToggle .ptxt { display:none; } #tasksToggle svg { margin-right:0 !important; } }
+  .mochichip { display:inline-flex; align-items:center; gap:4px; padding:2px 8px 2px 4px; border-radius:999px; min-width:0; }
+  .mochichip svg { width:26px; height:26px; flex:none; display:block; }
+  .mochichip span { font-size:13px; font-weight:700; font-variant-numeric:tabular-nums; color:var(--muted); }
+  .mochichip.hot span { color:#d9822b; }
+  .mo-stage { position:relative; overflow:hidden; display:flex; flex-direction:column; align-items:center; gap:6px; padding:16px 12px 14px; margin-bottom:12px; border:1px solid var(--line); border-radius:16px; background:linear-gradient(180deg, color-mix(in srgb, var(--accent) 14%, var(--card)), var(--card)); }
+  .mo-pet { width:170px; max-width:62%; height:auto; cursor:pointer; touch-action:manipulation; animation:moBob 2.6s ease-in-out infinite; transform-origin:50% 100%; }
+  .mo-pet.sad { animation-duration:4.5s; }
+  .mo-pet.jump { animation:moJump .6s ease-out; }
+  @keyframes moBob { 0%,100% { transform:translateY(0) scale(1,1); } 50% { transform:translateY(-6px) scale(1.02,.98); } }
+  @keyframes moJump { 0% { transform:translateY(0); } 35% { transform:translateY(-30px) scale(.95,1.06); } 70% { transform:translateY(0) scale(1.06,.94); } 100% { transform:translateY(0); } }
+  .mo-name { font-size:18px; font-weight:700; display:flex; gap:8px; align-items:baseline; }
+  .mo-lvl { font-size:12px; font-weight:600; background:var(--accent); color:#fff; border-radius:999px; padding:1px 9px; }
+  .mo-say { font-size:13px; color:var(--muted); min-height:18px; text-align:center; }
+  .mo-bars { display:grid; gap:9px; width:100%; margin-top:4px; }
+  .mo-bar label { display:flex; justify-content:space-between; font-size:12px; color:var(--muted); margin-bottom:3px; }
+  .mo-track { height:9px; border-radius:999px; background:var(--line); overflow:hidden; }
+  .mo-fill { height:100%; border-radius:999px; transition:width .5s; }
+  .mo-fill.xp { background:var(--accent); } .mo-fill.en { background:#2a9d4b; }
+  .mo-pop { position:absolute; font-size:22px; font-weight:800; pointer-events:none; color:#d33; animation:moPop 1s ease-out forwards; }
+  @keyframes moPop { 0% { opacity:0; transform:translateY(0) scale(.6); } 20% { opacity:1; } 100% { opacity:0; transform:translateY(-70px) scale(1.2); } }
+  .mo-h { font-size:15px; font-weight:700; margin:14px 0 6px; }
+  .mo-mission { display:grid; grid-template-columns:1fr auto; gap:2px 10px; align-items:center; padding:9px 0; border-top:1px solid var(--line); }
+  .mo-mission:first-of-type { border-top:0; }
+  .mo-mission .t { font-size:14px; min-width:0; word-break:break-word; }
+  .mo-mission .p { font-size:12px; color:var(--muted); }
+  .mo-mission .x { font-size:12px; font-weight:700; color:var(--accent); white-space:nowrap; }
+  .mo-mission.done .t { text-decoration:line-through; color:var(--muted); }
+  .mo-mission.done .x { color:#2a9d4b; }
+  .mo-streak { display:flex; align-items:center; gap:14px; margin-top:4px; }
+  .mo-streak .n { font-size:34px; font-weight:800; line-height:1; color:#d9822b; font-variant-numeric:tabular-nums; }
+  .mo-week { display:flex; gap:6px; margin-top:10px; }
+  .mo-dot { flex:1; max-width:34px; aspect-ratio:1; border-radius:8px; background:var(--line); display:grid; place-items:center; font-size:11px; color:var(--muted); }
+  .mo-dot.on { background:#2a9d4b; color:#fff; } .mo-dot.frz { background:var(--accent); color:#fff; } .mo-dot.miss { background:#d33; color:#fff; }
+  .mo-dot.today { outline:2px solid var(--accent); outline-offset:1px; }
+  @media (prefers-reduced-motion: reduce) { .mo-pet, .mo-pet.jump { animation:none; } }
   /* toast "Dihapus · Urungkan" */
   #toasts { position:fixed; left:50%; transform:translateX(-50%); bottom:calc(84px + env(safe-area-inset-bottom)); z-index:70; display:flex; flex-direction:column; gap:8px; width:min(92vw,380px); pointer-events:none; }
   .toast { pointer-events:auto; display:flex; align-items:center; gap:10px; padding:8px 8px 8px 14px; border-radius:12px; background:var(--ink); color:var(--bg); font-size:14px; box-shadow:0 4px 16px #0004; animation:paneIn .18s ease; }
@@ -411,9 +449,10 @@
 </dialog>
 <div id="app">
 <header>
-  <button id="tasksToggle" title="Panel"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="vertical-align:-3px;margin-right:6px"><path d="M4 6h16M4 12h16M4 18h16"/></svg>Panel</button>
+  <button id="tasksToggle" title="Panel"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="vertical-align:-3px;margin-right:6px"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span class="ptxt">Panel</span></button>
   <h1 id="title">Asisten Pribadi</h1>
   <div class="hbtns">
+    <button id="mochiChip" class="mochichip" type="button" title="Mochi" aria-label="Buka Mochi"></button>
     <button id="modeBtn" title="Ganti mode">Curhat</button>
     <button id="clearBtn" title="Mulai obrolan baru">Chat baru</button>
     <a href="/settings.html" class="btn" title="Pengaturan" aria-label="Pengaturan"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg><span class="lbl" style="margin-left:6px">Pengaturan</span></a>
@@ -459,11 +498,16 @@
     </div>
 
     <div class="tabs">
+      <button data-tab="mochi" class="mochitab">Mochi</button>
       <button data-tab="tasks">Tugas</button>
       <button data-tab="remind">Pengingat</button>
       <button data-tab="notes">Catatan</button>
       <button data-tab="money">Uang</button>
       <button data-tab="info">Info</button>
+    </div>
+
+    <div class="pane" id="pane-mochi">
+      <div id="mochiBox"></div>
     </div>
 
     <div class="pane" id="pane-tasks">
@@ -561,6 +605,7 @@ async function api(path, opts = {}) {
   }
   const d = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(d.error || "Gagal memuat");
+  if (d && d.mochi) mochiUpdate(d.mochi);
   return d;
 }
 
@@ -1570,6 +1615,7 @@ async function send(text, media) {
   $("chat").scrollTop = $("chat").scrollHeight;
   try {
     const d = await chatStream(text, wait, extra, onTr);
+    if (d.mochi) mochiUpdate(d.mochi);
     if (audio && !heard) { if (d.transcript) onTr(d.transcript); else setBubble(ub, "(suara kurang jelas)", sentAt); }
     const shown = [d.reply, ...(d.added || [])].filter(Boolean).join("\n\n") || "(tidak ada jawaban)";
     const gotAt = Date.now();
@@ -1916,6 +1962,156 @@ $("clearBtn").onclick = async () => {
     messages = []; renderChat();
   } catch (e) { alert(e.message); }
 };
+
+/* ---------- Mochi: peliharaan, misi harian, streak (data dari server, sama dengan Telegram) ---------- */
+let mochi = null, mochiMuted = load("mochiMute", false), mochiAC = null, mochiTapN = 0, mochiTapT = 0;
+const moEsc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const moMood = (en) => (en >= 60 ? "happy" : en >= 30 ? "ok" : "sad");
+
+// Efek suara disintesis dengan Web Audio (tanpa file). Baru bunyi setelah pengguna menyentuh halaman.
+function moCtx() {
+  try {
+    if (!mochiAC) mochiAC = new (window.AudioContext || window.webkitAudioContext)();
+    if (mochiAC.state === "suspended") mochiAC.resume();
+  } catch { return null; }
+  return mochiAC;
+}
+function moTone(f, t0, d, type, v, f2) {
+  const a = mochiMuted ? null : moCtx();
+  if (!a || a.state !== "running") return;
+  try {
+    const o = a.createOscillator(), g = a.createGain(), t = a.currentTime + t0;
+    o.type = type || "sine"; o.frequency.setValueAtTime(f, t);
+    if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + d);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v || 0.15, t + 0.015); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+    o.connect(g); g.connect(a.destination); o.start(t); o.stop(t + d + 0.03);
+  } catch {}
+}
+const MO_SFX = {
+  tap(m) { if (m === "sad") moTone(300, 0, 0.28, "sine", 0.18, 170); else moTone(380, 0, 0.2, "sine", 0.2, m === "happy" ? 940 : 650); },
+  ding() { moTone(880, 0, 0.25, "triangle", 0.14); moTone(1320, 0.07, 0.3, "sine", 0.08); },
+  done() { [523, 659, 784, 1047].forEach((f, i) => moTone(f, i * 0.08, 0.28, "triangle", 0.14)); },
+  all() { [523, 659, 784, 1047, 1319, 1568].forEach((f, i) => moTone(f, i * 0.09, 0.45, "triangle", 0.13)); moTone(262, 0, 0.9, "sine", 0.1); },
+  level() { [784, 988, 1175, 1568].forEach((f, i) => moTone(f, i * 0.11, 0.4, "square", 0.07)); },
+  save() { moTone(660, 0, 0.2, "sine", 0.15); moTone(880, 0.13, 0.4, "sine", 0.15); },
+  lose() { [392, 330, 262].forEach((f, i) => moTone(f, i * 0.2, 0.4, "sawtooth", 0.07)); },
+};
+
+function moPetSVG(mood) {
+  const eyes = mood === "sad"
+    ? '<path d="M56 88q10 8 20 0M124 88q10 8 20 0" stroke="#3a2210" stroke-width="5" fill="none" stroke-linecap="round"/>'
+    : '<ellipse cx="68" cy="88" rx="8" ry="10" fill="#3a2210"/><ellipse cx="132" cy="88" rx="8" ry="10" fill="#3a2210"/><circle cx="71" cy="84" r="3" fill="#fff"/><circle cx="135" cy="84" r="3" fill="#fff"/>';
+  const mouth = mood === "happy" ? "M82 112q18 22 36 0" : mood === "ok" ? "M86 120h28" : "M84 126q16-16 32 0";
+  return '<ellipse cx="100" cy="176" rx="62" ry="9" fill="#000" opacity=".12"/>' +
+    '<path d="M100 18c-46 0-76 34-76 80 0 40 24 70 76 70s76-30 76-70c0-46-30-80-76-80z" fill="#ffb86b"/>' +
+    '<path d="M44 120c10 30 34 42 56 42s46-12 56-42c-12 18-34 26-56 26s-44-8-56-26z" fill="#e48a2f" opacity=".28"/>' +
+    '<path d="M62 30l-6-22 24 14zM138 30l6-22-24 14z" fill="#e48a2f"/>' +
+    '<ellipse cx="62" cy="116" rx="12" ry="8" fill="#ff7b8f" opacity=".5"/><ellipse cx="138" cy="116" rx="12" ry="8" fill="#ff7b8f" opacity=".5"/>' +
+    '<g class="pe">' + eyes + '</g><path class="pm" d="' + mouth + '" fill="none" stroke="#3a2210" stroke-width="5" stroke-linecap="round"/>';
+}
+const MO_SAY = { happy: "Mochi senang, hari ini lancar.", ok: "Mochi mulai lapar. Ayo selesaikan misi.", sad: "Mochi lemas. Kasih makan lewat misi ya." };
+const MO_TAP = {
+  happy: ["Hehe, geli!", "Hore! Ketuk lagi dong.", "Mochi sayang kamu.", "Ayo selesaikan misi, aku semangat!"],
+  ok: ["Ehh, aku lapar nih...", "Boleh minta misi dulu?", "Hmm, ketuk terus juga nggak kenyang."],
+  sad: ["Hiks... lapar.", "Lemes... kasih misi dong.", "Jangan tinggalin Mochi."],
+};
+
+function renderMochi() {
+  const m = mochi;
+  if (!m) return;
+  const mood = moMood(m.en);
+  const tab = document.querySelector('.tabs button[data-tab="mochi"]');
+  if (tab) tab.textContent = "Mochi · Lv " + m.level + " · Streak " + m.streak;
+  const chip = $("mochiChip");
+  if (chip) {
+    chip.innerHTML = '<svg class="mo-svg" viewBox="14 8 172 172" aria-hidden="true">' + moPetSVG(mood) + "</svg><span>" + m.streak + "</span>";
+    chip.classList.toggle("hot", m.streak > 0);
+    chip.title = "Mochi · Lv " + m.level + " · Streak " + m.streak + " hari";
+  }
+  const box = $("mochiBox");
+  if (!box) return;
+  const dots = m.week.map((d) => '<div class="mo-dot ' + (d.st || "") + (d.today ? " today" : "") + '" title="' + d.d + '">' + (d.st === "on" ? "✓" : d.st === "frz" ? "❄" : d.st === "miss" ? "×" : d.d[0]) + "</div>").join("");
+  const ms = m.missions.map((x) => '<div class="mo-mission ' + (x.n >= x.need ? "done" : "") + '"><div><div class="t">' + moEsc(x.text) + '</div><div class="p">' + x.n + " / " + x.need + '</div></div><div class="x">' + (x.n >= x.need ? "Selesai" : "+" + x.xp + " XP") + "</div></div>").join("");
+  box.innerHTML =
+    '<div class="mo-stage"><svg id="moPet" class="mo-svg mo-pet ' + (mood === "sad" ? "sad" : "") + '" viewBox="0 0 200 190" role="img" aria-label="Mochi, peliharaanmu">' + moPetSVG(mood) + "</svg>" +
+    '<div class="mo-name"><span>Mochi</span><span class="mo-lvl">Lv ' + m.level + '</span></div><div class="mo-say" id="moSay">' + MO_SAY[mood] + "</div>" +
+    '<div class="mo-bars"><div class="mo-bar"><label><span>Kenyang</span><span>' + m.en + '%</span></label><div class="mo-track"><div class="mo-fill en" style="width:' + m.en + '%"></div></div></div>' +
+    '<div class="mo-bar"><label><span>XP</span><span>' + m.cur + " / " + m.lvlSize + '</span></label><div class="mo-track"><div class="mo-fill xp" style="width:' + (m.cur / m.lvlSize * 100) + '%"></div></div></div></div></div>' +
+    '<div class="mo-h">Misi hari ini</div>' + ms +
+    '<div class="mo-h">Streak</div><div class="mo-streak"><div><div class="n">' + m.streak + '</div><div class="muted">hari beruntun</div></div>' +
+    '<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:14px">Jatah libur: ' + m.frz + '</div><div class="muted" style="font-size:12px">Dipakai otomatis kalau satu hari terlewat, supaya streak tidak putus. Terbaik: ' + m.best + ' hari.</div></div></div>' +
+    '<div class="mo-week">' + dots + "</div>" +
+    '<p class="muted" style="margin:14px 0 8px;font-size:12px">Misi terisi otomatis dari tugas, catatan uang, dan obrolan, baik dari web maupun Telegram. Ketik /mochi di Telegram untuk melihatnya di sana.</p>' +
+    '<button type="button" id="moSnd">' + (mochiMuted ? "Suara: mati" : "Suara: nyala") + "</button>";
+  $("moPet").addEventListener("click", moTap);
+  $("moSnd").onclick = () => { mochiMuted = !mochiMuted; save("mochiMute", mochiMuted); $("moSnd").textContent = mochiMuted ? "Suara: mati" : "Suara: nyala"; if (!mochiMuted) { moCtx(); MO_SFX.ding(); } };
+}
+
+function moToast(msg) {
+  const t = el("div", "toast"), s = el("span", "", msg);
+  t.appendChild(s); $("toasts").appendChild(t);
+  setTimeout(() => t.remove(), 2800);
+}
+function moJump() {
+  const p = $("moPet");
+  if (!p) return;
+  p.classList.remove("jump"); void p.getBoundingClientRect(); p.classList.add("jump");
+  p.addEventListener("animationend", () => p.classList.remove("jump"), { once: true });
+}
+// Dipanggil tiap respons server berisi data Mochi. Suara dan pesan diturunkan dari selisih keadaan,
+// jadi perubahan dari Telegram (lewat penyegaran berkala) juga terasa di web.
+function mochiUpdate(m) {
+  if (!m) return;
+  const old = mochi;
+  mochi = m;
+  renderMochi();
+  if (!old) return;
+  if (m.day === old.day) {
+    const gained = m.missions.filter((x, i) => old.missions[i] && x.n > old.missions[i].n);
+    if (m.level > old.level) { MO_SFX.level(); moToast("Naik level! Mochi sekarang level " + m.level); moJump(); }
+    else if (m.done && !old.done) { MO_SFX.all(); moToast("Semua misi selesai. Streak " + m.streak + " hari"); moJump(); }
+    else if (gained.length) {
+      const fin = gained.find((x) => x.n >= x.need);
+      if (fin) { MO_SFX.done(); moToast("Misi selesai: " + fin.text); } else { MO_SFX.ding(); moToast("Progres misi bertambah"); }
+      moJump();
+    }
+  } else if (m.streak < old.streak) { MO_SFX.lose(); moToast("Streak putus. Mulai lagi hari ini."); }
+  else if (m.frz < old.frz) { MO_SFX.save(); moToast("Jatah libur dipakai. Streak aman."); }
+}
+function moTap(e) {
+  const mood = moMood(mochi.en);
+  mochiTapN++;
+  moJump(); MO_SFX.tap(mood);
+  const svg = $("moPet");
+  const eyes = svg.querySelector(".pe"), mouth = svg.querySelector(".pm");
+  eyes.innerHTML = '<path d="M56 90q12-14 24 0M120 90q12-14 24 0" stroke="#3a2210" stroke-width="5" fill="none" stroke-linecap="round"/>';
+  if (mood !== "sad") mouth.setAttribute("d", "M80 108q20 28 40 0");
+  const l = MO_TAP[mood];
+  $("moSay").textContent = mochiTapN >= 6 && mood === "happy" ? "Sudah ah, geli banget!" : l[Math.floor(Math.random() * l.length)];
+  if (mochiTapN >= 6) mochiTapN = 0;
+  const stage = svg.parentElement, r = stage.getBoundingClientRect();
+  const s = el("span", "mo-pop", mood === "sad" ? "..." : "♥");
+  s.style.left = (e.clientX - r.left - 8) + "px"; s.style.top = (e.clientY - r.top - 16) + "px";
+  stage.appendChild(s); setTimeout(() => s.remove(), 1000);
+  clearTimeout(mochiTapT);
+  mochiTapT = setTimeout(renderMochi, 900);
+}
+// Mata dan mulut Mochi mengikuti kursor / titik sentuh
+function moLook(x, y) {
+  document.querySelectorAll(".mo-svg").forEach((svg) => {
+    const r = svg.getBoundingClientRect();
+    if (!r.width) return;
+    const cx = r.left + r.width * 0.5, cy = r.top + r.height * 0.46;
+    let dx = x - cx, dy = y - cy; const d = Math.hypot(dx, dy) || 1;
+    const k = Math.min(1, d / 160); dx = dx / d * k; dy = dy / d * k;
+    const eyes = svg.querySelector(".pe"), mouth = svg.querySelector(".pm");
+    if (eyes) eyes.setAttribute("transform", "translate(" + (dx * 9).toFixed(1) + " " + (dy * 6).toFixed(1) + ")");
+    if (mouth) mouth.setAttribute("transform", "translate(" + (dx * 3).toFixed(1) + " " + (dy * 2).toFixed(1) + ")");
+  });
+}
+window.addEventListener("pointermove", (e) => moLook(e.clientX, e.clientY), { passive: true });
+window.addEventListener("pointerdown", (e) => { moLook(e.clientX, e.clientY); moCtx(); }, { passive: true });
+$("mochiChip").onclick = () => { toggleSide(true); showTab("mochi"); };
 
 /* ---------- Boot: cek PIN lalu muat semua data dari server ---------- */
 async function loadState() {

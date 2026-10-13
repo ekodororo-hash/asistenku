@@ -3,7 +3,7 @@
 const {
   DAY, HOURS, redis, key, getBot, botUsers, sendTelegram, gemini: geminiBase, appendModelToHist,
   fmtWib, fmtTime, fmtDue, wib, startOfDayWib, nextRepeat, repeatLabel, getTasks,
-  cfgOn, getWeather, recapText, loadContext, buildSystem, loadCurhatContext, buildCurhatSystem, getMode,
+  cfgOn, getMochi, mochiText, getWeather, recapText, loadContext, buildSystem, loadCurhatContext, buildCurhatSystem, getMode,
 } = require("./_lib");
 
 const gemini = (u, system, contents) => geminiBase(u, system, contents, "otomatis"); // riwayat key menandai sumbernya
@@ -156,6 +156,20 @@ async function weeklyRecap(u, chatId) {
   return "terkirim";
 }
 
+// ---- Pengingat Mochi: sore, kalau misi hari ini belum selesai ----
+async function mochiNudge(u, chatId) {
+  const w = wib();
+  if (!inWindow(w.hour, HOURS.checkin - 1, 1)) return "skip";
+  if (!(await cfgOn(u, "mochi"))) return "off";
+  const s = await getMochi(u); // sekaligus mengejar pergantian hari
+  if (s.done) return "selesai";
+  if (!(await once(key(u, `sent:mochi:${w.dateKey}`), 2 * DAY / 1000))) return "done";
+  const risk = s.streak > 0 ? `\n🔥 Streak ${s.streak} hari bisa putus kalau hari ini terlewat${s.frz > 0 ? " (ada " + s.frz + " jatah libur)" : ""}.` : "";
+  const ok = await sendTelegram(u, chatId, "🐾 Mochi menunggu kamu.\n\n" + mochiText(s).split("\n\n")[1] + risk);
+  if (!ok) { await redis("DEL", key(u, `sent:mochi:${w.dateKey}`)); return "gagal kirim"; }
+  return "terkirim";
+}
+
 async function guarded(out, name, fn) {
   try { out[name] = await fn(); } catch (e) { out[name] = "error: " + e.message; }
 }
@@ -175,6 +189,7 @@ module.exports = async (req, res) => {
     await guarded(r, "pagi", () => morning(u, bot.chatId));
     await guarded(r, "checkin", () => checkin(u, bot.chatId));
     await guarded(r, "rekap", () => weeklyRecap(u, bot.chatId));
+    await guarded(r, "mochi", () => mochiNudge(u, bot.chatId));
   }
   return res.status(200).json(out);
 };

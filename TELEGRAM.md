@@ -56,7 +56,8 @@ Cron ini mengirim pengingat, ringkasan pagi, check-in malam, dan rekap mingguan 
 | Berita | tombol Berita atau `/berita topik` |
 | Curhat | tombol Mode Curhat atau `/curhat`; keluar dengan Mode Asisten atau `/asisten` (ditanya dulu lewat tombol di bawah pesan: Hapus & keluar / Simpan dulu / Tetap curhat). Lihat bagian Mode curhat di bawah |
 | Ingatan | `/memori` melihat, `/lupakan` menghapus, `/reset` hapus riwayat obrolan mode yang sedang aktif (asisten atau curhat, tidak keduanya) |
-| Otomatis | `/atur` melihat status; `/pagi`, `/checkin`, `/rekapauto`, `/salin` diikuti `on` atau `off` |
+| Mochi | `/mochi` melihat peliharaan, misi hari ini, dan streak. Pengingat sore: `/mochiingat on` atau `off` |
+| Otomatis | `/atur` melihat status; `/pagi`, `/checkin`, `/rekapauto`, `/salin`, `/mochiingat` diikuti `on` atau `off` |
 | Salin obrolan web | Pesan dan balasan dari web ikut dikirim ke Telegram (bawaan aktif). Matikan: `/salin off` |
 
 ## Catatan
