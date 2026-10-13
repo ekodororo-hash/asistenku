@@ -1092,14 +1092,14 @@ async function chatStream(text, bubble, extra, onTranscript) {
     timer = 0;
     if (document.hidden) shownN = acc.length; // tab di latar: timer diperlambat browser, tampilkan langsung
     else {
-      shownN = Math.min(acc.length, shownN + Math.max(2, Math.ceil((acc.length - shownN) / 12)));
+      shownN = Math.min(acc.length, shownN + Math.max(1, Math.ceil((acc.length - shownN) / 16)));
       if (shownN < acc.length && /[\uD800-\uDBFF]/.test(acc[shownN - 1] || "")) shownN++; // jangan potong emoji
     }
     paint();
-    if (shownN < acc.length) timer = setTimeout(tick, 16);
+    if (shownN < acc.length) timer = setTimeout(tick, 28);
     else if (wake) { wake(); wake = null; }
   };
-  const kick = () => { if (!timer && shownN < acc.length) timer = setTimeout(tick, 16); };
+  const kick = () => { if (!timer && shownN < acc.length) timer = setTimeout(tick, 28); };
   const drain = () => (shownN >= acc.length ? Promise.resolve() : new Promise((res) => { wake = res; kick(); }));
   bubble.classList.add("streaming");
   const handle = (line) => {
