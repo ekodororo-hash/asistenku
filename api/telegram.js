@@ -7,7 +7,7 @@ const {
   addNote, addExpense, addIncome, setSaldo, addOutsideMoney, fmtDateShort, mentionsAmount,
   sendTransfer, acceptTransfer, declineTransfer, handlePartnerIncome, answerDupMasuk,
   getMode, switchMode, takeCurhatExpiredNotice, getHist, saveHist, clearHist, loadCurhatContext, buildCurhatSystem, stripTags,
-  getFacts, addFacts, clearFacts, getMochi, mochiChat, takeMochiEvents, mochiText,
+  getFacts, addFacts, clearFacts, getMochi, mochiRename, mochiChat, takeMochiEvents, mochiText,
 } = require("./_lib");
 const { getOwnerId, safeEq } = require("./_auth");
 
@@ -123,7 +123,8 @@ const HELP_TEXT =
   "/lokasi → ganti kota, misal /lokasi Bandung\n" +
   "/berita → berita terbaru, misal /berita teknologi\n\n" +
   "🐾 Mochi\n" +
-  "/mochi → lihat Mochi, misi hari ini, dan streak\n\n" +
+  "/mochi → lihat peliharaanmu, misi hari ini, dan streak\n" +
+  "/namamochi → ganti nama, misal /namamochi Pipo\n\n" +
   "🧠 Memori & pengaturan\n" +
   "/memori → lihat yang kuingat soal kamu\n" +
   "/lupakan → hapus memori\n" +
@@ -254,6 +255,12 @@ async function handleCommand(u, cmd, arg, say, ensureCb) {
     case "/mochi":
       await say(mochiText(await getMochi(u)));
       return;
+
+    case "/namamochi": {
+      if (!arg) { await say("Nama peliharaanmu sekarang: " + (await getMochi(u)).name + "\nGanti dengan /namamochi <nama baru>, misal /namamochi Pipo. Maksimal 16 huruf."); return; }
+      await say("✅ Nama peliharaanmu sekarang " + (await mochiRename(u, arg)) + ".");
+      return;
+    }
 
     case "/curhat": {
       const r = await switchMode(u, "curhat");
@@ -621,7 +628,7 @@ module.exports = async (req, res) => {
     const r = await sendTelegram(u, chatId, t, extra);
     try {
       const ev = await takeMochiEvents(u);
-      if (ev.length) await sendTelegram(u, chatId, "🐾 Mochi\n" + ev.join("\n"));
+      if (ev.length) await sendTelegram(u, chatId, "🐾 " + (await getMochi(u)).name + "\n" + ev.join("\n"));
     } catch {}
     return r;
   };

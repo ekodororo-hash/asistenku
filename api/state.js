@@ -15,7 +15,7 @@ const {
   getReminders, addReminder, deleteReminderById,
   linkStatus, makeLinkCode, useLinkCode, unlinkPartner, incomingTransfers, acceptTransfer, declineTransfer,
   getPendingDelete, resolvePendingDelete,
-  getMochi, takeMochiEvents, mochiView,
+  getMochi, mochiRename, takeMochiEvents, mochiView,
 } = require("./_lib");
 
 // Riwayat -> bentuk yang dipakai web
@@ -110,6 +110,7 @@ module.exports = async (req, res) => {
           result = r;
           break;
         }
+        case "renameMochi": result = { name: await mochiRename(u, p.name) }; break;
         case "removeBot": result = await removeBot(u); break;
         case "relinkBot": result = await relinkBot(u); break;
         case "setMode": {

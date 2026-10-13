@@ -1862,7 +1862,7 @@ const MOCHI_MISSIONS = [
 const mochiDayDiff = (a, b) => Math.round((Date.parse(b + "T00:00:00Z") - Date.parse(a + "T00:00:00Z")) / DAY);
 const mochiAddDays = (k, n) => new Date(Date.parse(k + "T00:00:00Z") + n * DAY).toISOString().slice(0, 10);
 const mochiZero = () => Object.fromEntries(MOCHI_MISSIONS.map((x) => [x.id, 0]));
-const mochiBlank = (day) => ({ xp: 0, en: 60, streak: 0, best: 0, frz: 1, day, m: mochiZero(), done: false, week: {}, ev: [] });
+const mochiBlank = (day) => ({ name: "Mochi", xp: 0, en: 60, streak: 0, best: 0, frz: 1, day, m: mochiZero(), done: false, week: {}, ev: [] });
 
 // Maju ke hari ini: hari yang terlewat mengurangi kenyang; streak diselamatkan jatah libur kalau ada.
 function mochiRoll(s, today) {
@@ -1897,7 +1897,7 @@ async function getMochi(u) {
     } catch {}
     return s;
   }
-  s.m = s.m || mochiZero(); s.week = s.week || {}; s.ev = s.ev || [];
+  s.name = s.name || "Mochi"; s.m = s.m || mochiZero(); s.week = s.week || {}; s.ev = s.ev || [];
   if (mochiRoll(s, today)) await redis("SET", key(u, "mochi"), JSON.stringify(s));
   return s;
 }
@@ -1914,7 +1914,7 @@ async function mochiProgress(u, id) {
       const before = Math.floor(s.xp / MOCHI_LV);
       s.xp += def.xp;
       s.ev.push("✅ Misi selesai: " + def.text + " (+" + def.xp + " XP)");
-      if (Math.floor(s.xp / MOCHI_LV) > before) s.ev.push("🎉 Mochi naik ke level " + (before + 2) + "!");
+      if (Math.floor(s.xp / MOCHI_LV) > before) s.ev.push("🎉 " + s.name + " naik ke level " + (before + 2) + "!");
       if (!s.done && MOCHI_MISSIONS.every((x) => (s.m[x.id] || 0) >= x.need)) {
         s.done = true;
         s.streak++;
@@ -1946,6 +1946,14 @@ async function takeMochiEvents(u) {
     return ev;
   } catch { return []; }
 }
+// Nama peliharaan: 1-16 karakter, tanpa tanda kurung siku/sudut; kosong = kembali ke "Mochi"
+async function mochiRename(u, name) {
+  const n = String(name || "").replace(/[<>\[\]{}\u0000-\u001f]/g, "").replace(/\s+/g, " ").trim().slice(0, 16).trim();
+  const s = await getMochi(u);
+  s.name = n || "Mochi";
+  await redis("SET", key(u, "mochi"), JSON.stringify(s));
+  return s.name;
+}
 function mochiView(s) {
   const dn = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
   const w = [];
@@ -1954,7 +1962,7 @@ function mochiView(s) {
     w.push({ d: dn[new Date(k + "T00:00:00Z").getUTCDay()], st: i === 0 ? (s.done ? "on" : "") : (s.week[k] || ""), today: i === 0 });
   }
   return {
-    xp: s.xp, level: Math.floor(s.xp / MOCHI_LV) + 1, cur: s.xp % MOCHI_LV, lvlSize: MOCHI_LV,
+    name: s.name || "Mochi", xp: s.xp, level: Math.floor(s.xp / MOCHI_LV) + 1, cur: s.xp % MOCHI_LV, lvlSize: MOCHI_LV,
     en: s.en, streak: s.streak, best: s.best || 0, frz: s.frz, done: s.done, day: s.day, week: w,
     missions: MOCHI_MISSIONS.map((x) => ({ id: x.id, text: x.text, need: x.need, xp: x.xp, n: Math.min(s.m[x.id] || 0, x.need) })),
   };
@@ -1963,7 +1971,7 @@ function mochiText(s) {
   const v = mochiView(s);
   const mood = s.en >= 60 ? "senang" : s.en >= 30 ? "mulai lapar" : "lemas";
   const bar = (n, t) => "▰".repeat(Math.round((n / t) * 10)) + "▱".repeat(10 - Math.round((n / t) * 10));
-  return `🐾 Mochi (level ${v.level}) sedang ${mood}\nKenyang ${bar(v.en, 100)} ${v.en}%\nXP ${bar(v.cur, v.lvlSize)} ${v.cur}/${v.lvlSize}\n🔥 Streak ${v.streak} hari (terbaik ${v.best}) · ❄️ Jatah libur ${v.frz}\n\nMisi hari ini:\n` +
+  return `🐾 ${v.name} (level ${v.level}) sedang ${mood}\nKenyang ${bar(v.en, 100)} ${v.en}%\nXP ${bar(v.cur, v.lvlSize)} ${v.cur}/${v.lvlSize}\n🔥 Streak ${v.streak} hari (terbaik ${v.best}) · ❄️ Jatah libur ${v.frz}\n\nMisi hari ini:\n` +
     v.missions.map((m) => `${m.n >= m.need ? "✅" : "▫️"} ${m.text} (${m.n}/${m.need})`).join("\n");
 }
 
@@ -1983,7 +1991,7 @@ module.exports = {
   getProfile, saveProfile, getFacts, addFacts, clearFacts,
   getMode, setMode, switchMode, takeCurhatExpiredNotice, CURHAT_TTL,
   getHist, saveHist, hasHist, clearHist,
-  getMochi, mochiProgress, mochiChat, takeMochiEvents, mochiView, mochiText,
+  getMochi, mochiRename, mochiProgress, mochiChat, takeMochiEvents, mochiView, mochiText,
   getReminders, addReminder, dropDuplicateReminders, deleteReminderById, deleteReminderNumber, rescheduleReminderNumber, DELETE_INTENT,
   findDeleteTargets, planDeletes, getPendingDelete, resolvePendingDelete, deleteQuestion, deleteKeyboard, mentionsAmount, getLink, linkStatus, makeLinkCode, useLinkCode, unlinkPartner, incomingTransfers, sendTransfer, acceptTransfer, declineTransfer, handlePartnerIncome, answerDupMasuk, partnerContext,
 };

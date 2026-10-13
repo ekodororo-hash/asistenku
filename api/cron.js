@@ -165,7 +165,7 @@ async function mochiNudge(u, chatId) {
   if (s.done) return "selesai";
   if (!(await once(key(u, `sent:mochi:${w.dateKey}`), 2 * DAY / 1000))) return "done";
   const risk = s.streak > 0 ? `\n🔥 Streak ${s.streak} hari bisa putus kalau hari ini terlewat${s.frz > 0 ? " (ada " + s.frz + " jatah libur)" : ""}.` : "";
-  const ok = await sendTelegram(u, chatId, "🐾 Mochi menunggu kamu.\n\n" + mochiText(s).split("\n\n")[1] + risk);
+  const ok = await sendTelegram(u, chatId, "🐾 " + (s.name || "Mochi") + " menunggu kamu.\n\n" + mochiText(s).split("\n\n")[1] + risk);
   if (!ok) { await redis("DEL", key(u, `sent:mochi:${w.dateKey}`)); return "gagal kirim"; }
   return "terkirim";
 }
