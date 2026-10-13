@@ -319,6 +319,16 @@
   @keyframes paneIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
   .pane.on { animation:paneIn .18s ease; }
   @media (prefers-reduced-motion: reduce) { .pane.on { animation:none; } }
+  /* badge jumlah di tab Panel */
+  .tabs button { position:relative; }
+  .tabs .bdg { position:absolute; top:-6px; right:-3px; min-width:17px; height:17px; padding:0 4px; border-radius:999px; background:var(--accent); color:#fff; font-size:10px; font-weight:700; line-height:17px; text-align:center; pointer-events:none; box-shadow:0 0 0 2px var(--card); }
+  .tabs button.on .bdg { background:#fff; color:var(--accent); }
+  .tabs .bdg.dot { min-width:10px; width:10px; height:10px; padding:0; top:-3px; right:0; background:#d33; }
+  /* toast "Dihapus · Urungkan" */
+  #toasts { position:fixed; left:50%; transform:translateX(-50%); bottom:calc(84px + env(safe-area-inset-bottom)); z-index:70; display:flex; flex-direction:column; gap:8px; width:min(92vw,380px); pointer-events:none; }
+  .toast { pointer-events:auto; display:flex; align-items:center; gap:10px; padding:8px 8px 8px 14px; border-radius:12px; background:var(--ink); color:var(--bg); font-size:14px; box-shadow:0 4px 16px #0004; animation:paneIn .18s ease; }
+  .toast span { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .toast button { flex:none; border:0; background:transparent; color:#8ab4ff; font-weight:700; padding:6px 10px; border-radius:8px; }
 </style>
 <link rel="stylesheet" href="/theme.css">
 </head>
@@ -400,6 +410,7 @@
     </form>
   </section>
 
+  <div id="toasts" aria-live="polite"></div>
   <div id="lightbox" hidden><img alt="Foto"></div>
   <div id="backdrop"></div>
   <aside id="side">
@@ -762,6 +773,51 @@ function renderMode() {
 }
 
 /* ---------- Tugas ---------- */
+/* ---------- Hapus dengan "Urungkan" (penghapusan ke server ditunda 5 detik) ---------- */
+const pendingDel = new Map(); // "op:id" -> { commit }
+const notPending = (op, list) => list.filter((x) => !pendingDel.has(op + ":" + x.id));
+function softDelete(label, op, id, remove, restore) {
+  const key = op + ":" + id;
+  if (pendingDel.has(key)) return;
+  remove();
+  const t = el("div", "toast"), msg = el("span", "", "Dihapus: " + label), undo = el("button", "", "Urungkan");
+  undo.type = "button";
+  t.append(msg, undo);
+  $("toasts").appendChild(t);
+  let timer = 0, settled = false;
+  const finish = () => { settled = true; clearTimeout(timer); pendingDel.delete(key); t.remove(); };
+  const commit = async (keep) => {
+    if (settled) return;
+    finish();
+    try { await api("/api/state", { method: "POST", keepalive: !!keep, body: JSON.stringify({ op, id }) }); }
+    catch (e) { restore(); alert(e.message); }
+  };
+  undo.onclick = () => { if (settled) return; finish(); restore(); };
+  timer = setTimeout(commit, 5000);
+  pendingDel.set(key, { commit });
+}
+const flushDeletes = () => { [...pendingDel.values()].forEach((p) => p.commit(true)); };
+window.addEventListener("pagehide", flushDeletes);
+document.addEventListener("visibilitychange", () => { if (document.hidden) flushDeletes(); });
+const putBack = (arr, item, idx) => arr.splice(Math.min(idx, arr.length), 0, item);
+
+/* ---------- Badge jumlah di tab Panel ---------- */
+function setBadge(tab, n, dot) {
+  const b = document.querySelector('.tabs button[data-tab="' + tab + '"]');
+  if (!b) return;
+  let g = b.querySelector(".bdg");
+  if (!n && !dot) { if (g) g.remove(); return; }
+  if (!g) { g = el("span", "bdg"); b.appendChild(g); }
+  g.classList.toggle("dot", !!dot && !n);
+  g.textContent = n ? (n > 99 ? "99+" : String(n)) : "";
+}
+function renderBadges() {
+  setBadge("tasks", tasks.filter((t) => !t.done).length);
+  setBadge("remind", reminders.length);
+  setBadge("notes", notes.length);
+  setBadge("money", 0, (xferIn || []).length > 0);
+}
+
 function emptyState(icon, title, hint) {
   const d = el("div", "empty");
   d.append(el("div", "empty-ico", icon), el("div", "empty-t", title), el("div", "empty-h", hint));
@@ -793,7 +849,7 @@ function renderTodayBar() {
 setInterval(renderTodayBar, 60000);
 
 function renderTasks() {
-  renderTodayBar();
+  renderTodayBar(); renderBadges();
   const box = $("tasks");
   box.innerHTML = "";
   if (!tasks.length) { box.appendChild(emptyState("📋", "Belum ada tugas", "Tambah di atas, atau bilang ke chat: \"tambah tugas bayar listrik besok jam 8\".")); return; }
@@ -815,9 +871,11 @@ function renderTasks() {
       sp.appendChild(w);
     }
     const del = document.createElement("button"); del.textContent = "x";
-    del.onclick = async () => {
-      try { await api("/api/state", { method: "POST", body: JSON.stringify({ op: "deleteTask", id: t.id }) }); tasks = tasks.filter((x) => x.id !== t.id); renderTasks(); }
-      catch (e) { alert(e.message); }
+    del.onclick = () => {
+      const idx = tasks.indexOf(t);
+      softDelete(t.text, "deleteTask", t.id,
+        () => { tasks = tasks.filter((x) => x.id !== t.id); renderTasks(); },
+        () => { putBack(tasks, t, idx); renderTasks(); });
     };
     row.append(cb, sp, del);
     box.appendChild(row);
@@ -842,7 +900,7 @@ const fmtWhen = (ts) => new Date(ts).toLocaleString("id-ID", { weekday: "short",
 
 function renderReminders() {
   $("remNote").textContent = botLinked ? "" : "Bot Telegram belum terhubung, jadi pengingat belum bisa terkirim. Hubungkan dulu di Pengaturan.";
-  renderTodayBar();
+  renderTodayBar(); renderBadges();
   const box = $("reminders");
   box.innerHTML = "";
   if (!reminders.length) { box.appendChild(emptyState("⏰", "Belum ada pengingat", "Isi di atas, atau bilang ke chat: \"ingatkan aku minum obat jam 9 malam\".")); return; }
@@ -850,10 +908,9 @@ function renderReminders() {
     box.appendChild(makeRow(
       r.text + (r.repeat ? " (" + repLabel(r.repeat) + ")" : ""),
       fmtWhen(r.ts),
-      async () => {
-        try { await api("/api/state", { method: "POST", body: JSON.stringify({ op: "deleteReminder", id: r.id }) }); reminders = reminders.filter((x) => x.id !== r.id); renderReminders(); }
-        catch (e) { alert(e.message); }
-      }
+      () => softDelete(r.text, "deleteReminder", r.id,
+        () => { reminders = reminders.filter((x) => x.id !== r.id); renderReminders(); },
+        () => { reminders.push(r); reminders.sort((a, b) => a.ts - b.ts); renderReminders(); })
     ));
   });
 }
@@ -906,15 +963,18 @@ async function addNote(text) {
 }
 
 function renderNotes() {
+  renderBadges();
   const q = $("noteSearch").value.trim().toLowerCase();
   const box = $("notes");
   box.innerHTML = "";
   const list = notes.filter((n) => !q || n.text.toLowerCase().includes(q));
   if (!list.length) { box.appendChild(q ? emptyState("🔍", "Tidak ada yang cocok", "Coba kata kunci lain.") : emptyState("🗒️", "Belum ada catatan", "Tulis di atas, atau bilang ke chat: \"catat: password wifi kantor ...\".")); return; }
   list.forEach((n) => {
-    box.appendChild(makeRow(n.text, fmtDate(n.ts), async () => {
-      try { await api("/api/state", { method: "POST", body: JSON.stringify({ op: "deleteNote", id: n.id }) }); notes = notes.filter((x) => x.id !== n.id); renderNotes(); }
-      catch (e) { alert(e.message); }
+    box.appendChild(makeRow(n.text, fmtDate(n.ts), () => {
+      const idx = notes.indexOf(n);
+      softDelete(n.text, "deleteNote", n.id,
+        () => { notes = notes.filter((x) => x.id !== n.id); renderNotes(); },
+        () => { putBack(notes, n, idx); renderNotes(); });
     }));
   });
 }
@@ -950,8 +1010,7 @@ function renderXfer() {
     c.appendChild(row);
     box.appendChild(c);
   });
-  const tb = document.querySelector('.tabs button[data-tab="money"]');
-  if (tb) tb.textContent = (xferIn || []).length ? "Uang •" : "Uang";
+  renderBadges();
 }
 function renderMoney() {
   renderXfer();
@@ -1004,13 +1063,22 @@ function renderMoney() {
     const row = makeRow(
       (isIn ? "+ " : "- ") + (e.note || e.cat) + " - " + rupiah(e.amt),
       fmtDate(e.ts) + " · " + e.cat + (isIn ? " · pemasukan" : ""),
-      async () => {
-        try {
-          await api("/api/state", { method: "POST", body: JSON.stringify({ op: isIn ? "deleteIncome" : "deleteExpense", id: e.id }) });
-          if (isIn) incomes = incomes.filter((x) => x.id !== e.id); else expenses = expenses.filter((x) => x.id !== e.id);
-          if (money && money.remaining != null && e.ts >= money.saldoTs) money.remaining += isIn ? -e.amt : e.amt;
-          renderMoney();
-        } catch (err) { alert(err.message); }
+      () => {
+        const list = isIn ? incomes : expenses, idx = list.findIndex((x) => x.id === e.id);
+        const adj = () => money && money.remaining != null && e.ts >= money.saldoTs;
+        const orig = { id: e.id, ts: e.ts, cat: e.cat, amt: e.amt, note: e.note };
+        const item = list[idx] || orig;
+        softDelete((e.note || e.cat) + " " + rupiah(e.amt), isIn ? "deleteIncome" : "deleteExpense", e.id,
+          () => {
+            if (isIn) incomes = incomes.filter((x) => x.id !== e.id); else expenses = expenses.filter((x) => x.id !== e.id);
+            if (adj()) money.remaining += isIn ? -e.amt : e.amt;
+            renderMoney();
+          },
+          () => {
+            putBack(isIn ? incomes : expenses, item, idx);
+            if (adj()) money.remaining += isIn ? e.amt : -e.amt;
+            renderMoney();
+          });
       }
     );
     if (isIn) row.classList.add("row-in");
@@ -1747,8 +1815,8 @@ async function refreshFromServer() {
     const d = await api("/api/state?light=1");
     if (busy) return; // pesan sedang dikirim, jangan timpa
     const before = sig(messages), oldMode = mode;
-    tasks = d.tasks || []; notes = d.notes || []; expenses = d.expenses || []; incomes = d.incomes || []; money = d.money || null; xferIn = d.xferIn || [];
-    reminders = d.reminders || []; botLinked = d.botLinked !== false;
+    tasks = notPending("deleteTask", d.tasks || []); notes = notPending("deleteNote", d.notes || []); expenses = notPending("deleteExpense", d.expenses || []); incomes = notPending("deleteIncome", d.incomes || []); money = d.money || null; xferIn = d.xferIn || [];
+    reminders = notPending("deleteReminder", d.reminders || []); botLinked = d.botLinked !== false;
     mode = d.mode || "asisten"; messages = d.messages || [];
     if (mode !== oldMode) renderMode();
     if (sig(messages) !== before || mode !== oldMode) renderChat();
