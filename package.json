@@ -1,0 +1,8 @@
+{
+  "name": "asistenku",
+  "private": true,
+  "description": "Asisten pribadi (Gemini + Vercel + Telegram)",
+  "dependencies": {
+    "web-push": "^3.6.7"
+  }
+}

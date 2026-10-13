@@ -16,6 +16,7 @@ const {
   linkStatus, makeLinkCode, useLinkCode, unlinkPartner, incomingTransfers, acceptTransfer, declineTransfer,
   getPendingDelete, resolvePendingDelete,
   getMochi, mochiRename, takeMochiEvents, mochiView,
+  ackNag, pushSubscribe, pushUnsubscribe, pushStatus, sendPush,
 } = require("./_lib");
 
 // Riwayat -> bentuk yang dipakai web
@@ -50,7 +51,7 @@ module.exports = async (req, res) => {
         incomes: incomes.slice(-100).reverse(),
         money,
         profile, mode, messages, reminders, botLinked, xferIn, pendingDelete, mochi,
-        ...(light ? {} : { link, geminiKeys: kstate.keys, keyHistoryCount: kstate.history.length, modelCfg: mcfg, maxKeys: MAX_KEYS, globalKey: !!process.env.GEMINI_API_KEY, bot }),
+        ...(light ? {} : { push: await pushStatus(u), link, geminiKeys: kstate.keys, keyHistoryCount: kstate.history.length, modelCfg: mcfg, maxKeys: MAX_KEYS, globalKey: !!process.env.GEMINI_API_KEY, bot }),
       });
     } catch (e) {
       return res.status(500).json({ error: "Server error: " + e.message });
@@ -111,6 +112,15 @@ module.exports = async (req, res) => {
           break;
         }
         case "renameMochi": result = { name: await mochiRename(u, p.name) }; break;
+        case "pushSubscribe": result = await pushSubscribe(u, p.sub); break;
+        case "pushUnsubscribe": result = await pushUnsubscribe(u, p.endpoint); break;
+        case "pushTest": result = { sent: await sendPush(u, { title: "Asistenku", body: "Notifikasi berfungsi di perangkat ini.", tag: "tes-push" }) }; break;
+        case "nagAck": { // dari tombol di notifikasi web
+          const r = await ackNag(u, p.id, p.act === "snz" ? "snz" : "ok");
+          if (r.error) throw Object.assign(new Error(r.error), { status: 400 });
+          result = r;
+          break;
+        }
         case "removeBot": result = await removeBot(u); break;
         case "relinkBot": result = await relinkBot(u); break;
         case "setMode": {

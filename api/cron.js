@@ -3,7 +3,7 @@
 const {
   DAY, HOURS, redis, key, getBot, botUsers, sendTelegram, gemini: geminiBase, appendModelToHist,
   fmtWib, fmtTime, fmtDue, wib, startOfDayWib, nextRepeat, repeatLabel, getTasks,
-  cfgOn, getMochi, mochiText, getWeather, recapText, loadContext, buildSystem, loadCurhatContext, buildCurhatSystem, getMode,
+  cfgOn, getMochi, mochiText, createNag, dropNag, getNag, nagKeyboard, NAG_MAX, NAG_STEP, sendPush, pushUsers, pushCount, getWeather, recapText, loadContext, buildSystem, loadCurhatContext, buildCurhatSystem, getMode,
 } = require("./_lib");
 
 const gemini = (u, system, contents) => geminiBase(u, system, contents, "otomatis"); // riwayat key menandai sumbernya
@@ -44,8 +44,14 @@ async function runReminders(u, chatId) {
       const label = item.repeat ? ` (${repeatLabel(item.repeat)})` : "";
       msg = `⏰ Pengingat${label}: ${item.text}`;
     }
-    const ok = await sendTelegram(u, chatId, msg);
+    // Pengingat sekali jalan bisa diulang kalau tidak ditanggapi (tombol Sudah / Tunda); yang berulang tidak
+    const nagId = item.repeat ? null : await createNag(u, item.text, item.tid || null, await cfgOn(u, "nag"));
+    let ok = false;
+    if (chatId) ok = await sendTelegram(u, chatId, msg, nagId ? { reply_markup: nagKeyboard(nagId) } : {});
+    const pushed = await sendPush(u, { title: "⏰ Pengingat", body: item.text, tag: "rem-" + (nagId || item.id || score), nagId, urgent: true });
+    ok = ok || pushed > 0;
     if (!ok) {
+      if (nagId) await dropNag(u, nagId);
       await redis("ZADD", key(u, "reminders"), Date.now() + 5 * 60 * 1000, member); // coba lagi 5 menit
       continue;
     }
@@ -58,6 +64,41 @@ async function runReminders(u, chatId) {
     }
   }
   return { due: (rows || []).length / 2, sent };
+}
+
+// ---- Pengingat ulang: 5 menit setelah pengingat, lalu tiap 1 menit, maksimal NAG_MAX kali ----
+async function runNags(u, chatId) {
+  const now = Date.now();
+  const ids = await redis("ZRANGEBYSCORE", key(u, "nags"), "-inf", now);
+  if (!(ids || []).length) return { sent: 0 };
+  const on = await cfgOn(u, "nag");
+  let sent = 0;
+  let tasks = null;
+  for (const id of ids) {
+    if (Number(await redis("ZREM", key(u, "nags"), id)) !== 1) continue; // hanya satu pemanggil yang "menang"
+    const d = await getNag(u, id);
+    if (!d) continue; // sudah ditekan Sudah/Tunda
+    if (!on) { await dropNag(u, id); continue; }
+    if (d.tid) { // tugasnya sudah selesai/dihapus: berhenti
+      if (!tasks) tasks = await getTasks(u);
+      const t = tasks.find((x) => x.id === d.tid);
+      if (!t || t.done) { await dropNag(u, id); continue; }
+    }
+    const n = d.n + 1;
+    const last = n >= NAG_MAX;
+    const msg = `🔔 Pengingat (ulang ${n}/${NAG_MAX}): ${d.text}` + (last ? "\nIni yang terakhir." : "");
+    let ok = false;
+    if (chatId) ok = await sendTelegram(u, chatId, msg, { reply_markup: nagKeyboard(id) });
+    const pushed = await sendPush(u, { title: `🔔 Pengingat (${n}/${NAG_MAX})`, body: d.text, tag: "rem-" + id, nagId: id, urgent: true });
+    if (ok || pushed > 0) sent++;
+    if (last) await dropNag(u, id);
+    else {
+      d.n = n;
+      await redis("SET", key(u, "nag:" + id), JSON.stringify(d), "EX", "21600");
+      await redis("ZADD", key(u, "nags"), Date.now() + NAG_STEP, id);
+    }
+  }
+  return { sent };
 }
 
 // ---- Ringkasan pagi ----
@@ -181,15 +222,20 @@ module.exports = async (req, res) => {
   if (!authorized) return res.status(401).json({ error: "unauthorized" });
 
   const out = {};
-  for (const u of await botUsers()) {
+  // Pengguna dengan bot Telegram dan/atau notifikasi web
+  const users = [...new Set([...(await botUsers()), ...(await pushUsers().catch(() => []))])];
+  for (const u of users) {
     const bot = await getBot(u).catch(() => null);
-    if (!bot || !bot.chatId) { out[u] = "belum terhubung"; continue; }
+    const chatId = bot && bot.chatId ? bot.chatId : null;
+    if (!chatId && !(await pushCount(u).catch(() => 0))) { out[u] = "belum terhubung"; continue; }
     const r = (out[u] = {});
-    await guarded(r, "reminders", () => runReminders(u, bot.chatId)); // yang paling penting dulu
-    await guarded(r, "pagi", () => morning(u, bot.chatId));
-    await guarded(r, "checkin", () => checkin(u, bot.chatId));
-    await guarded(r, "rekap", () => weeklyRecap(u, bot.chatId));
-    await guarded(r, "mochi", () => mochiNudge(u, bot.chatId));
+    await guarded(r, "reminders", () => runReminders(u, chatId)); // yang paling penting dulu
+    await guarded(r, "nags", () => runNags(u, chatId));
+    if (!chatId) continue; // pesan otomatis lain hanya lewat Telegram
+    await guarded(r, "pagi", () => morning(u, chatId));
+    await guarded(r, "checkin", () => checkin(u, chatId));
+    await guarded(r, "rekap", () => weeklyRecap(u, chatId));
+    await guarded(r, "mochi", () => mochiNudge(u, chatId));
   }
   return res.status(200).json(out);
 };

@@ -1849,6 +1849,100 @@ async function resolvePendingDelete(u, id, pick) {
   return ok ? { item: it } : { error: "Gagal menghapus (mungkin sudah terhapus)." };
 }
 
+// ---------- Pengingat ulang (nag): kalau pengingat sekali jalan tidak ditanggapi ----------
+// Setelah pengingat terkirim: ulang pertama 5 menit kemudian, lalu tiap 1 menit, total NAG_MAX kali, lalu berhenti.
+// Berhenti lebih awal kalau pengguna menekan "Sudah" / "Tunda" (di Telegram atau di notifikasi web) atau tugasnya selesai.
+const NAG_FIRST = 5 * 60 * 1000 - 15000; // dikurangi 15 dtk karena cron berjalan per menit
+const NAG_STEP = 60 * 1000 - 15000;
+const NAG_MAX = 5;
+const NAG_SNOOZE = 10 * 60 * 1000;
+const NAG_TTL = "21600"; // tombol di pesan lama masih bisa dipakai sampai 6 jam
+async function createNag(u, text, tid, schedule) {
+  const id = uid();
+  await redis("SET", key(u, "nag:" + id), JSON.stringify({ text: String(text).slice(0, 200), tid: tid || null, n: 0 }), "EX", NAG_TTL);
+  if (schedule) await redis("ZADD", key(u, "nags"), Date.now() + NAG_FIRST, id);
+  return id;
+}
+async function dropNag(u, id) {
+  await redis("DEL", key(u, "nag:" + id));
+  await redis("ZREM", key(u, "nags"), id);
+}
+async function getNag(u, id) {
+  const raw = await redis("GET", key(u, "nag:" + id));
+  try { return raw ? JSON.parse(raw) : null; } catch { return null; }
+}
+// act: "ok" (sudah) atau "snz" (tunda 10 menit)
+async function ackNag(u, id, act) {
+  const d = await getNag(u, id);
+  if (!d) return { error: "Pengingat ini sudah tidak aktif." };
+  await dropNag(u, id);
+  if (act === "snz") {
+    const r = await addReminder(u, d.text, Date.now() + NAG_SNOOZE);
+    return { text: d.text, act: "snz", ts: r ? r.ts : null };
+  }
+  return { text: d.text, act: "ok" };
+}
+const nagKeyboard = (id) => ({ inline_keyboard: [[{ text: "✅ Sudah", callback_data: "nag:ok:" + id }, { text: "⏰ Tunda 10 menit", callback_data: "nag:snz:" + id }]] });
+
+// ---------- Notifikasi push web (PWA) ----------
+// Butuh env VAPID_PUBLIC_KEY dan VAPID_PRIVATE_KEY (buat dengan: npx web-push generate-vapid-keys) dan paket web-push.
+// Langganan disimpan per perangkat di u:<id>:push (hash), maksimal 5 perangkat.
+const pushEnabled = () => !!(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY);
+let _wp;
+function webpush() {
+  if (_wp !== undefined) return _wp;
+  try {
+    _wp = require("web-push");
+    _wp.setVapidDetails(process.env.VAPID_SUBJECT || "mailto:admin@example.com", process.env.VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY);
+  } catch { _wp = null; }
+  return _wp;
+}
+async function pushDevices(u) {
+  const rows = (await redis("HGETALL", key(u, "push"))) || [];
+  const out = [];
+  for (let i = 0; i < rows.length; i += 2) { try { out.push({ id: rows[i], ...JSON.parse(rows[i + 1]) }); } catch {} }
+  return out;
+}
+async function pushSubscribe(u, sub) {
+  const ep = sub && String(sub.endpoint || "");
+  if (!pushEnabled()) throw Object.assign(new Error("Notifikasi web belum diaktifkan oleh pemilik server (env VAPID)."), { status: 400 });
+  if (!/^https:\/\//.test(ep) || ep.length > 1000 || !sub.keys || typeof sub.keys.p256dh !== "string" || typeof sub.keys.auth !== "string") throw Object.assign(new Error("Langganan notifikasi tidak valid."), { status: 400 });
+  const id = sha(ep).slice(0, 24);
+  const list = await pushDevices(u);
+  if (list.length >= 5 && !list.some((d) => d.id === id)) throw Object.assign(new Error("Maksimal 5 perangkat. Matikan notifikasi di perangkat lain dulu."), { status: 400 });
+  await redis("HSET", key(u, "push"), id, JSON.stringify({ sub: { endpoint: ep, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth } }, at: Date.now() }));
+  await redis("SADD", "pushusers", u);
+  return { devices: (await pushDevices(u)).length };
+}
+async function pushUnsubscribe(u, endpoint) {
+  const ep = String(endpoint || "");
+  if (ep) await redis("HDEL", key(u, "push"), sha(ep).slice(0, 24));
+  const n = (await pushDevices(u)).length;
+  if (!n) await redis("SREM", "pushusers", u);
+  return { devices: n };
+}
+async function pushCount(u) { return Number((await redis("HLEN", key(u, "push"))) || 0); }
+async function pushUsers() { return (await redis("SMEMBERS", "pushusers")) || []; }
+async function pushStatus(u) {
+  return { enabled: pushEnabled(), publicKey: process.env.VAPID_PUBLIC_KEY || null, devices: await pushCount(u).catch(() => 0) };
+}
+// payload: { title, body, tag, nagId, urgent }. Mengembalikan jumlah perangkat yang berhasil dikirimi.
+async function sendPush(u, payload) {
+  if (!pushEnabled()) return 0;
+  const wp = webpush();
+  if (!wp) return 0;
+  let sent = 0;
+  for (const d of await pushDevices(u).catch(() => [])) {
+    try {
+      await wp.sendNotification(d.sub, JSON.stringify(payload), { TTL: 600, urgency: "high" });
+      sent++;
+    } catch (e) {
+      if (e && (e.statusCode === 404 || e.statusCode === 410)) await redis("HDEL", key(u, "push"), d.id).catch(() => {}); // langganan sudah mati
+    }
+  }
+  return sent;
+}
+
 // ---------- Mochi: peliharaan, misi harian, streak (satu data untuk web & Telegram) ----------
 // Disimpan di u:<id>:mochi. Pergantian hari dihitung malas (saat data dibaca), jadi tidak bergantung cron.
 // Dipicu dari fungsi inti (toggleTask, addExpense, addIncome, obrolan), jadi web, Telegram, dan tag chat sama-sama terhitung.
@@ -1991,6 +2085,7 @@ module.exports = {
   getProfile, saveProfile, getFacts, addFacts, clearFacts,
   getMode, setMode, switchMode, takeCurhatExpiredNotice, CURHAT_TTL,
   getHist, saveHist, hasHist, clearHist,
+  createNag, dropNag, getNag, ackNag, nagKeyboard, NAG_MAX, NAG_STEP, sendPush, pushSubscribe, pushUnsubscribe, pushUsers, pushCount, pushStatus,
   getMochi, mochiRename, mochiProgress, mochiChat, takeMochiEvents, mochiView, mochiText,
   getReminders, addReminder, dropDuplicateReminders, deleteReminderById, deleteReminderNumber, rescheduleReminderNumber, DELETE_INTENT,
   findDeleteTargets, planDeletes, getPendingDelete, resolvePendingDelete, deleteQuestion, deleteKeyboard, mentionsAmount, getLink, linkStatus, makeLinkCode, useLinkCode, unlinkPartner, incomingTransfers, sendTransfer, acceptTransfer, declineTransfer, handlePartnerIncome, answerDupMasuk, partnerContext,

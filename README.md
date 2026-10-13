@@ -9,6 +9,8 @@ Tiap akun punya data, API key Gemini, dan bot Telegram sendiri.
 - **Panel web:** Tugas, Catatan, Pengingat, Uang, Info (cuaca + berita berfoto).
 - **Uang:** pengeluaran per kategori, pemasukan, saldo, rekap; foto struk dibaca lewat Telegram.
 - **Pengingat** sekali jalan dan berulang (harian, mingguan, dst).
+  Pengingat sekali jalan yang belum ditanggapi diulang: 5 menit setelahnya, lalu tiap 1 menit, maksimal 5 kali, berhenti kalau tombol **Sudah** / **Tunda 10 menit** ditekan (Telegram atau notifikasi web). Matikan dengan `/ulang off`.
+- **Notifikasi push web (PWA)** untuk pengingat, tanpa bergantung pada Telegram.
 - **Mochi:** peliharaan virtual yang tumbuh kalau kamu aktif. Misi harian (ngobrol dengan asisten, pasang 1 pengingat, catat uang, cerita harimu), XP dan level, streak dengan jatah libur, mata mengikuti kursor, bereaksi saat diketuk, efek suara. Data satu untuk web dan Telegram (`/mochi`), pengingat sore lewat cron.
 - **Mode curhat** terpisah dari asisten (riwayat sendiri, tidak mencatat apa pun).
 - **Bot Telegram** per pengguna: teks, foto, voice note, tombol, perintah `/...`.
@@ -25,7 +27,8 @@ riwayat.html      riwayat pemakaian API key (dengan filter status)
 theme.css         gaya dasar bersama
 theme.js          mode warna, aksen, wallpaper, bubble (disimpan per perangkat di localStorage)
 pw.js             bantuan input password (ikon mata, bar kekuatan, contoh password kuat)
-sw.js             service worker minimal (tanpa cache) agar bisa dipasang sebagai PWA
+sw.js             service worker (tanpa cache) agar bisa dipasang sebagai PWA, plus penerima notifikasi push
+package.json      dependensi (web-push, untuk notifikasi push)
 manifest.json     manifest PWA
 icon-192.png, icon-512.png, apple-touch-icon.png
 vercel.json       durasi maksimum fungsi (telegram & cron 60 dtk, chat & auth 30, state 15)
@@ -58,6 +61,7 @@ TELEGRAM.md       panduan setup bot Telegram, perintah, dan mode curhat
 | `GEMINI_API_KEY` | opsional | cadangan terakhir kalau key pengguna habis/kosong |
 | `GEMINI_MODEL` | opsional | nama model bawaan, default `gemini-flash-latest` (tiap pengguna bisa memilih sendiri di Pengaturan) |
 | `GEMINI_SEARCH` | opsional | isi `on` untuk mengaktifkan pencarian Google. Bawaan mati karena paket gratis Google tidak menyediakannya untuk model Gemini 3; nyalakan hanya kalau key sudah berbilling |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | opsional | untuk notifikasi push web. Buat sekali dengan `npx web-push generate-vapid-keys`, isi kedua nilainya, lalu Redeploy. Pengguna mengaktifkannya di Pengaturan > Notifikasi di perangkat ini. Opsional: `VAPID_SUBJECT` (mis. `mailto:kamu@email.com`) |
 | `MORNING_HOUR` / `CHECKIN_HOUR` / `RECAP_HOUR` | opsional | jam WIB ringkasan pagi (7), check-in malam (21), rekap mingguan Minggu (20) |
 | `WEATHER_CITY` / `WEATHER_LAT` / `WEATHER_LON` | opsional | kota bawaan cuaca (default Jakarta) |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TELEGRAM_WEBHOOK_SECRET` | tidak | hanya untuk bot lama milik pemilik, sampai dia memasang bot sendiri di Pengaturan; setelah itu boleh dihapus |

@@ -211,6 +211,13 @@
     <a class="btn" id="histLink" href="/riwayat.html" style="margin-top:12px;width:100%">Lihat riwayat pemakaian →</a>
   </section>
 
+  <section id="secPush">
+    <h2>Notifikasi di perangkat ini</h2>
+    <p class="hint">Pengingat juga muncul sebagai notifikasi dari aplikasi ini, tanpa bergantung pada Telegram, lengkap dengan tombol Sudah dan Tunda. Aktifkan di tiap perangkat. Di iPhone, pasang aplikasi ke layar utama dulu.</p>
+    <div id="pushBox"></div>
+    <p class="msg" id="pushMsg"></p>
+  </section>
+
   <section id="secBot">
     <h2>Bot Telegram</h2>
     <div id="botBox"><div class="sk-stack"><div class="sk" style="height:16px;width:80%"></div><div class="sk" style="height:40px"></div></div></div>
@@ -256,6 +263,7 @@ function say(id, text, kind) { const m = $(id); m.textContent = text || ""; m.cl
 
 let profile = {}, geminiKeys = [], histCount = 0, maxKeys = 5, globalKey = false, botState = { installed: false };
 let linkState = { linked: false };
+let pushState = { enabled: false, publicKey: null, devices: 0 };
 
 /* ---------- Profil ---------- */
 $("profileSave").onclick = async () => {
@@ -718,6 +726,54 @@ $("logoutBtn").onclick = async () => {
   render();
 })();
 
+/* ---------- Notifikasi push ---------- */
+const urlB64 = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (s.length % 4)) % 4)), (c) => c.charCodeAt(0));
+async function pushReg() {
+  if (!("serviceWorker" in navigator)) return null;
+  try { await navigator.serviceWorker.register("/sw.js"); return await navigator.serviceWorker.ready; } catch { return null; }
+}
+async function renderPush() {
+  const box = $("pushBox");
+  box.innerHTML = "";
+  const note = (t) => { const p = document.createElement("p"); p.className = "hint"; p.style.margin = "0"; p.textContent = t; box.appendChild(p); };
+  if (!("Notification" in window) || !("PushManager" in window)) { note("Browser ini belum mendukung notifikasi. Di iPhone, buka lewat aplikasi yang dipasang ke layar utama (Bagikan, lalu Tambah ke Layar Utama)."); return; }
+  if (!pushState.enabled) { note("Belum diaktifkan oleh pemilik server (env VAPID_PUBLIC_KEY dan VAPID_PRIVATE_KEY belum diisi)."); return; }
+  const reg = await pushReg();
+  const sub = reg ? await reg.pushManager.getSubscription().catch(() => null) : null;
+  const actions = document.createElement("div"); actions.className = "actions";
+  const mk = (label, cls, fn) => { const b = document.createElement("button"); if (cls) b.className = cls; b.textContent = label; b.onclick = fn; actions.appendChild(b); return b; };
+  if (Notification.permission === "denied") { note("Notifikasi diblokir untuk situs ini. Buka pengaturan situs di browser, izinkan Notifikasi, lalu muat ulang halaman ini."); return; }
+  if (sub) {
+    note("Aktif di perangkat ini (" + pushState.devices + " perangkat terdaftar).");
+    mk("Kirim notifikasi tes", "primary", async () => {
+      say("pushMsg", "Mengirim...");
+      try { const r = await op("pushTest"); say("pushMsg", r.sent > 0 ? "Terkirim. Cek notifikasi di perangkatmu." : "Tidak ada yang terkirim. Coba matikan lalu aktifkan lagi.", r.sent > 0 ? "ok" : "err"); }
+      catch (e) { say("pushMsg", e.message, "err"); }
+    });
+    mk("Matikan di perangkat ini", "", async () => {
+      say("pushMsg", "Mematikan...");
+      try { const ep = sub.endpoint; await sub.unsubscribe(); const r = await op("pushUnsubscribe", { endpoint: ep }); pushState.devices = r.devices; say("pushMsg", "Dimatikan.", "ok"); renderPush(); }
+      catch (e) { say("pushMsg", e.message, "err"); }
+    });
+  } else {
+    mk("Aktifkan notifikasi", "primary", async () => {
+      say("pushMsg", "Meminta izin...");
+      try {
+        const perm = await Notification.requestPermission();
+        if (perm !== "granted") { say("pushMsg", "Izin tidak diberikan.", "err"); renderPush(); return; }
+        const r = reg || (await pushReg());
+        if (!r) throw new Error("Service worker tidak tersedia di browser ini.");
+        const s = await r.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64(pushState.publicKey) });
+        const res = await op("pushSubscribe", { sub: s.toJSON() });
+        pushState.devices = res.devices;
+        say("pushMsg", "Aktif. Coba kirim notifikasi tes.", "ok");
+        renderPush();
+      } catch (e) { say("pushMsg", e.message, "err"); }
+    });
+  }
+  box.appendChild(actions);
+}
+
 async function load() {
   const d = await api("/api/state");
   profile = d.profile || {};
@@ -727,7 +783,8 @@ async function load() {
   geminiKeys = d.geminiKeys || []; histCount = d.keyHistoryCount || 0; renderModel(d.modelCfg || {}); maxKeys = d.maxKeys || 5; globalKey = !!d.globalKey;
   botState = d.bot || { installed: false };
   linkState = d.link || { linked: false };
-  renderKeys(); renderHistLink(); renderBot(); renderLink();
+  pushState = d.push || pushState;
+  renderKeys(); renderHistLink(); renderBot(); renderLink(); renderPush();
 }
 load().then(() => document.body.classList.remove("loading")).catch((e) => { document.body.classList.remove("loading"); ["keyList","botBox","linkBox"].forEach((id) => { if ($(id).querySelector(".sk")) $(id).innerHTML = ""; }); if (e.message !== "Belum login") say("profileMsg", "Gagal memuat: " + e.message, "err"); });
 api("/api/auth").then((d) => { $("who").textContent = "Masuk sebagai " + d.user.username; }).catch(() => {});

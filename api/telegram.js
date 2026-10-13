@@ -7,7 +7,7 @@ const {
   addNote, addExpense, addIncome, setSaldo, addOutsideMoney, fmtDateShort, mentionsAmount,
   sendTransfer, acceptTransfer, declineTransfer, handlePartnerIncome, answerDupMasuk,
   getMode, switchMode, takeCurhatExpiredNotice, getHist, saveHist, clearHist, loadCurhatContext, buildCurhatSystem, stripTags,
-  getFacts, addFacts, clearFacts, getMochi, mochiRename, mochiChat, takeMochiEvents, mochiText,
+  getFacts, addFacts, clearFacts, ackNag, getMochi, mochiRename, mochiChat, takeMochiEvents, mochiText,
 } = require("./_lib");
 const { getOwnerId, safeEq } = require("./_auth");
 
@@ -58,10 +58,10 @@ function withImage(contents, image, text) {
   return contents;
 }
 
-const TOGGLES = { "/pagi": "pagi", "/checkin": "checkin", "/rekapauto": "rekapauto", "/salin": "mirror", "/mochiingat": "mochi" };
+const TOGGLES = { "/pagi": "pagi", "/checkin": "checkin", "/rekapauto": "rekapauto", "/salin": "mirror", "/mochiingat": "mochi", "/ulang": "nag" };
 
 // /atur: daftar pengaturan on/off dengan tombol toggle (callback_data cfg:<key>)
-const CFG_ORDER = ["pagi", "checkin", "rekapauto", "mirror", "mochi"];
+const CFG_ORDER = ["pagi", "checkin", "rekapauto", "mirror", "mochi", "nag"];
 function cfgDesc() {
   const jam = (h) => String(h).padStart(2, "0") + ".00";
   return {
@@ -70,11 +70,12 @@ function cfgDesc() {
     rekapauto: `Rekap uang (Minggu ${jam(HOURS.recap)})`,
     mirror: "Salin obrolan web ke sini",
     mochi: `Pengingat Mochi (${jam(HOURS.checkin - 1)} WIB)`,
+    nag: "Ulangi pengingat yang belum ditanggapi",
   };
 }
 async function aturView(u) {
-  const [p, c, r, m, mo, loc] = await Promise.all([cfgOn(u, "pagi"), cfgOn(u, "checkin"), cfgOn(u, "rekapauto"), cfgOn(u, "mirror"), cfgOn(u, "mochi"), getLocation(u)]);
-  const val = { pagi: p, checkin: c, rekapauto: r, mirror: m, mochi: mo };
+  const [p, c, r, m, mo, ng, loc] = await Promise.all([cfgOn(u, "pagi"), cfgOn(u, "checkin"), cfgOn(u, "rekapauto"), cfgOn(u, "mirror"), cfgOn(u, "mochi"), cfgOn(u, "nag"), getLocation(u)]);
+  const val = { pagi: p, checkin: c, rekapauto: r, mirror: m, mochi: mo, nag: ng };
   const desc = cfgDesc();
   const s = (b) => (b ? "aktif" : "mati");
   const text =
@@ -102,6 +103,7 @@ const START_TEXT =
 const HELP_TEXT =
   "📋 SEMUA PERINTAH\n\n" +
   "⏰ Pengingat & tugas\n" +
+  "(pengingat sekali jalan diulang kalau belum kamu tekan Sudah/Tunda: matikan di /ulang off)\n" +
   "/pengingat → lihat daftar pengingat\n" +
   "/hapus → hapus pengingat, misal /hapus 2\n" +
   "/tugas → lihat daftar tugas\n" +
@@ -471,6 +473,7 @@ async function handleCommand(u, cmd, arg, say, ensureCb) {
     case "/checkin":
     case "/rekapauto":
     case "/mochiingat":
+    case "/ulang":
     case "/salin": {
       const cfgKey = TOGGLES[cmd];
       const a = arg.toLowerCase();
@@ -664,6 +667,13 @@ module.exports = async (req, res) => {
         await tg(bot.token, "editMessageText", { chat_id: chatId, message_id: msg.message_id, text: out }); // tombol hilang, tidak bisa ditekan dua kali
         return res.status(200).end();
       }
+      const nm = String(cq.data || "").match(/^nag:(ok|snz):([a-z0-9]{6,30})$/);
+      if (nm) { // tombol di pesan pengingat: Sudah / Tunda 10 menit
+        const r = await ackNag(u, nm[2], nm[1]);
+        const out = r.error ? "⚠️ " + r.error : r.act === "snz" ? "⏰ Ditunda 10 menit: " + r.text : "✅ Oke: " + r.text;
+        await tg(bot.token, "editMessageText", { chat_id: chatId, message_id: msg.message_id, text: out }); // tombol hilang
+        return res.status(200).end();
+      }
       const dm = String(cq.data || "").match(/^del:([a-z0-9]{4,12}):(\d|no)$/);
       if (dm) { // konfirmasi hapus dari chat
         const r = await resolvePendingDelete(u, dm[1], dm[2]);
@@ -677,7 +687,7 @@ module.exports = async (req, res) => {
         await tg(bot.token, "editMessageText", { chat_id: chatId, message_id: msg.message_id, text: result }); // tombol hilang, tidak bisa ditekan dua kali
         return res.status(200).end();
       }
-      const cm = String(cq.data || "").match(/^cfg:(pagi|checkin|rekapauto|mirror|mochi)$/);
+      const cm = String(cq.data || "").match(/^cfg:(pagi|checkin|rekapauto|mirror|mochi|nag)$/);
       if (cm) { // toggle di /atur: ganti nilai, lalu edit pesan yang sama (tombol tetap ada, bisa dipencet lagi)
         const cur = await cfgOn(u, cm[1]);
         await redis("HSET", key(u, "cfg"), cm[1], cur ? "off" : "on");
