@@ -402,7 +402,7 @@
 </div>
 <dialog id="exitDlg">
   <h3>Keluar dari mode curhat?</h3>
-  <p>Obrolan curhat akan dihapus. Hanya riwayat curhat yang terhapus; obrolan asisten, tugas, catatan, dan uang tidak terpengaruh.</p>
+  <p>Obrolan curhat akan dihapus. Hanya riwayat curhat yang terhapus. Obrolan asisten, tugas, catatan, dan uang tidak terpengaruh.</p>
   <div class="opts">
     <button id="exitDel" class="danger">Hapus &amp; keluar<small>Obrolan curhat dihapus dan tidak bisa dikembalikan.</small></button>
     <button id="exitKeep">Simpan dulu<small>Keluar, tapi obrolan curhat tetap tersimpan sampai kamu hapus sendiri.</small></button>
@@ -1409,8 +1409,8 @@ function showQuota(q) {
   const bar = $("quotaBar");
   if (!q || !q.total || q.left > Math.max(3, Math.ceil(q.total * 0.2))) { bar.hidden = true; return; }
   bar.textContent = (q.left === 0
-    ? "Kuota gratis hari ini kemungkinan habis (" + q.used + " dari ±" + q.total + " permintaan). "
-    : "Sisa kuota gratis hari ini kira-kira " + q.left + " dari ±" + q.total + " permintaan. ") +
+    ? "Jatah gratis hari ini kemungkinan habis (sudah " + q.used + " dari sekitar " + q.total + " permintaan). "
+    : "Sisa jatah gratis hari ini kira-kira " + q.left + " permintaan (dari sekitar " + q.total + "). ") +
     "Reset sekitar pukul " + resetWib() + " WIB.";
   bar.hidden = false;
 }
