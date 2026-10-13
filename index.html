@@ -364,7 +364,7 @@
   .mochichip.hot span { color:#d9822b; }
   .mo-stage { position:relative; overflow:hidden; display:flex; flex-direction:column; align-items:center; gap:6px; padding:16px 12px 14px; margin-bottom:12px; border:1px solid var(--line); border-radius:16px; background:linear-gradient(180deg, color-mix(in srgb, var(--accent) 14%, var(--card)), var(--card)); }
   .mo-pet { width:100%; height:auto; cursor:pointer; touch-action:manipulation; transform-origin:50% 100%; display:block; }
-  .mo-walk { width:170px; max-width:62%; transition:transform 1.6s cubic-bezier(.45,0,.55,1); will-change:transform; }
+  .mo-walk { width:170px; max-width:62%; }
   .mo-pet.egg { animation:moWobble 2.4s ease-in-out infinite; }
   @keyframes moWobble { 0%,100% { transform:rotate(0); } 20% { transform:rotate(-4deg); } 40% { transform:rotate(3deg); } 60% { transform:rotate(-2deg); } 80% { transform:rotate(0); } }
   .mo-pet.sad { animation-duration:4.5s; filter:saturate(.6) brightness(.96); }
@@ -385,31 +385,6 @@
   .wing.r { transform-origin:0% 25%; animation-name:moFlapR; }
   @keyframes moFlapL { 0%,78%,100% { transform:rotate(0); } 82% { transform:rotate(26deg); } 86% { transform:rotate(2deg); } 90% { transform:rotate(26deg); } 94% { transform:rotate(0); } }
   @keyframes moFlapR { 0%,78%,100% { transform:rotate(0); } 82% { transform:rotate(-26deg); } 86% { transform:rotate(-2deg); } 90% { transform:rotate(-26deg); } 94% { transform:rotate(0); } }
-  .mo-pet.walk-l { animation:moStepL .56s ease-in-out infinite; }
-  .mo-pet.walk-r { animation:moStepR .56s ease-in-out infinite; }
-  .foot { transform-box:fill-box; transform-origin:50% 50%; }
-  .mo-pet.walk-l { --d:-1; } .mo-pet.walk-r { --d:1; }
-  .hturn, .nturn { transition:transform .35s ease; }
-  .mo-pet.walk-l .hturn, .mo-pet.walk-r .hturn, .mo-pet.walk-l .nturn, .mo-pet.walk-r .nturn { transform:translateX(calc(var(--d) * 13px)); }
-  .bturn { transition:transform .35s ease; }
-  .mo-pet.walk-l .bturn, .mo-pet.walk-r .bturn { transform:translateX(calc(var(--d) * 8px)); }
-  .fturn { transition:transform .35s ease; }
-  .mo-pet.walk-l .fturn { transform:translateX(-14px); }
-  .mo-pet.walk-r .fturn { transform:translateX(14px); }
-  .mo-pet.walk-l .foot, .mo-pet.walk-r .foot { animation:moStride .56s infinite; }
-  .mo-pet.walk-l .foot.r, .mo-pet.walk-r .foot.r { animation-delay:-.28s; }
-  @keyframes moStride { 0% { transform:translate(calc(var(--d) * -9px), 0); animation-timing-function:ease-in-out; } 25% { transform:translate(0, -10px); animation-timing-function:ease-in-out; } 50% { transform:translate(calc(var(--d) * 9px), 0); animation-timing-function:linear; } 100% { transform:translate(calc(var(--d) * -9px), 0); } }
-  .mo-pet.walk-l .tail, .mo-pet.walk-r .tail { animation-duration:.7s; }
-  @keyframes moStepL { 0%,50%,100% { transform:translateY(0); } 25%,75% { transform:translateY(-2px); } }
-  @keyframes moStepR { 0%,50%,100% { transform:translateY(0); } 25%,75% { transform:translateY(-2px); } }
-  .turn { transition:transform .35s ease; }
-  .mo-pet.walk-l .turn { transform:translateX(-26px); }
-  .mo-pet.walk-r .turn { transform:translateX(26px); }
-  .wk { transition:opacity .3s; }
-  .mo-pet.walk-l .wk.r, .mo-pet.walk-r .wk.l { opacity:0; }
-  .tailflip { transition:transform .35s ease; transform-box:view-box; transform-origin:0 0; }
-  .mo-pet.walk-r .tailflip { transform:translateX(200px) scaleX(-1); }
-  .mo-pet.walk-l [filter], .mo-pet.walk-r [filter] { filter:none; }
   .mo-stage { contain:paint; }
   .mo-pet.jump { animation:moJump .6s ease-out; }
   @keyframes moBob { 0%,100% { transform:translateY(0) scale(1,1); } 50% { transform:translateY(-6px) scale(1.02,.98); } }
@@ -446,7 +421,7 @@
   .mo-dot.today { outline:2px solid var(--accent); outline-offset:1px; }
   .mo-spark { transform-box:fill-box; transform-origin:center; animation:moTw 1.8s ease-in-out infinite; }
   @keyframes moTw { 0%,100% { opacity:.2; transform:scale(.55); } 50% { opacity:1; transform:scale(1); } }
-  @media (prefers-reduced-motion: reduce) { .mo-pet, .mo-pet.egg, .mo-pet.jump, .mo-pet.walk-l, .mo-pet.walk-r, .blink, .breathe, .tail, .ear, .rear, .wing, .foot { animation:none !important; } .mo-spark { animation:none; opacity:1; } }
+  @media (prefers-reduced-motion: reduce) { .mo-pet, .mo-pet.egg, .mo-pet.jump, .blink, .breathe, .tail, .ear, .rear, .wing { animation:none !important; } .mo-spark { animation:none; opacity:1; } }
   /* toast "Dihapus · Urungkan" */
   #toasts { position:fixed; left:50%; transform:translateX(-50%); bottom:calc(84px + env(safe-area-inset-bottom)); z-index:70; display:flex; flex-direction:column; gap:8px; width:min(92vw,380px); pointer-events:none; }
   .toast { pointer-events:auto; display:flex; align-items:center; gap:10px; padding:8px 8px 8px 14px; border-radius:12px; background:var(--ink); color:var(--bg); font-size:14px; box-shadow:0 4px 16px #0004; animation:paneIn .18s ease; }
@@ -2035,7 +2010,6 @@ $("clearBtn").onclick = async () => {
 };
 
 /* ---------- Mochi: peliharaan, misi harian, streak (data dari server, sama dengan Telegram) ---------- */
-let moX = 0; // posisi Mochi saat berjalan-jalan (px dari tengah)
 let mochi = null, mochiMuted = load("mochiMute", false), mochiAC = null, mochiTapN = 0, mochiTapT = 0;
 const moEsc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const moMood = (en, done) => (done || en >= 60 ? "happy" : en >= 30 ? "ok" : "sad"); // misi hari ini cukup = senang; energi rendah = lesu
@@ -2206,7 +2180,7 @@ function renderMochi() {
   const dots = m.week.map((d) => '<div class="mo-dot ' + (d.st || "") + (d.today ? " today" : "") + '" title="' + d.d + '">' + (d.st === "on" ? "✓" : d.st === "frz" ? "❄" : d.st === "miss" ? "×" : d.d[0]) + "</div>").join("");
   const ms = m.missions.map((x) => '<div class="mo-mission ' + (x.n >= x.need ? "done" : "") + '"><div><div class="t">' + moEsc(x.text) + '</div><div class="p">' + x.n + " / " + x.need + '</div></div><div class="x">' + (x.n >= x.need ? "Selesai" : "+" + x.xp + " XP") + "</div></div>").join("");
   box.innerHTML =
-    '<div class="mo-stage"><div class="mo-say' + (Date.now() < moSayUntil ? " show" : "") + '" id="moSay">' + moEsc(Date.now() < moSayUntil ? moSayMsg : moSub(moT(MO_SAY[say]))) + '</div><div class="mo-walk" id="moWalk" style="transform:translateX(' + (m.egg ? 0 : moX) + 'px)"><svg id="moPet" class="mo-svg mo-pet ' + (m.egg ? "egg" : mood === "sad" ? "sad" : "") + '" viewBox="0 -8 200 198" role="img" aria-label="' + moEsc(m.name) + ', peliharaanmu">' + moPetSVG(mood, m, "m") + "</svg></div>" +
+    '<div class="mo-stage"><div class="mo-say' + (Date.now() < moSayUntil ? " show" : "") + '" id="moSay">' + moEsc(Date.now() < moSayUntil ? moSayMsg : moSub(moT(MO_SAY[say]))) + '</div><div class="mo-walk" id="moWalk"><svg id="moPet" class="mo-svg mo-pet ' + (m.egg ? "egg" : mood === "sad" ? "sad" : "") + '" viewBox="0 -8 200 198" role="img" aria-label="' + moEsc(m.name) + ', peliharaanmu">' + moPetSVG(mood, m, "m") + "</svg></div>" +
     '<div class="mo-name" id="moNameRow"><span id="moName">' + moEsc(m.name) + '</span><button type="button" class="mo-edit" id="moEdit" title="Ganti nama" aria-label="Ganti nama peliharaan"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg></button><span class="mo-lvl">' + moEsc(lvTxt) + '</span></div>' +
     '<div class="mo-bars"><div class="mo-bar"><label><span>' + (m.egg ? "Kehangatan" : "Kenyang") + '</span><span>' + m.en + '%</span></label><div class="mo-track"><div class="mo-fill en" style="width:' + m.en + '%"></div></div></div>' +
     '<div class="mo-bar"><label><span>' + (m.egg ? "Menetas" : "XP") + '</span><span>' + m.cur + " / " + m.lvlSize + '</span></label><div class="mo-track"><div class="mo-fill xp" style="width:' + (m.cur / m.lvlSize * 100) + '%"></div></div></div></div></div>' +
@@ -2322,33 +2296,6 @@ function moLookNow(x, y) {
 }
 window.addEventListener("pointermove", (e) => moLook(e.clientX, e.clientY), { passive: true });
 window.addEventListener("pointerdown", (e) => { moLook(e.clientX, e.clientY); moCtx(); }, { passive: true });
-function moWander(force) {
-  const m = mochi, w = $("moWalk"), svg = $("moPet");
-  if (!m || m.egg || !w || !svg || document.hidden) return;
-  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-  if (moMood(m.en, m.done) === "sad") { if (force) moToast("Mochi lemas, kasih makan lewat misi dulu"); return; }
-  if (svg.classList.contains("jump") || svg.classList.contains("walk-l") || svg.classList.contains("walk-r")) { if (force) setTimeout(() => moWander(true), 700); return; }
-  if (!force && Math.random() < 0.25) return; // kadang diam saja
-  const stage = w.closest(".mo-stage");
-  if (!stage.clientWidth || !w.offsetWidth) return; // tab Mochi sedang tertutup
-  const lim = Math.min(110, Math.max(0, (stage.clientWidth - w.offsetWidth) / 2 - 16));
-  let nx = Math.round((Math.random() * 2 - 1) * lim);
-  if (Math.abs(nx - moX) < 36) nx = moX > 0 ? -lim : lim;
-  const dir = nx < moX ? -1 : 1;
-  moX = nx;
-  svg.classList.add(dir < 0 ? "walk-l" : "walk-r");
-  requestAnimationFrame(() => requestAnimationFrame(() => { const w2 = $("moWalk"); if (w2) w2.style.transform = "translateX(" + moX + "px)"; }));
-  const eyes = svg.querySelector(".pe"), mouth = svg.querySelector(".pm");
-  if (eyes) eyes.setAttribute("transform", "translate(" + dir * 2 + " 0)");
-  if (mouth) mouth.setAttribute("transform", "translate(" + dir * 1 + " 0)");
-  setTimeout(() => {
-    const s2 = $("moPet"); if (!s2) return;
-    s2.classList.remove("walk-l", "walk-r");
-    const e2 = s2.querySelector(".pe"), m2 = s2.querySelector(".pm");
-    if (e2) e2.setAttribute("transform", "translate(0 0)"); if (m2) m2.setAttribute("transform", "translate(0 0)");
-  }, 1750);
-}
-(function moLoop() { setTimeout(() => { try { moWander(); } catch {} moLoop(); }, 3200 + Math.random() * 3000); })();
 $("mochiChip").onclick = () => { toggleSide(true); showTab("mochi"); };
 
 /* ---------- Menu "+" di HP (Curhat / Chat baru) ---------- */
