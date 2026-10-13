@@ -759,6 +759,7 @@ async function toggleTask(u, id) {
     t.rid = r ? r.id : null;
   }
   await saveTasks(u, tasks);
+  if (t.done) await mochiProgress(u, "task"); // tugas diselesaikan: hitung untuk misi Mochi
   return t;
 }
 async function deleteTask(u, id) {
@@ -1951,8 +1952,9 @@ const MOCHI_MISSIONS = [
   { id: "chat", text: "Ngobrol dengan asisten", need: 1, xp: 10 },
   { id: "remind", text: "Pasang 1 pengingat", need: 1, xp: 15 },
   { id: "spend", text: "Catat uang hari ini", need: 1, xp: 15 },
-  { id: "checkin", text: "Cerita harimu (curhat atau balas check-in)", need: 1, xp: 15 },
+  { id: "task", text: "Selesaikan 1 tugas", need: 1, xp: 15 },
 ];
+const MOCHI_STREAK_MIN = 3; // streak naik kalau minimal segini misi selesai dalam sehari (dari semua misi)
 const mochiDayDiff = (a, b) => Math.round((Date.parse(b + "T00:00:00Z") - Date.parse(a + "T00:00:00Z")) / DAY);
 const mochiAddDays = (k, n) => new Date(Date.parse(k + "T00:00:00Z") + n * DAY).toISOString().slice(0, 10);
 const mochiZero = () => Object.fromEntries(MOCHI_MISSIONS.map((x) => [x.id, 0]));
@@ -2009,7 +2011,8 @@ async function mochiProgress(u, id) {
       s.xp += def.xp;
       s.ev.push("✅ Misi selesai: " + def.text + " (+" + def.xp + " XP)");
       if (Math.floor(s.xp / MOCHI_LV) > before) s.ev.push("🎉 " + s.name + " naik ke level " + (before + 2) + "!");
-      if (!s.done && MOCHI_MISSIONS.every((x) => (s.m[x.id] || 0) >= x.need)) {
+      const finished = MOCHI_MISSIONS.filter((x) => (s.m[x.id] || 0) >= x.need).length;
+      if (!s.done && finished >= MOCHI_STREAK_MIN) {
         s.done = true;
         s.streak++;
         s.best = Math.max(s.best || 0, s.streak);
@@ -2017,17 +2020,18 @@ async function mochiProgress(u, id) {
         s.en = Math.min(100, s.en + 20);
         let extra = "";
         if (s.streak % 7 === 0 && s.frz < 3) { s.frz++; extra = " Dapat 1 jatah libur."; }
-        s.ev.push("🔥 Semua misi selesai! Streak " + s.streak + " hari." + extra);
+        s.ev.push("🔥 Misi hari ini cukup (" + finished + "/" + MOCHI_MISSIONS.length + "). Streak " + s.streak + " hari." + extra);
+      } else if (s.done && finished === MOCHI_MISSIONS.length) {
+        s.ev.push("🌟 Semua misi hari ini selesai!");
       }
     }
     s.ev = s.ev.slice(-8);
     await redis("SET", key(u, "mochi"), JSON.stringify(s));
   } catch {}
 }
-// Pesan di obrolan dihitung sebagai "cerita harimu" kalau mode curhat, atau dikirim setelah jam check-in malam.
+// Pesan apa pun di obrolan (mode asisten maupun curhat) menyelesaikan misi "Ngobrol dengan asisten".
 async function mochiChat(u, mode) {
-  if (mode !== "curhat") await mochiProgress(u, "chat");
-  if (mode === "curhat" || wib().hour >= HOURS.checkin) await mochiProgress(u, "checkin");
+  await mochiProgress(u, "chat");
 }
 // Ambil lalu kosongkan kabar baru (dipakai sekali oleh web atau Telegram, mana yang sedang melayani)
 async function takeMochiEvents(u) {

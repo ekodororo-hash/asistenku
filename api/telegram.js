@@ -826,7 +826,7 @@ module.exports = async (req, res) => {
 
     // Mode aktif menentukan: riwayat mana yang dipakai, prompt, dan apakah tag/memori diproses
     const mode = await getMode(u);
-    await mochiChat(u, mode); // hitung sebagai misi "cerita harimu"
+    await mochiChat(u, mode); // hitung sebagai misi "Ngobrol dengan asisten"
     if (mode !== "curhat") { const n = await takeCurhatExpiredNotice(u); if (n) await say(n); } // curhat kedaluwarsa sendiri
 
     // Jawaban "ya / tidak" untuk pertanyaan "mau tambah lagi sebagai pemasukan terpisah?" (hanya di mode asisten)

@@ -11,7 +11,7 @@ Tiap akun punya data, API key Gemini, dan bot Telegram sendiri.
 - **Pengingat** sekali jalan dan berulang (harian, mingguan, dst).
   Pengingat sekali jalan yang belum ditanggapi diulang: 5 menit setelahnya, lalu tiap 1 menit, maksimal 5 kali, berhenti kalau tombol **Sudah** / **Tunda 10 menit** ditekan (Telegram atau notifikasi web). Matikan dengan `/ulang off`.
 - **Notifikasi push web (PWA)** untuk pengingat, tanpa bergantung pada Telegram.
-- **Mochi:** peliharaan virtual yang tumbuh kalau kamu aktif. Misi harian (ngobrol dengan asisten, pasang 1 pengingat, catat uang, cerita harimu), XP dan level, streak dengan jatah libur, mata mengikuti kursor, bereaksi saat diketuk, efek suara. Data satu untuk web dan Telegram (`/mochi`), pengingat sore lewat cron.
+- **Mochi:** peliharaan virtual yang tumbuh kalau kamu aktif. Misi harian (ngobrol dengan asisten, pasang 1 pengingat, catat uang, selesaikan 1 tugas), XP dan level, streak naik kalau minimal 3 dari 4 misi selesai, jatah libur, mata mengikuti kursor, bereaksi saat diketuk, efek suara. Data satu untuk web dan Telegram (`/mochi`), pengingat sore lewat cron.
 - **Mode curhat** terpisah dari asisten (riwayat sendiri, tidak mencatat apa pun).
 - **Bot Telegram** per pengguna: teks, foto, voice note, tombol, perintah `/...`.
 - **Pesan otomatis:** ringkasan pagi, check-in malam, rekap mingguan (lewat cron).

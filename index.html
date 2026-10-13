@@ -364,7 +364,7 @@
   .mochichip.hot span { color:#d9822b; }
   .mo-stage { position:relative; overflow:hidden; display:flex; flex-direction:column; align-items:center; gap:6px; padding:16px 12px 14px; margin-bottom:12px; border:1px solid var(--line); border-radius:16px; background:linear-gradient(180deg, color-mix(in srgb, var(--accent) 14%, var(--card)), var(--card)); }
   .mo-pet { width:170px; max-width:62%; height:auto; cursor:pointer; touch-action:manipulation; animation:moBob 2.6s ease-in-out infinite; transform-origin:50% 100%; }
-  .mo-pet.sad { animation-duration:4.5s; }
+  .mo-pet.sad { animation-duration:4.5s; filter:saturate(.6) brightness(.96); }
   .mo-pet.jump { animation:moJump .6s ease-out; }
   @keyframes moBob { 0%,100% { transform:translateY(0) scale(1,1); } 50% { transform:translateY(-6px) scale(1.02,.98); } }
   @keyframes moJump { 0% { transform:translateY(0); } 35% { transform:translateY(-30px) scale(.95,1.06); } 70% { transform:translateY(0) scale(1.06,.94); } 100% { transform:translateY(0); } }
@@ -1987,7 +1987,7 @@ $("clearBtn").onclick = async () => {
 /* ---------- Mochi: peliharaan, misi harian, streak (data dari server, sama dengan Telegram) ---------- */
 let mochi = null, mochiMuted = load("mochiMute", false), mochiAC = null, mochiTapN = 0, mochiTapT = 0;
 const moEsc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const moMood = (en) => (en >= 60 ? "happy" : en >= 30 ? "ok" : "sad");
+const moMood = (en, done) => (done || en >= 60 ? "happy" : en >= 30 ? "ok" : "sad"); // misi hari ini cukup = senang; energi rendah = lesu
 
 // Efek suara disintesis dengan Web Audio (tanpa file). Baru bunyi setelah pengguna menyentuh halaman.
 function moCtx() {
@@ -2031,7 +2031,7 @@ function moPetSVG(mood) {
     '<g class="pe">' + eyes + '</g><path class="pm" d="' + mouth + '" fill="none" stroke="#3a2210" stroke-width="5" stroke-linecap="round"/>';
 }
 const moT = (t) => t.replace(/Mochi/g, () => (mochi && mochi.name) || "Mochi"); // nama peliharaan bisa diganti
-const MO_SAY = { happy: "Mochi senang, hari ini lancar.", ok: "Mochi mulai lapar. Ayo selesaikan misi.", sad: "Mochi lemas. Kasih makan lewat misi ya." };
+const MO_SAY = { done: "Misi hari ini beres. Mochi kenyang dan senang!", happy: "Mochi senang, hari ini lancar.", ok: "Mochi mulai lapar. Ayo selesaikan misi.", sad: "Mochi lemas. Kasih makan lewat misi ya." };
 const MO_TAP = {
   happy: ["Hehe, geli!", "Hore! Ketuk lagi dong.", "Mochi sayang kamu.", "Ayo selesaikan misi, aku semangat!"],
   ok: ["Ehh, aku lapar nih...", "Boleh minta misi dulu?", "Hmm, ketuk terus juga nggak kenyang."],
@@ -2041,7 +2041,7 @@ const MO_TAP = {
 function renderMochi() {
   const m = mochi;
   if (!m) return;
-  const mood = moMood(m.en);
+  const mood = moMood(m.en, m.done);
   const tab = document.querySelector('.tabs button[data-tab="mochi"]');
   if (tab) tab.textContent = m.name + " · Lv " + m.level + " · Streak " + m.streak;
   const chip = $("mochiChip");
@@ -2057,14 +2057,14 @@ function renderMochi() {
   const ms = m.missions.map((x) => '<div class="mo-mission ' + (x.n >= x.need ? "done" : "") + '"><div><div class="t">' + moEsc(x.text) + '</div><div class="p">' + x.n + " / " + x.need + '</div></div><div class="x">' + (x.n >= x.need ? "Selesai" : "+" + x.xp + " XP") + "</div></div>").join("");
   box.innerHTML =
     '<div class="mo-stage"><svg id="moPet" class="mo-svg mo-pet ' + (mood === "sad" ? "sad" : "") + '" viewBox="0 0 200 190" role="img" aria-label="' + moEsc(m.name) + ', peliharaanmu">' + moPetSVG(mood) + "</svg>" +
-    '<div class="mo-name" id="moNameRow"><span id="moName">' + moEsc(m.name) + '</span><button type="button" class="mo-edit" id="moEdit" title="Ganti nama" aria-label="Ganti nama peliharaan"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg></button><span class="mo-lvl">Lv ' + m.level + '</span></div><div class="mo-say" id="moSay">' + moEsc(moT(MO_SAY[mood])) + "</div>" +
+    '<div class="mo-name" id="moNameRow"><span id="moName">' + moEsc(m.name) + '</span><button type="button" class="mo-edit" id="moEdit" title="Ganti nama" aria-label="Ganti nama peliharaan"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg></button><span class="mo-lvl">Lv ' + m.level + '</span></div><div class="mo-say" id="moSay">' + moEsc(moT(MO_SAY[m.done ? "done" : mood])) + "</div>" +
     '<div class="mo-bars"><div class="mo-bar"><label><span>Kenyang</span><span>' + m.en + '%</span></label><div class="mo-track"><div class="mo-fill en" style="width:' + m.en + '%"></div></div></div>' +
     '<div class="mo-bar"><label><span>XP</span><span>' + m.cur + " / " + m.lvlSize + '</span></label><div class="mo-track"><div class="mo-fill xp" style="width:' + (m.cur / m.lvlSize * 100) + '%"></div></div></div></div></div>' +
     '<div class="mo-h">Misi hari ini</div>' + ms +
     '<div class="mo-h">Streak</div><div class="mo-streak"><div><div class="n">' + m.streak + '</div><div class="muted">hari beruntun</div></div>' +
     '<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:14px">Jatah libur: ' + m.frz + '</div><div class="muted" style="font-size:12px">Dipakai otomatis kalau satu hari terlewat, supaya streak tidak putus. Terbaik: ' + m.best + ' hari.</div></div></div>' +
     '<div class="mo-week">' + dots + "</div>" +
-    '<p class="muted" style="margin:14px 0 8px;font-size:12px">Misi terisi otomatis dari obrolan, pengingat, dan catatan uang, baik dari web maupun Telegram. Ketik /mochi di Telegram untuk melihatnya di sana.</p>' +
+    '<p class="muted" style="margin:14px 0 8px;font-size:12px">Misi terisi otomatis dari obrolan, pengingat, tugas, dan catatan uang, baik dari web maupun Telegram. Streak naik kalau minimal 3 dari 4 misi selesai. Ketik /mochi di Telegram untuk melihatnya di sana.</p>' +
     '<button type="button" id="moSnd">' + (mochiMuted ? "Suara: mati" : "Suara: nyala") + "</button>";
   $("moPet").addEventListener("click", moTap);
   $("moEdit").onclick = moRename;
@@ -2115,7 +2115,7 @@ function mochiUpdate(m) {
   if (m.day === old.day) {
     const gained = m.missions.filter((x, i) => old.missions[i] && x.n > old.missions[i].n);
     if (m.level > old.level) { MO_SFX.level(); moToast("Naik level! " + m.name + " sekarang level " + m.level); moJump(); }
-    else if (m.done && !old.done) { MO_SFX.all(); moToast("Semua misi selesai. Streak " + m.streak + " hari"); moJump(); }
+    else if (m.done && !old.done) { MO_SFX.all(); moToast("Misi hari ini cukup. Streak " + m.streak + " hari"); moJump(); }
     else if (gained.length) {
       const fin = gained.find((x) => x.n >= x.need);
       if (fin) { MO_SFX.done(); moToast("Misi selesai: " + fin.text); } else { MO_SFX.ding(); moToast("Progres misi bertambah"); }
@@ -2125,7 +2125,7 @@ function mochiUpdate(m) {
   else if (m.frz < old.frz) { MO_SFX.save(); moToast("Jatah libur dipakai. Streak aman."); }
 }
 function moTap(e) {
-  const mood = moMood(mochi.en);
+  const mood = moMood(mochi.en, mochi.done);
   mochiTapN++;
   moJump(); MO_SFX.tap(mood);
   const svg = $("moPet");

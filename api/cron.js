@@ -206,7 +206,10 @@ async function mochiNudge(u, chatId) {
   if (s.done) return "selesai";
   if (!(await once(key(u, `sent:mochi:${w.dateKey}`), 2 * DAY / 1000))) return "done";
   const risk = s.streak > 0 ? `\n🔥 Streak ${s.streak} hari bisa putus kalau hari ini terlewat${s.frz > 0 ? " (ada " + s.frz + " jatah libur)" : ""}.` : "";
-  const ok = await sendTelegram(u, chatId, "🐾 " + (s.name || "Mochi") + " menunggu kamu.\n\n" + mochiText(s).split("\n\n")[1] + risk);
+  const list = mochiText(s).split("\n\n")[1] + risk;
+  let ok = false;
+  if (chatId) ok = await sendTelegram(u, chatId, "🐾 " + (s.name || "Mochi") + " menunggu kamu.\n\n" + list); // Telegram diutamakan
+  else ok = (await sendPush(u, { title: "🐾 " + (s.name || "Mochi") + " menunggu kamu", body: list, tag: "mochi-" + w.dateKey })) > 0; // pengguna yang hanya punya PWA
   if (!ok) { await redis("DEL", key(u, `sent:mochi:${w.dateKey}`)); return "gagal kirim"; }
   return "terkirim";
 }
@@ -231,7 +234,7 @@ module.exports = async (req, res) => {
     const r = (out[u] = {});
     await guarded(r, "reminders", () => runReminders(u, chatId)); // yang paling penting dulu
     await guarded(r, "nags", () => runNags(u, chatId));
-    if (!chatId) continue; // pesan otomatis lain hanya lewat Telegram
+    if (!chatId) { await guarded(r, "mochi", () => mochiNudge(u, null)); continue; } // pesan otomatis lain hanya lewat Telegram; nudge Mochi juga lewat push
     await guarded(r, "pagi", () => morning(u, chatId));
     await guarded(r, "checkin", () => checkin(u, chatId));
     await guarded(r, "rekap", () => weeklyRecap(u, chatId));

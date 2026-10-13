@@ -30,9 +30,9 @@ Kalau pengguna terlihat sedang curhat atau emosional, berubah jadi pendengar yan
 // Status tujuan pengingat (Telegram dan/atau notifikasi PWA) untuk prompt
 function deliveryLine(botLinked, pushOn) {
   if (botLinked && pushOn) return "Tujuan pengingat: bot Telegram sudah terhubung dan notifikasi PWA sudah aktif, jadi pengingat dikirim ke keduanya.";
-  if (botLinked) return "Tujuan pengingat: bot Telegram sudah terhubung (pengingat dikirim ke sana). Notifikasi PWA belum aktif di perangkat mana pun; boleh sebut SEKALI dan singkat bahwa itu bisa diaktifkan di Pengaturan, jangan memaksa dan jangan diulang-ulang.";
-  if (pushOn) return "Tujuan pengingat: notifikasi PWA sudah aktif (pengingat dikirim ke sana). Bot Telegram belum terhubung, tapi itu opsional, jadi jangan didesak.";
-  return "Tujuan pengingat: bot Telegram BELUM terhubung dan notifikasi PWA BELUM aktif. Pengingat tetap tersimpan tapi belum akan sampai ke mana pun sampai salah satunya diaktifkan di Pengaturan; ingatkan pengguna soal ini saat membuat pengingat.";
+  if (botLinked) return "Tujuan pengingat: bot Telegram sudah terhubung (pengingat dikirim ke sana). Itu sudah cukup, jadi jangan menyinggung notifikasi PWA.";
+  if (pushOn) return "Tujuan pengingat: notifikasi PWA sudah aktif, tapi bot Telegram belum terhubung. Telegram lebih andal untuk pengingat karena notifikasi PWA bisa telat kalau aplikasinya lama tidak dibuka. Sarankan SEKALI dan singkat saat membuat pengingat agar pengguna menghubungkan Telegram di Pengaturan, jangan memaksa dan jangan diulang-ulang.";
+  return "Tujuan pengingat: bot Telegram BELUM terhubung dan notifikasi PWA BELUM aktif. Pengingat tetap tersimpan tapi belum akan sampai ke mana pun sampai salah satunya diaktifkan di Pengaturan, dan Telegram yang paling dianjurkan. Ingatkan pengguna soal ini saat membuat pengingat.";
 }
 
 function buildSystem(mode, { profile, taskList, noteList, moneyText, remindText, botLinked, pushOn, partnerText, factsList }) {
@@ -293,7 +293,7 @@ module.exports = async (req, res) => {
     }
     const histText = image ? `[Foto] ${text}`.trim() : text;
     const mode = await getMode(u);
-    await mochiChat(u, mode); // hitung sebagai misi "cerita harimu"
+    await mochiChat(u, mode); // hitung sebagai misi "Ngobrol dengan asisten"
 
     // ---- Mode curhat: riwayat sendiri, tanpa tag, tanpa pencarian, tanpa salinan ke Telegram ----
     if (mode === "curhat") {
