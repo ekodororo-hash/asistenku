@@ -363,11 +363,11 @@
   .mochichip span { font-size:13px; font-weight:700; font-variant-numeric:tabular-nums; color:var(--muted); }
   .mochichip.hot span { color:#d9822b; }
   .mo-stage { position:relative; overflow:hidden; display:flex; flex-direction:column; align-items:center; gap:6px; padding:16px 12px 14px; margin-bottom:12px; border:1px solid var(--line); border-radius:16px; background:linear-gradient(180deg, color-mix(in srgb, var(--accent) 14%, var(--card)), var(--card)); }
-  .mo-pet { width:100%; height:auto; cursor:pointer; touch-action:manipulation; transform-origin:50% 100%; filter:drop-shadow(0 6px 6px rgba(0,0,0,.18)); display:block; }
+  .mo-pet { width:100%; height:auto; cursor:pointer; touch-action:manipulation; transform-origin:50% 100%; display:block; }
   .mo-walk { width:170px; max-width:62%; transition:transform 1.6s cubic-bezier(.45,0,.55,1); will-change:transform; }
   .mo-pet.egg { animation:moWobble 2.4s ease-in-out infinite; }
   @keyframes moWobble { 0%,100% { transform:rotate(0); } 20% { transform:rotate(-4deg); } 40% { transform:rotate(3deg); } 60% { transform:rotate(-2deg); } 80% { transform:rotate(0); } }
-  .mo-pet.sad { animation-duration:4.5s; filter:saturate(.6) brightness(.96) drop-shadow(0 6px 6px rgba(0,0,0,.18)); }
+  .mo-pet.sad { animation-duration:4.5s; filter:saturate(.6) brightness(.96); }
   .blink { transform-box:fill-box; transform-origin:center; animation:moBlink 4.2s infinite; }
   @keyframes moBlink { 0%,90%,100% { transform:scaleY(1); } 94% { transform:scaleY(.08); } }
   .breathe { transform-box:fill-box; transform-origin:50% 100%; animation:moBreathe 3.4s ease-in-out infinite; }
@@ -419,9 +419,9 @@
   .mo-name input { width:9.5em; padding:4px 8px; font:inherit; font-size:16px; border:1px solid var(--accent); border-radius:8px; background:var(--bg); color:var(--ink); }
   .mo-name button.ok { padding:4px 10px; font-size:13px; }
   .mo-lvl { font-size:12px; font-weight:600; background:var(--accent); color:#fff; border-radius:999px; padding:1px 9px; }
-  .mo-say { position:relative; max-width:92%; min-height:44px; display:flex; align-items:center; justify-content:center; padding:9px 14px; margin-bottom:10px; font-size:13.5px; line-height:1.35; color:var(--ink); text-align:center; background:var(--card); border:1px solid var(--line); border-radius:16px; box-shadow:0 2px 8px rgba(0,0,0,.08); animation:moSayIn .25s ease-out; }
+  .mo-say { position:relative; max-width:92%; min-height:44px; display:flex; align-items:center; justify-content:center; padding:9px 14px; margin-bottom:10px; font-size:13.5px; line-height:1.35; color:var(--ink); text-align:center; background:var(--card); border:1px solid var(--line); border-radius:16px; box-shadow:0 2px 8px rgba(0,0,0,.08); opacity:0; visibility:hidden; transform:translateY(4px); pointer-events:none; transition:opacity .2s ease, transform .2s ease, visibility 0s linear .2s; }
+  .mo-say.show { opacity:1; visibility:visible; transform:none; transition-delay:0s; }
   .mo-say::after { content:""; position:absolute; left:50%; bottom:-7px; width:12px; height:12px; background:var(--card); border-right:1px solid var(--line); border-bottom:1px solid var(--line); transform:translateX(-50%) rotate(45deg); }
-  @keyframes moSayIn { from { opacity:0; transform:translateY(4px) scale(.97); } to { opacity:1; transform:none; } }
   .mo-bars { display:grid; gap:9px; width:100%; margin-top:4px; }
   .mo-bar label { display:flex; justify-content:space-between; font-size:12px; color:var(--muted); margin-bottom:3px; }
   .mo-track { height:9px; border-radius:999px; background:var(--line); overflow:hidden; }
@@ -2176,6 +2176,14 @@ const MO_TAP = {
   egg: ["Tok tok... masih hangat di dalam.", "Ada yang bergerak di dalam!", "Sebentar lagi menetas{n}..."],
 };
 
+// Bubble ucapan Mochi hanya muncul sebentar setelah diketuk, lalu hilang sendiri
+let moSayT = 0, moSayUntil = 0, moSayMsg = "";
+function moShowSay(text, ms) {
+  moSayMsg = text; moSayUntil = Date.now() + (ms || 2600);
+  const b = $("moSay"); if (b) { b.textContent = text; b.classList.add("show"); }
+  clearTimeout(moSayT);
+  moSayT = setTimeout(() => { moSayUntil = 0; const b2 = $("moSay"); if (b2) b2.classList.remove("show"); }, ms || 2600);
+}
 function renderMochi() {
   const m = mochi;
   if (!m) return;
@@ -2196,7 +2204,7 @@ function renderMochi() {
   const dots = m.week.map((d) => '<div class="mo-dot ' + (d.st || "") + (d.today ? " today" : "") + '" title="' + d.d + '">' + (d.st === "on" ? "✓" : d.st === "frz" ? "❄" : d.st === "miss" ? "×" : d.d[0]) + "</div>").join("");
   const ms = m.missions.map((x) => '<div class="mo-mission ' + (x.n >= x.need ? "done" : "") + '"><div><div class="t">' + moEsc(x.text) + '</div><div class="p">' + x.n + " / " + x.need + '</div></div><div class="x">' + (x.n >= x.need ? "Selesai" : "+" + x.xp + " XP") + "</div></div>").join("");
   box.innerHTML =
-    '<div class="mo-stage"><div class="mo-say" id="moSay">' + moEsc(moSub(moT(MO_SAY[say]))) + '</div><div class="mo-walk" id="moWalk" style="transform:translateX(' + (m.egg ? 0 : moX) + 'px)"><svg id="moPet" class="mo-svg mo-pet ' + (m.egg ? "egg" : mood === "sad" ? "sad" : "") + '" viewBox="0 -8 200 198" role="img" aria-label="' + moEsc(m.name) + ', peliharaanmu">' + moPetSVG(mood, m, "m") + "</svg></div>" +
+    '<div class="mo-stage"><div class="mo-say' + (Date.now() < moSayUntil ? " show" : "") + '" id="moSay">' + moEsc(Date.now() < moSayUntil ? moSayMsg : moSub(moT(MO_SAY[say]))) + '</div><div class="mo-walk" id="moWalk" style="transform:translateX(' + (m.egg ? 0 : moX) + 'px)"><svg id="moPet" class="mo-svg mo-pet ' + (m.egg ? "egg" : mood === "sad" ? "sad" : "") + '" viewBox="0 -8 200 198" role="img" aria-label="' + moEsc(m.name) + ', peliharaanmu">' + moPetSVG(mood, m, "m") + "</svg></div>" +
     '<div class="mo-name" id="moNameRow"><span id="moName">' + moEsc(m.name) + '</span><button type="button" class="mo-edit" id="moEdit" title="Ganti nama" aria-label="Ganti nama peliharaan"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg></button><span class="mo-lvl">' + moEsc(lvTxt) + '</span></div>' +
     '<div class="mo-bars"><div class="mo-bar"><label><span>' + (m.egg ? "Kehangatan" : "Kenyang") + '</span><span>' + m.en + '%</span></label><div class="mo-track"><div class="mo-fill en" style="width:' + m.en + '%"></div></div></div>' +
     '<div class="mo-bar"><label><span>' + (m.egg ? "Menetas" : "XP") + '</span><span>' + m.cur + " / " + m.lvlSize + '</span></label><div class="mo-track"><div class="mo-fill xp" style="width:' + (m.cur / m.lvlSize * 100) + '%"></div></div></div></div></div>' +
@@ -2270,7 +2278,7 @@ function moTap(e) {
   if (mochi.egg) { // telur: bergoyang dan "bicara", tidak punya wajah
     moJump(); MO_SFX.tap("ok");
     const el0 = MO_TAP.egg;
-    $("moSay").textContent = moSub(moT(el0[Math.floor(Math.random() * el0.length)]));
+    moShowSay(moSub(moT(el0[Math.floor(Math.random() * el0.length)])));
     clearTimeout(mochiTapT); mochiTapT = setTimeout(renderMochi, 1600);
     return;
   }
@@ -2282,7 +2290,7 @@ function moTap(e) {
   eyes.innerHTML = '<path d="M56 90q12-14 24 0M120 90q12-14 24 0" stroke="#3a2210" stroke-width="5" fill="none" stroke-linecap="round"/>';
   if (mood !== "sad") mouth.setAttribute("d", moMouth(mochi.sp || "kucing", "tap"));
   const l = MO_TAP[mood];
-  $("moSay").textContent = mochiTapN >= 6 && mood === "happy" ? "Sudah ah, geli banget!" : moSub(moT(l[Math.floor(Math.random() * l.length)]));
+  moShowSay(mochiTapN >= 6 && mood === "happy" ? "Sudah ah, geli banget!" : moSub(moT(l[Math.floor(Math.random() * l.length)])));
   if (mochiTapN >= 6) mochiTapN = 0;
   const stage = svg.closest(".mo-stage"), r = stage.getBoundingClientRect();
   const s = el("span", "mo-pop", mood === "sad" ? "..." : "♥");
@@ -2292,7 +2300,13 @@ function moTap(e) {
   mochiTapT = setTimeout(renderMochi, 900);
 }
 // Mata dan mulut Mochi mengikuti kursor / titik sentuh
+let moLookRaf = 0, moLookX = 0, moLookY = 0;
 function moLook(x, y) {
+  moLookX = x; moLookY = y;
+  if (moLookRaf) return;
+  moLookRaf = requestAnimationFrame(() => { moLookRaf = 0; moLookNow(moLookX, moLookY); });
+}
+function moLookNow(x, y) {
   document.querySelectorAll(".mo-svg").forEach((svg) => {
     const r = svg.getBoundingClientRect();
     if (!r.width) return;
