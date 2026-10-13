@@ -8,7 +8,7 @@
 const crypto = require("crypto");
 const { redis } = require("./_lib");
 const {
-  safeEq, hashPassword, verifyPassword,
+  safeEq, hashPassword, verifyPassword, DUMMY_HASH,
   setSessionCookie, clearSessionCookie, readSession, rateLimit, requireUser,
 } = require("./_auth");
 
@@ -66,7 +66,7 @@ async function login(req, res, body) {
   let rec = null;
   try { rec = raw ? JSON.parse(raw) : null; } catch {}
   // Tetap hitung hash saat user tidak ada supaya waktu respons seragam
-  const ok = verifyPassword(password, rec ? rec.hash : "AAAA:AAAA") && !!rec;
+  const ok = verifyPassword(password, rec ? rec.hash : DUMMY_HASH) && !!rec;
   if (!ok) return res.status(401).json({ error: "Username atau password salah." });
 
   setSessionCookie(res, rec.id);
@@ -105,6 +105,9 @@ module.exports = async (req, res) => {
     if (body.op === "logout") { clearSessionCookie(res); return res.status(200).json({ ok: true }); }
     return res.status(400).json({ error: "op tidak dikenal" });
   } catch (e) {
-    return res.status(500).json({ error: "Server error: " + e.message });
+    console.error("auth error:", e);
+    // Pesan konfigurasi (mis. SESSION_SECRET belum diisi) tetap ditampilkan; error lain disamarkan.
+    const msg = /belum diisi/.test(String(e.message)) ? e.message : "Terjadi kesalahan di server. Coba lagi sebentar.";
+    return res.status(500).json({ error: msg });
   }
 };

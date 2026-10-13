@@ -90,7 +90,9 @@
   .wxbar { display:block; width:100%; text-align:center; border:0; cursor:pointer; border-bottom:1px solid var(--line); border-radius:0; background:var(--bg); color:var(--muted); font-size:13px; line-height:1.3; padding:6px 16px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .wxbar[hidden] { display:none; }
   .wxbar .wxtrack { display:inline-flex; white-space:nowrap; will-change:transform; animation:wxscroll var(--wxdur,30s) linear infinite; }
-  .wxbar .wxitem { flex:none; padding-right:48px; }
+  .wxbar .wxitem { flex:none; padding-right:48px; display:inline-flex; align-items:center; gap:6px; }
+  .wxbar .wxico { display:inline-flex; color:var(--accent); font-style:normal; }
+  .wxbar .wxico svg { display:block; }
   .wxbar:hover .wxtrack, .wxbar:focus-visible .wxtrack { animation-play-state:paused; }
   @keyframes wxscroll { from { transform:translateX(0); } to { transform:translateX(-50%); } }
   @media (prefers-reduced-motion: reduce) { .wxbar .wxtrack { animation:none; } }
@@ -178,13 +180,15 @@
   .task button { padding:2px 8px; font-size:12px; }
   .card.wx { white-space:normal; }
   .wx-top { display:flex; align-items:center; gap:12px; }
-  .wx-ico { font-size:44px; line-height:1; }
+  .wx-ico { color:var(--accent); line-height:0; }
+  .wx-ico svg { display:block; }
   .wx-temp { font-size:30px; font-weight:600; line-height:1.1; }
   .wx-place { font-size:13px; color:var(--muted); }
   .wx-meta { margin-top:8px; color:var(--muted); font-size:13px; line-height:1.5; }
   .hours { display:flex; gap:6px; overflow-x:auto; margin-top:10px; padding-bottom:2px; scrollbar-width:none; -ms-overflow-style:none; -webkit-overflow-scrolling:touch; }
   .hours div { flex:0 0 auto; text-align:center; font-size:12px; padding:6px 8px; border:1px solid var(--line); border-radius:10px; min-width:52px; }
-  .hours b { display:block; font-size:16px; font-weight:400; margin:2px 0; }
+  .hours b { display:block; font-weight:400; margin:4px 0; color:var(--muted); line-height:0; }
+  .hours b svg { display:inline-block; }
   .cats { display:flex; gap:8px; overflow-x:auto; margin-bottom:10px; padding-bottom:2px; scrollbar-width:none; -ms-overflow-style:none; -webkit-overflow-scrolling:touch; }
   .cats button { white-space:nowrap; font-size:13px; padding:6px 12px; flex:none; }
   .cats button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
@@ -291,7 +295,8 @@
   .acts { display:flex; flex-direction:column; gap:6px; white-space:normal; }
   .md + .acts { margin-top:10px; }
   .act { display:flex; gap:10px; align-items:flex-start; padding:8px 10px; border-radius:10px; background:var(--bg); border:1px solid var(--line); border-left:3px solid var(--ac, var(--accent)); line-height:1.35; }
-  .act .ai { flex:none; font-size:18px; line-height:1.2; }
+  .act .ai { flex:none; width:18px; height:18px; margin-top:1px; color:var(--ac, var(--accent)); }
+  .act .ai svg { display:block; }
   .act .ab { min-width:0; flex:1; }
   .act .al { font-size:11px; font-weight:600; letter-spacing:.03em; text-transform:uppercase; color:var(--ac, var(--accent)); }
   .act .av { font-size:14px; font-weight:600; word-break:break-word; }
@@ -322,7 +327,8 @@
   .rc-row .bar u { display:block; height:100%; background:var(--c); border-radius:2px; }
   /* empty state */
   .empty { text-align:center; padding:22px 12px; }
-  .empty-ico { font-size:38px; line-height:1; margin-bottom:8px; }
+  .empty-ico { color:var(--muted); margin-bottom:8px; opacity:.8; }
+  .empty-ico svg { display:block; margin:0 auto; }
   .empty-t { font-weight:600; font-size:14px; }
   .empty-h { font-size:13px; color:var(--muted); margin-top:4px; line-height:1.4; }
   /* skeleton kecil di panel */
@@ -398,19 +404,19 @@
   <h3>Keluar dari mode curhat?</h3>
   <p>Obrolan curhat akan dihapus. Hanya riwayat curhat yang terhapus; obrolan asisten, tugas, catatan, dan uang tidak terpengaruh.</p>
   <div class="opts">
-    <button id="exitDel" class="danger">🗑️ Hapus &amp; keluar<small>Obrolan curhat dihapus dan tidak bisa dikembalikan.</small></button>
-    <button id="exitKeep">💾 Simpan dulu<small>Keluar, tapi obrolan curhat tetap tersimpan sampai kamu hapus sendiri.</small></button>
+    <button id="exitDel" class="danger">Hapus &amp; keluar<small>Obrolan curhat dihapus dan tidak bisa dikembalikan.</small></button>
+    <button id="exitKeep">Simpan dulu<small>Keluar, tapi obrolan curhat tetap tersimpan sampai kamu hapus sendiri.</small></button>
     <button id="exitStay" class="primary">Tetap curhat</button>
   </div>
 </dialog>
 <div id="app">
 <header>
-  <button id="tasksToggle" title="Panel">☰ Panel</button>
+  <button id="tasksToggle" title="Panel"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="vertical-align:-3px;margin-right:6px"><path d="M4 6h16M4 12h16M4 18h16"/></svg>Panel</button>
   <h1 id="title">Asisten Pribadi</h1>
   <div class="hbtns">
     <button id="modeBtn" title="Ganti mode">Curhat</button>
     <button id="clearBtn" title="Mulai obrolan baru">Chat baru</button>
-    <a href="/settings.html" class="btn" title="Pengaturan" aria-label="Pengaturan">⚙️<span class="lbl">&nbsp;Pengaturan</span></a>
+    <a href="/settings.html" class="btn" title="Pengaturan" aria-label="Pengaturan"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg><span class="lbl" style="margin-left:6px">Pengaturan</span></a>
   </div>
 </header>
 
@@ -418,7 +424,7 @@
   <section id="chatCol">
     <button id="wxBar" class="wxbar" type="button" title="Ketuk untuk detail cuaca" hidden></button>
     <div id="todayBar" class="todaybar" hidden></div>
-    <div id="curhatNote" class="curhatnote">🔒 Mode curhat: obrolan ini punya riwayat sendiri, tidak membuat tugas, catatan, pengingat, atau pengeluaran, tidak masuk memori, dan tidak disalin ke Telegram. Terhapus sendiri kalau lama tidak dipakai.</div>
+    <div id="curhatNote" class="curhatnote">Mode curhat: obrolan ini punya riwayat sendiri, tidak membuat tugas, catatan, pengingat, atau pengeluaran, tidak masuk memori, dan tidak disalin ke Telegram. Terhapus sendiri kalau lama tidak dipakai.</div>
     <div id="chat"></div>
     <button type="button" id="toBottom" title="Ke pesan terbaru" aria-label="Ke pesan terbaru" hidden><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="m6 13 6 6 6-6"/></svg></button>
     <div id="quotaBar" class="quota" hidden></div>
@@ -699,9 +705,49 @@ async function copyText(t) {
   } catch { return false; }
 }
 
-/* Baris konfirmasi aksi AI (✅ ⏰ 🗒️ 💰 ...) di akhir balasan dijadikan kartu kecil */
-const ACT_RE = /^(✅ Tugas ditambahkan|⏰ Pengingat|🗒️ Dicatat|💰 Dicatat|💵 |💸 Dicatat|🗑️ Pengingat dihapus|🗑️ Dihapus|⚠️ |\(Jamnya)/;
-const ACT_KIND = { "✅": "task", "⏰": "remind", "🗒️": "note", "💰": "money", "💵": "money", "💸": "money", "🗑️": "del", "⚠️": "warn" };
+/* ---------- Ikon SVG (pengganti emoji) ---------- */
+const svgi = (p, s = 18, w = 1.8) => '<svg viewBox="0 0 24 24" width="' + s + '" height="' + s + '" fill="none" stroke="currentColor" stroke-width="' + w + '" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + p + '</svg>';
+const ICO = {
+  task: '<circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 4.5-5"/>',
+  remind: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  note: '<path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M9.5 12h5M9.5 16h5"/>',
+  money: '<rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/>',
+  del: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+  warn: '<path d="M12 3 2.5 20h19z"/><path d="M12 10v5M12 17.5v.01"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4"/>',
+  moon: '<path d="M20 14.5A8 8 0 1 1 9.5 4 6.5 6.5 0 0 0 20 14.5z"/>',
+  cloud: '<path d="M7 18a4 4 0 0 1-.5-8A5.5 5.5 0 0 1 17 8.5 4.8 4.8 0 0 1 17.5 18z"/>',
+  partly: '<circle cx="8" cy="8" r="2.5"/><path d="M8 2.5V4M2.5 8H4M4.2 4.2l1 1M11.8 4.2l-1 1"/><path d="M9 20a3.5 3.5 0 0 1-.3-7A5 5 0 0 1 18 14.5 3 3 0 0 1 18 20z"/>',
+  fog: '<path d="M4 9h16M4 13h16M7 17h10"/>',
+  drizzle: '<path d="M7 13a4 4 0 0 1-.5-8A5.5 5.5 0 0 1 17 3.5 4.8 4.8 0 0 1 17.5 13z"/><path d="M9 17v2M13 17v2M17 17v2"/>',
+  rain: '<path d="M7 13a4 4 0 0 1-.5-8A5.5 5.5 0 0 1 17 3.5 4.8 4.8 0 0 1 17.5 13z"/><path d="m8 17-1 3M12 17l-1 3M16 17l-1 3"/>',
+  snow: '<path d="M12 3v18M4.2 7.5l15.6 9M4.2 16.5l15.6-9"/>',
+  storm: '<path d="M7 13a4 4 0 0 1-.5-8A5.5 5.5 0 0 1 17 3.5 4.8 4.8 0 0 1 17.5 13z"/><path d="m12 13-2 4h4l-2 4"/>',
+  temp: '<path d="M10 14.5V5a2 2 0 0 1 4 0v9.5a4 4 0 1 1-4 0z"/>',
+};
+const WX_MAP = { "\u2600": "sun", "\u{1F319}": "moon", "\u26C5": "partly", "\u2601": "cloud", "\u{1F32B}": "fog", "\u{1F326}": "drizzle", "\u{1F327}": "rain", "\u2744": "snow", "\u26C8": "storm", "\u{1F321}": "temp" };
+const wxKey = (i) => ICO[i] ? i : (WX_MAP[Array.from(String(i || ""))[0]] || "temp");
+const icoSvg = (k, s, w) => svgi(ICO[k] || ICO.note, s, w);
+/* Hapus emoji dari teks balasan (Gemini sering menyisipkannya) */
+const noEmoji = (s) => String(s).replace(/[\p{Extended_Pictographic}\uFE0F\u200D]+[ \t]?/gu, "");
+
+/* Baris konfirmasi aksi AI (Tugas ditambahkan, Pengingat diset, ...) di akhir balasan dijadikan kartu kecil.
+   Awalan emoji lama (dari riwayat yang sudah tersimpan) tetap dikenali. */
+const ACT_RE = /^(Tugas ditambahkan|Pengingat (?:diset|digeser|dihapus)|Catatan dicatat|Pengeluaran dicatat|Pemasukan (?:dicatat|ditambahkan)|Saldo dicatat|Uang lain|Kiriman dicatat|Dihapus|Peringatan|\(Jamnya|[\u2705\u23F0\u{1F5D2}\u{1F4B0}\u{1F4B5}\u{1F4B8}\u{1F5D1}\u26A0])/u;
+const LEGACY_PREFIX = /^[\u2705\u23F0\u{1F5D2}\u{1F4B0}\u{1F4B5}\u{1F4B8}\u{1F5D1}\u26A0]\uFE0F?\s*/u;
+const LEGACY_KIND = { "\u2705": "task", "\u23F0": "remind", "\u{1F5D2}": "note", "\u{1F4B0}": "money", "\u{1F4B5}": "money", "\u{1F4B8}": "money", "\u{1F5D1}": "del", "\u26A0": "warn" };
+function actKind(line) {
+  const f = Array.from(line)[0];
+  if (LEGACY_KIND[f]) return LEGACY_KIND[f];
+  if (/^Tugas ditambahkan/.test(line)) return "task";
+  if (/^Pengingat (diset|digeser)/.test(line)) return "remind";
+  if (/^Catatan dicatat/.test(line)) return "note";
+  if (/^(Pengeluaran dicatat|Pemasukan|Saldo dicatat|Uang lain|Kiriman dicatat)/.test(line)) return "money";
+  if (/^(Dihapus|Pengingat dihapus)/.test(line)) return "del";
+  if (/^Peringatan/.test(line)) return "warn";
+  return "hint";
+}
 function splitActions(text) {
   const paras = String(text).split(/\n{2,}/), acts = [];
   while (paras.length && ACT_RE.test(paras[paras.length - 1].trim())) acts.unshift(paras.pop().trim());
@@ -709,16 +755,15 @@ function splitActions(text) {
 }
 function actCard(p) {
   const lines = p.split("\n");
-  const m = lines[0].match(/^(\S+)\s+(.*)$/);
-  const ico = m ? m[1] : "", kind = ACT_KIND[ico] || "hint";
+  const kind = actKind(lines[0]);
   const c = mk("div", "act k-" + kind);
   if (kind === "hint") { c.appendChild(mk("div", "as", p.replace(/^\(|\)$/g, ""))); return c; }
-  c.appendChild(mk("div", "ai", ico));
+  const ico = mk("div", "ai"); ico.innerHTML = icoSvg(kind, 18, 1.8); c.appendChild(ico);
   const b = mk("div", "ab");
-  const head = m[2], lm = head.match(/^([^:\d]{2,40}):\s*(.*)$/);
+  const head = lines[0].replace(LEGACY_PREFIX, ""), lm = head.match(/^([^:\d]{2,40}):\s*(.*)$/);
   if (lm && lm[2]) { b.appendChild(mk("div", "al", lm[1])); b.appendChild(mk("div", "av", lm[2])); }
   else b.appendChild(mk("div", "av", head));
-  lines.slice(1).forEach((l) => { if (l.trim()) b.appendChild(mk("div", "as", l.trim())); });
+  lines.slice(1).forEach((l) => { if (l.trim()) b.appendChild(mk("div", "as", noEmoji(l.trim()))); });
   c.appendChild(b);
   return c;
 }
@@ -728,9 +773,9 @@ function setBubble(d, text, ts) {
   const isBot = d.classList.contains("bot") && !d.classList.contains("note") && !d.classList.contains("err");
   if (isBot) {
     const { body, acts } = splitActions(text);
-    if (!acts.length) d.appendChild(mdRender(text));
+    if (!acts.length) d.appendChild(mdRender(noEmoji(text)));
     else {
-      if (body.trim()) d.appendChild(mdRender(body));
+      if (body.trim()) d.appendChild(mdRender(noEmoji(body)));
       const box = mk("div", "acts");
       acts.forEach((a) => box.appendChild(actCard(a)));
       d.appendChild(box);
@@ -747,7 +792,7 @@ function setBubble(d, text, ts) {
       const b = mk("button"); b.type = "button"; b.className = "copybtn"; b.title = "Salin"; b.setAttribute("aria-label", "Salin balasan");
       b.innerHTML = ICON_COPY;
       b.onclick = async () => {
-        const ok = await copyText(text);
+        const ok = await copyText(noEmoji(text));
         b.innerHTML = ok ? ICON_CHECK : ICON_COPY; b.title = ok ? "Tersalin" : "Gagal menyalin";
         setTimeout(() => { b.innerHTML = ICON_COPY; b.title = "Salin"; }, 1300);
       };
@@ -820,7 +865,7 @@ function renderConfirm() {
   if (!pdel || !pdel.items || !pdel.items.length || mode === "curhat") return;
   const items = pdel.items, id = pdel.id, one = items.length === 1;
   const card = el("div", "delcard"); card.id = "delCard";
-  card.appendChild(el("div", "dq", one ? "🗑️ Hapus " + DEL_KIND[items[0].kind] + " ini?" : "🗑️ Ketemu " + items.length + " yang cocok. Mana yang dihapus?"));
+  card.appendChild(el("div", "dq", one ? "Hapus " + DEL_KIND[items[0].kind] + " ini?" : "Ketemu " + items.length + " yang cocok. Mana yang dihapus?"));
   if (one) card.appendChild(el("p", "dl", items[0].label));
   const box = el("div", one ? "dr" : "db");
   const run = async (op, pick) => {
@@ -828,9 +873,9 @@ function renderConfirm() {
     try {
       const { result } = await api("/api/state", { method: "POST", body: JSON.stringify({ op, id, pick }) });
       pdel = null; card.remove();
-      if (result && result.item) { addBubble("bot", "🗑️ Dihapus: " + result.item.label); await refreshFromServer(); }
+      if (result && result.item) { addBubble("bot", "Dihapus: " + result.item.label); await refreshFromServer(); }
       else addBubble("bot", "Oke, tidak jadi dihapus.", "note");
-    } catch (e) { pdel = null; card.remove(); addBubble("bot", "⚠️ " + e.message, "note"); }
+    } catch (e) { pdel = null; card.remove(); addBubble("bot", "Peringatan: " + e.message, "note"); }
   };
   items.forEach((it, i) => {
     const b = el("button", "danger", one ? "Hapus" : (i + 1) + ". " + it.label);
@@ -896,7 +941,8 @@ function renderBadges() {
 
 function emptyState(icon, title, hint) {
   const d = el("div", "empty");
-  d.append(el("div", "empty-ico", icon), el("div", "empty-t", title), el("div", "empty-h", hint));
+  const ic = el("div", "empty-ico"); ic.innerHTML = icoSvg(icon, 34, 1.5);
+  d.append(ic, el("div", "empty-t", title), el("div", "empty-h", hint));
   return d;
 }
 
@@ -916,9 +962,9 @@ function renderTodayBar() {
     b.onclick = () => { toggleSide(true); showTab(tab); };
     bar.appendChild(b);
   };
-  if (late) seg("⚠️ " + late + " terlambat", "tasks", "late");
-  if (tNow) seg("📋 " + tNow + " tugas", "tasks");
-  if (rNow) seg("⏰ " + rNow + " pengingat", "remind");
+  if (late) seg("Peringatan: " + late + " terlambat", "tasks", "late");
+  if (tNow) seg("" + tNow + " tugas", "tasks");
+  if (rNow) seg("" + rNow + " pengingat", "remind");
   if (bar.firstChild) bar.insertBefore(el("span", "tdlbl", "Hari ini"), bar.firstChild);
   bar.hidden = !bar.firstChild;
 }
@@ -928,7 +974,7 @@ function renderTasks() {
   renderTodayBar(); renderBadges();
   const box = $("tasks");
   box.innerHTML = "";
-  if (!tasks.length) { box.appendChild(emptyState("📋", "Belum ada tugas", "Tambah di atas, atau bilang ke chat: \"tambah tugas bayar listrik besok jam 8\".")); return; }
+  if (!tasks.length) { box.appendChild(emptyState("task", "Belum ada tugas", "Tambah di atas, atau bilang ke chat: \"tambah tugas bayar listrik besok jam 8\".")); return; }
   tasks.forEach((t) => {
     const row = document.createElement("div");
     row.className = "task" + (t.done ? " done" : "");
@@ -943,7 +989,7 @@ function renderTasks() {
       const w = document.createElement("small");
       w.className = "muted";
       w.style.display = "block";
-      w.textContent = "⏰ " + new Date(t.due).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) + " WIB";
+      w.textContent = "" + new Date(t.due).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) + " WIB";
       sp.appendChild(w);
     }
     const del = document.createElement("button"); del.textContent = "x";
@@ -979,7 +1025,7 @@ function renderReminders() {
   renderTodayBar(); renderBadges();
   const box = $("reminders");
   box.innerHTML = "";
-  if (!reminders.length) { box.appendChild(emptyState("⏰", "Belum ada pengingat", "Isi di atas, atau bilang ke chat: \"ingatkan aku minum obat jam 9 malam\".")); return; }
+  if (!reminders.length) { box.appendChild(emptyState("remind", "Belum ada pengingat", "Isi di atas, atau bilang ke chat: \"ingatkan aku minum obat jam 9 malam\".")); return; }
   reminders.forEach((r) => {
     box.appendChild(makeRow(
       r.text + (r.repeat ? " (" + repLabel(r.repeat) + ")" : ""),
@@ -1044,7 +1090,7 @@ function renderNotes() {
   const box = $("notes");
   box.innerHTML = "";
   const list = notes.filter((n) => !q || n.text.toLowerCase().includes(q));
-  if (!list.length) { box.appendChild(q ? emptyState("🔍", "Tidak ada yang cocok", "Coba kata kunci lain.") : emptyState("🗒️", "Belum ada catatan", "Tulis di atas, atau bilang ke chat: \"catat: password wifi kantor ...\".")); return; }
+  if (!list.length) { box.appendChild(q ? emptyState("search", "Tidak ada yang cocok", "Coba kata kunci lain.") : emptyState("note", "Belum ada catatan", "Tulis di atas, atau bilang ke chat: \"catat: password wifi kantor ...\".")); return; }
   list.forEach((n) => {
     box.appendChild(makeRow(n.text, fmtDate(n.ts), () => {
       const idx = notes.indexOf(n);
@@ -1065,7 +1111,7 @@ function renderXfer() {
   box.innerHTML = "";
   (xferIn || []).forEach((x) => {
     const c = el("div", "card");
-    c.appendChild(el("div", "", "💸 " + x.from + " mengirim " + rupiah(x.amt) + (x.note ? " (" + x.note + ")" : "") + ". Catat sebagai pemasukanmu?"));
+    c.appendChild(el("div", "", "" + x.from + " mengirim " + rupiah(x.amt) + (x.note ? " (" + x.note + ")" : "") + ". Catat sebagai pemasukanmu?"));
     const row = el("div", "");
     row.style.cssText = "display:flex;gap:8px;margin-top:8px";
     const mk = (txt, accept, primary) => {
@@ -1097,7 +1143,7 @@ function renderMoney() {
   const rc = $("recap");
   rc.textContent = "";
   if (!expenses.length && !incomes.length) {
-    rc.appendChild(emptyState("💰", "Belum ada catatan uang bulan ini", "Ketik di chat, mis. \"makan siang 25rb\" atau \"gajian 3jt\"."));
+    rc.appendChild(emptyState("money", "Belum ada catatan uang bulan ini", "Ketik di chat, mis. \"makan siang 25rb\" atau \"gajian 3jt\"."));
   } else {
     rc.appendChild(el("div", "rc-head", "Bulan ini"));
     const tiles = el("div", "rc-tiles");
@@ -1192,13 +1238,13 @@ async function fetchWeather(force) {
 }
 
 // Teks cuaca berjalan dari kanan ke kiri (marquee mulus: dua grup identik, geser -50% lalu ulang)
-let wxText = "";
+let wxText = "", wxIco = "";
 function buildWxTrack() {
   const bar = $("wxBar");
   if (!wxText) return;
   bar.textContent = "";
   const track = el("span", "wxtrack");
-  const mk = (n) => { const g = document.createDocumentFragment(); for (let i = 0; i < n; i++) g.appendChild(el("span", "wxitem", wxText)); return g; };
+  const mk = (n) => { const g = document.createDocumentFragment(); for (let i = 0; i < n; i++) { const it = el("span", "wxitem"); const ic = el("i", "wxico"); ic.innerHTML = icoSvg(wxKey(wxIco), 15, 1.8); it.append(ic, document.createTextNode(wxText)); g.appendChild(it); } return g; };
   track.appendChild(mk(1));
   bar.appendChild(track);
   const itemW = track.scrollWidth || 1;
@@ -1209,13 +1255,13 @@ function buildWxTrack() {
 }
 
 function renderWxBar(d) {
-  const parts = [d.icon + " " + d.temp + "°C " + d.desc, d.min + "–" + d.max + "°"];
+  const parts = [d.temp + "°C " + d.desc, d.min + "–" + d.max + "°"];
   if (d.rain != null) parts.push("hujan " + d.rain + "%");
   parts.push(d.city);
   const t = parts.join(" · ");
   const bar = $("wxBar");
   bar.hidden = false;
-  if (t !== wxText || !bar.firstChild) { wxText = t; buildWxTrack(); } // teks sama: jangan ulang animasi
+  if (t !== wxText || d.icon !== wxIco || !bar.firstChild) { wxText = t; wxIco = d.icon; buildWxTrack(); } // teks sama: jangan ulang animasi
 }
 let wxResizeT;
 window.addEventListener("resize", () => { clearTimeout(wxResizeT); wxResizeT = setTimeout(buildWxTrack, 200); });
@@ -1238,7 +1284,7 @@ async function loadWeather(force = true) {
     box.removeAttribute("style");
     box.textContent = "";
     const top = el("div", "wx-top");
-    top.appendChild(el("div", "wx-ico", d.icon));
+    const wi = el("div", "wx-ico"); wi.innerHTML = icoSvg(wxKey(d.icon), 40, 1.5); top.appendChild(wi);
     const mid = el("div");
     mid.appendChild(el("div", "wx-temp", d.temp + "°C"));
     mid.appendChild(el("div", "wx-place", d.city + (d.country ? ", " + d.country : "") + " · " + d.desc));
@@ -1250,7 +1296,7 @@ async function loadWeather(force = true) {
     (d.hours || []).forEach((h) => {
       const c = el("div");
       c.appendChild(el("span", "", h.time));
-      c.appendChild(el("b", "", h.icon));
+      const hb = el("b"); hb.innerHTML = icoSvg(wxKey(h.icon), 20, 1.6); c.appendChild(hb);
       c.appendChild(el("span", "", h.temp + "°"));
       hours.appendChild(c);
     });
@@ -1496,9 +1542,9 @@ async function send(text, media) {
   if ((!text && !image && !audio) || busy) return;
   busy = true; setBusyUI(true);
   const sentAt = Date.now();
-  const um = { role: "user", text: audio ? "🎙️ Pesan suara" : image ? ("[Foto] " + text).trim() : text, ts: sentAt };
+  const um = { role: "user", text: audio ? "Pesan suara" : image ? ("[Foto] " + text).trim() : text, ts: sentAt };
   messages.push(um);
-  const ub = addBubble("user", audio ? "🎙️ Pesan suara..." : (text || (image ? "📷 Foto" : "")), "", sentAt);
+  const ub = addBubble("user", audio ? "Pesan suara..." : (text || (image ? "Foto" : "")), "", sentAt);
   if (image) {
     const im = new Image();
     im.className = "thumb"; im.alt = "Foto"; im.src = image.url;
@@ -1510,7 +1556,7 @@ async function send(text, media) {
   if (audio) extra.audio = { mime: audio.mime, data: audio.data };
   clearAttach();
   let heard = false;
-  const onTr = (t) => { heard = true; um.text = "🎙️ " + t; setBubble(ub, um.text, sentAt); };
+  const onTr = (t) => { heard = true; um.text = "Suara: " + t; setBubble(ub, um.text, sentAt); };
   $("input").value = "";
   autoGrow();
   const wait = addBubble("bot", "");
@@ -1522,7 +1568,7 @@ async function send(text, media) {
   $("chat").scrollTop = $("chat").scrollHeight;
   try {
     const d = await chatStream(text, wait, extra, onTr);
-    if (audio && !heard) { if (d.transcript) onTr(d.transcript); else setBubble(ub, "🎙️ (suara kurang jelas)", sentAt); }
+    if (audio && !heard) { if (d.transcript) onTr(d.transcript); else setBubble(ub, "(suara kurang jelas)", sentAt); }
     const shown = [d.reply, ...(d.added || [])].filter(Boolean).join("\n\n") || "(tidak ada jawaban)";
     const gotAt = Date.now();
     setBubble(wait, shown, gotAt);

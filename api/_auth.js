@@ -31,8 +31,13 @@ function verifyPassword(pw, stored) {
   const [s, h] = String(stored || "").split(":");
   if (!s || !h) return false;
   const hash = crypto.scryptSync(pw, Buffer.from(s, "base64"), 64);
-  return crypto.timingSafeEqual(hash, Buffer.from(h, "base64"));
+  const expected = Buffer.from(h, "base64");
+  // timingSafeEqual melempar error kalau panjang buffer beda, jadi cek panjang dulu
+  return expected.length === hash.length && crypto.timingSafeEqual(hash, expected);
 }
+// Hash palsu dengan panjang yang benar, dipakai saat username tidak ada
+// supaya waktu respons tetap seragam dan tidak membuka username mana yang valid.
+const DUMMY_HASH = hashPassword("tidak-dipakai-untuk-login");
 
 // ---------- Sesi ----------
 function makeSession(userId) {
@@ -87,7 +92,7 @@ async function getOwnerId() {
 }
 
 module.exports = {
-  safeEq, hashPassword, verifyPassword,
+  safeEq, hashPassword, verifyPassword, DUMMY_HASH,
   setSessionCookie, clearSessionCookie, readSession, requireUser,
   rateLimit, getOwnerId,
 };
