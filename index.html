@@ -376,7 +376,7 @@
     <p class="tagline">Tugas, catatan, dan uang dalam satu tempat, sinkron dengan Telegram.</p>
     <div class="authcard">
       <h2 id="authTitle">Masuk</h2>
-      <p class="muted" id="authSub">Masuk ke asistenmu.</p>
+      <p class="muted" id="authSub">Selamat datang kembali. Masukkan akunmu untuk melanjutkan.</p>
       <form id="authForm" novalidate>
         <div class="fld" id="fUser"><label for="authUser">Username</label>
           <input id="authUser" name="username" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="next" placeholder="mis. budi_01">
@@ -576,7 +576,7 @@ let registerMode = false;
 function setAuthMode(reg) {
   registerMode = reg;
   $("authTitle").textContent = reg ? "Daftar" : "Masuk";
-  $("authSub").textContent = reg ? "Buat akun baru (perlu kode undangan)." : "Masuk ke asistenmu.";
+  $("authSub").textContent = reg ? "Buat akun baru. Kamu butuh kode undangan dari pemilik app." : "Selamat datang kembali. Masukkan akunmu untuk melanjutkan.";
   $("fInvite").style.display = reg ? "" : "none";
   if (window.authPwBox) window.authPwBox.style.display = reg ? "" : "none";
   $("authPass").autocomplete = reg ? "new-password" : "current-password";
