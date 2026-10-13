@@ -32,7 +32,7 @@
       padding-right:max(16px, calc((100% - 720px) / 2));
     }
     /* elemen tanpa scrollbar: sisakan lebar scrollbar chat (--sbw) di kanan supaya sejajar dengan gelembung */
-    #app .chips, #app #form, #app .wxbar, #app .attachprev, #app .recbar {
+    #app .chips, #app #form, #app .wxbar, #app .todaybar, #app .attachprev, #app .recbar {
       padding-left:max(16px, calc((100% - 720px) / 2));
       padding-right:calc(max(16px, calc((100% - 720px) / 2)) + var(--sbw, 0px));
     }
@@ -264,6 +264,61 @@
     .task button { min-width:36px; min-height:36px; }
     dialog { width:92vw; max-height:90dvh; overflow-y:auto; }
   }
+  /* strip "Hari ini" di atas chat */
+  .todaybar { display:flex; align-items:center; gap:8px; padding:6px 16px; background:var(--bg); border-bottom:1px solid var(--line); font-size:13px; overflow-x:auto; scrollbar-width:none; }
+  .todaybar::-webkit-scrollbar { display:none; }
+  .todaybar[hidden] { display:none; }
+  body[data-mode="curhat"] .todaybar { display:none; }
+  .todaybar .tdlbl { color:var(--muted); flex:none; font-weight:600; }
+  .todaybar button { flex:none; white-space:nowrap; font-size:12.5px; padding:4px 10px; border-radius:999px; line-height:1.3; background:var(--card); }
+  .todaybar button.late { border-color:#d33; color:#d33; }
+  @media (max-width:760px) { .todaybar { padding:6px 12px; } }
+  /* kartu konfirmasi aksi AI di dalam bubble */
+  .acts { display:flex; flex-direction:column; gap:6px; white-space:normal; }
+  .md + .acts { margin-top:10px; }
+  .act { display:flex; gap:10px; align-items:flex-start; padding:8px 10px; border-radius:10px; background:var(--bg); border:1px solid var(--line); border-left:3px solid var(--ac, var(--accent)); line-height:1.35; }
+  .act .ai { flex:none; font-size:18px; line-height:1.2; }
+  .act .ab { min-width:0; flex:1; }
+  .act .al { font-size:11px; font-weight:600; letter-spacing:.03em; text-transform:uppercase; color:var(--ac, var(--accent)); }
+  .act .av { font-size:14px; font-weight:600; word-break:break-word; }
+  .act .as { font-size:12.5px; color:var(--muted); margin-top:2px; word-break:break-word; }
+  .act.k-task { --ac:#2a9d4b; } .act.k-remind { --ac:#e0a030; } .act.k-note { --ac:#0ea5e9; }
+  .act.k-money { --ac:#8b5cf6; } .act.k-del { --ac:#94a3b8; } .act.k-warn { --ac:#d33; }
+  .act.k-hint { border-left-color:var(--line); --ac:var(--muted); }
+  /* rekap uang visual */
+  .recap { border:1px solid var(--line); border-radius:12px; padding:10px; margin-bottom:10px; }
+  .rc-head { font-size:13px; font-weight:600; color:var(--muted); margin-bottom:8px; }
+  .rc-tiles { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+  .rc-tile { background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:8px 10px; min-width:0; }
+  .rc-tile small { display:block; font-size:11px; color:var(--muted); }
+  .rc-tile b { display:block; font-size:15px; font-weight:700; margin-top:2px; overflow-wrap:anywhere; }
+  .rc-hint { font-size:12px; color:var(--muted); margin-top:6px; }
+  .rc-chart { display:flex; gap:14px; align-items:center; margin-top:12px; }
+  .rc-donut { position:relative; flex:none; width:96px; height:96px; border-radius:50%; }
+  .rc-donut::after { content:""; position:absolute; inset:24px; border-radius:50%; background:var(--card); }
+  .rc-donut span { position:absolute; inset:0; z-index:1; display:flex; flex-direction:column; align-items:center; justify-content:center; font-size:13px; font-weight:700; line-height:1.15; }
+  .rc-donut span small { font-size:10px; font-weight:400; color:var(--muted); }
+  .rc-leg { flex:1; min-width:0; display:flex; flex-direction:column; gap:7px; }
+  .rc-row { font-size:12.5px; }
+  .rc-row .t { display:flex; align-items:center; gap:6px; }
+  .rc-row .t i { width:9px; height:9px; border-radius:50%; flex:none; background:var(--c); }
+  .rc-row .t span { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rc-row .t em { font-style:normal; color:var(--muted); }
+  .rc-row .bar { height:4px; border-radius:2px; background:var(--line); margin-top:3px; overflow:hidden; }
+  .rc-row .bar u { display:block; height:100%; background:var(--c); border-radius:2px; }
+  /* empty state */
+  .empty { text-align:center; padding:22px 12px; }
+  .empty-ico { font-size:38px; line-height:1; margin-bottom:8px; }
+  .empty-t { font-weight:600; font-size:14px; }
+  .empty-h { font-size:13px; color:var(--muted); margin-top:4px; line-height:1.4; }
+  /* skeleton kecil di panel */
+  .sk-line { height:12px; border-radius:6px; }
+  .sk-news { display:flex; gap:10px; padding:10px 0; border-bottom:1px solid var(--line); }
+  .sk-news .sk:first-child { width:88px; height:64px; flex:none; border-radius:8px; }
+  .sk-news div { flex:1; display:flex; flex-direction:column; gap:8px; }
+  @keyframes paneIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
+  .pane.on { animation:paneIn .18s ease; }
+  @media (prefers-reduced-motion: reduce) { .pane.on { animation:none; } }
 </style>
 <link rel="stylesheet" href="/theme.css">
 </head>
@@ -319,6 +374,7 @@
 <main>
   <section id="chatCol">
     <button id="wxBar" class="wxbar" type="button" title="Ketuk untuk detail cuaca" hidden></button>
+    <div id="todayBar" class="todaybar" hidden></div>
     <div id="curhatNote" class="curhatnote">🔒 Mode curhat: obrolan ini punya riwayat sendiri, tidak membuat tugas, catatan, pengingat, atau pengeluaran, tidak masuk memori, dan tidak disalin ke Telegram. Terhapus sendiri kalau lama tidak dipakai.</div>
     <div id="chat"></div>
     <button type="button" id="toBottom" title="Ke pesan terbaru" aria-label="Ke pesan terbaru" hidden><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="m6 13 6 6 6-6"/></svg></button>
@@ -414,7 +470,7 @@
         <button id="expAddBtn">+</button>
       </div>
       <div id="xferBox"></div>
-      <div class="card" id="recap"></div>
+      <div class="recap" id="recap"></div>
       <div id="exps"></div>
     </div>
 
@@ -588,10 +644,43 @@ async function copyText(t) {
   } catch { return false; }
 }
 
+/* Baris konfirmasi aksi AI (✅ ⏰ 🗒️ 💰 ...) di akhir balasan dijadikan kartu kecil */
+const ACT_RE = /^(✅ Tugas ditambahkan|⏰ Pengingat|🗒️ Dicatat|💰 Dicatat|💵 |💸 Dicatat|🗑️ Pengingat dihapus|⚠️ |\(Jamnya)/;
+const ACT_KIND = { "✅": "task", "⏰": "remind", "🗒️": "note", "💰": "money", "💵": "money", "💸": "money", "🗑️": "del", "⚠️": "warn" };
+function splitActions(text) {
+  const paras = String(text).split(/\n{2,}/), acts = [];
+  while (paras.length && ACT_RE.test(paras[paras.length - 1].trim())) acts.unshift(paras.pop().trim());
+  return { body: paras.join("\n\n"), acts };
+}
+function actCard(p) {
+  const lines = p.split("\n");
+  const m = lines[0].match(/^(\S+)\s+(.*)$/);
+  const ico = m ? m[1] : "", kind = ACT_KIND[ico] || "hint";
+  const c = mk("div", "act k-" + kind);
+  if (kind === "hint") { c.appendChild(mk("div", "as", p.replace(/^\(|\)$/g, ""))); return c; }
+  c.appendChild(mk("div", "ai", ico));
+  const b = mk("div", "ab");
+  const head = m[2], lm = head.match(/^([^:\d]{2,40}):\s*(.*)$/);
+  if (lm && lm[2]) { b.appendChild(mk("div", "al", lm[1])); b.appendChild(mk("div", "av", lm[2])); }
+  else b.appendChild(mk("div", "av", head));
+  lines.slice(1).forEach((l) => { if (l.trim()) b.appendChild(mk("div", "as", l.trim())); });
+  c.appendChild(b);
+  return c;
+}
+
 function setBubble(d, text, ts) {
   d.textContent = "";
   const isBot = d.classList.contains("bot") && !d.classList.contains("note") && !d.classList.contains("err");
-  if (isBot) d.appendChild(mdRender(text));
+  if (isBot) {
+    const { body, acts } = splitActions(text);
+    if (!acts.length) d.appendChild(mdRender(text));
+    else {
+      if (body.trim()) d.appendChild(mdRender(body));
+      const box = mk("div", "acts");
+      acts.forEach((a) => box.appendChild(actCard(a)));
+      d.appendChild(box);
+    }
+  }
   else { const t = document.createElement("div"); t.textContent = text; d.appendChild(t); }
   if (ts) {
     const s = document.createElement("div");
@@ -673,10 +762,41 @@ function renderMode() {
 }
 
 /* ---------- Tugas ---------- */
+function emptyState(icon, title, hint) {
+  const d = el("div", "empty");
+  d.append(el("div", "empty-ico", icon), el("div", "empty-t", title), el("div", "empty-h", hint));
+  return d;
+}
+
+/* ---------- Strip "Hari ini" di atas chat ---------- */
+const wibDay = (ts) => new Date(ts).toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" });
+function renderTodayBar() {
+  const bar = $("todayBar");
+  if (!bar) return;
+  const now = Date.now(), today = wibDay(now);
+  const open = tasks.filter((t) => !t.done && t.due);
+  const late = open.filter((t) => t.due < now).length;
+  const tNow = open.filter((t) => t.due >= now && wibDay(t.due) === today).length;
+  const rNow = reminders.filter((r) => r.ts >= now && wibDay(r.ts) === today).length;
+  bar.textContent = "";
+  const seg = (txt, tab, cls) => {
+    const b = el("button", cls || "", txt); b.type = "button";
+    b.onclick = () => { toggleSide(true); showTab(tab); };
+    bar.appendChild(b);
+  };
+  if (late) seg("⚠️ " + late + " terlambat", "tasks", "late");
+  if (tNow) seg("📋 " + tNow + " tugas", "tasks");
+  if (rNow) seg("⏰ " + rNow + " pengingat", "remind");
+  if (bar.firstChild) bar.insertBefore(el("span", "tdlbl", "Hari ini"), bar.firstChild);
+  bar.hidden = !bar.firstChild;
+}
+setInterval(renderTodayBar, 60000);
+
 function renderTasks() {
+  renderTodayBar();
   const box = $("tasks");
   box.innerHTML = "";
-  if (!tasks.length) { box.innerHTML = '<p class="muted">Belum ada tugas.</p>'; return; }
+  if (!tasks.length) { box.appendChild(emptyState("📋", "Belum ada tugas", "Tambah di atas, atau bilang ke chat: \"tambah tugas bayar listrik besok jam 8\".")); return; }
   tasks.forEach((t) => {
     const row = document.createElement("div");
     row.className = "task" + (t.done ? " done" : "");
@@ -722,9 +842,10 @@ const fmtWhen = (ts) => new Date(ts).toLocaleString("id-ID", { weekday: "short",
 
 function renderReminders() {
   $("remNote").textContent = botLinked ? "" : "Bot Telegram belum terhubung, jadi pengingat belum bisa terkirim. Hubungkan dulu di Pengaturan.";
+  renderTodayBar();
   const box = $("reminders");
   box.innerHTML = "";
-  if (!reminders.length) { box.innerHTML = '<p class="muted">Belum ada pengingat.</p>'; return; }
+  if (!reminders.length) { box.appendChild(emptyState("⏰", "Belum ada pengingat", "Isi di atas, atau bilang ke chat: \"ingatkan aku minum obat jam 9 malam\".")); return; }
   reminders.forEach((r) => {
     box.appendChild(makeRow(
       r.text + (r.repeat ? " (" + repLabel(r.repeat) + ")" : ""),
@@ -789,7 +910,7 @@ function renderNotes() {
   const box = $("notes");
   box.innerHTML = "";
   const list = notes.filter((n) => !q || n.text.toLowerCase().includes(q));
-  if (!list.length) { box.innerHTML = '<p class="muted">' + (q ? "Tidak ada yang cocok." : "Belum ada catatan.") + "</p>"; return; }
+  if (!list.length) { box.appendChild(q ? emptyState("🔍", "Tidak ada yang cocok", "Coba kata kunci lain.") : emptyState("🗒️", "Belum ada catatan", "Tulis di atas, atau bilang ke chat: \"catat: password wifi kantor ...\".")); return; }
   list.forEach((n) => {
     box.appendChild(makeRow(n.text, fmtDate(n.ts), async () => {
       try { await api("/api/state", { method: "POST", body: JSON.stringify({ op: "deleteNote", id: n.id }) }); notes = notes.filter((x) => x.id !== n.id); renderNotes(); }
@@ -799,6 +920,8 @@ function renderNotes() {
 }
 
 /* ---------- Pengeluaran ---------- */
+const CAT_COLOR = { makan: "#f59e0b", transport: "#0ea5e9", belanja: "#ec4899", tagihan: "#8b5cf6", hiburan: "#10b981", kesehatan: "#ef4444", lainnya: "#94a3b8" };
+const shortRp = (n) => n >= 1e6 ? "Rp" + (n / 1e6).toFixed(1).replace(/\.0$/, "").replace(".", ",") + "jt" : n >= 1e3 ? "Rp" + Math.round(n / 1e3) + "rb" : "Rp" + Math.round(n);
 const rpSigned = (n) => (n < 0 ? "-" : "") + rupiah(Math.abs(n));
 function renderXfer() {
   const box = $("xferBox");
@@ -836,12 +959,42 @@ function renderMoney() {
   const te = sum(expenses), ti = sum(incomes), net = ti - te;
   const by = {};
   expenses.forEach((e) => { by[e.cat] = (by[e.cat] || 0) + e.amt; });
-  const lines = Object.entries(by).sort((a, b) => b[1] - a[1]).map(([c, v]) => "  " + c + ": " + rupiah(v));
-  let t = "Bulan ini\nPemasukan: " + rupiah(ti) + " (" + incomes.length + ")\nPengeluaran: " + rupiah(te) + " (" + expenses.length + ")\nSelisih: " + rpSigned(net);
-  if (money && money.remaining != null) t += "\nSisa uang: " + rpSigned(money.remaining);
-  else t += "\nSisa uang: belum diketahui (bilang ke chat, mis. \"uangku sekarang 500rb\")";
-  if (lines.length) t += "\n\nPengeluaran per kategori:\n" + lines.join("\n");
-  $("recap").textContent = t;
+  const rc = $("recap");
+  rc.textContent = "";
+  if (!expenses.length && !incomes.length) {
+    rc.appendChild(emptyState("💰", "Belum ada catatan uang bulan ini", "Ketik di chat, mis. \"makan siang 25rb\" atau \"gajian 3jt\"."));
+  } else {
+    rc.appendChild(el("div", "rc-head", "Bulan ini"));
+    const tiles = el("div", "rc-tiles");
+    const tile = (lbl, val, color) => { const d = el("div", "rc-tile"); d.append(el("small", "", lbl)); const b = el("b", "", val); if (color) b.style.color = color; d.append(b); tiles.appendChild(d); };
+    tile("Pemasukan (" + incomes.length + ")", rupiah(ti), "#2a9d4b");
+    tile("Pengeluaran (" + expenses.length + ")", rupiah(te));
+    tile("Selisih", rpSigned(net), net >= 0 ? "#2a9d4b" : "#d33");
+    const hasBal = money && money.remaining != null;
+    tile("Sisa uang", hasBal ? rpSigned(money.remaining) : "–");
+    rc.appendChild(tiles);
+    if (!hasBal) rc.appendChild(el("div", "rc-hint", "Sisa uang belum diketahui. Bilang ke chat, mis. \"uangku sekarang 500rb\"."));
+    const ents = Object.entries(by).sort((a, b) => b[1] - a[1]);
+    if (ents.length && te > 0) {
+      const colorOf = (c) => CAT_COLOR[c] || "#94a3b8";
+      let acc = 0;
+      const stops = ents.map(([c, v]) => { const from = acc / te * 100; acc += v; return colorOf(c) + " " + from.toFixed(2) + "% " + (acc / te * 100).toFixed(2) + "%"; });
+      const chart = el("div", "rc-chart");
+      const donut = el("div", "rc-donut");
+      donut.style.background = "conic-gradient(" + stops.join(",") + ")";
+      const ctr = el("span", "", shortRp(te)); ctr.appendChild(el("small", "", "keluar"));
+      donut.appendChild(ctr);
+      const leg = el("div", "rc-leg"), max = ents[0][1];
+      ents.forEach(([c, v]) => {
+        const r = el("div", "rc-row"); r.style.setProperty("--c", colorOf(c));
+        const t = el("div", "t"); t.append(el("i"), el("span", "", c), el("em", "", Math.round(v / te * 100) + "% · " + shortRp(v)));
+        const bar = el("div", "bar"), u = el("u"); u.style.width = (v / max * 100) + "%"; bar.appendChild(u);
+        r.append(t, bar); leg.appendChild(r);
+      });
+      chart.append(donut, leg);
+      rc.appendChild(chart);
+    }
+  }
 
   const all = expenses.map((e) => ({ ...e, t: "out" })).concat(incomes.map((e) => ({ ...e, t: "in" }))).sort((a, b) => b.ts - a.ts).slice(0, 20);
   const box = $("exps");
@@ -880,6 +1033,8 @@ const el = (tag, cls, text) => {
   if (text !== undefined) e.textContent = text;
   return e;
 };
+
+const skel = (cls, w) => { const d = el("div", "sk " + cls); if (w) d.style.width = w; return d; };
 
 // Data cuaca dipakai bersama oleh bar di atas chat dan kartu di tab Info (cache 10 menit)
 let wxData = null, wxAt = 0, wxFor = "";
@@ -929,11 +1084,14 @@ async function loadWxBar(force) {
 async function loadWeather(force = true) {
   const box = $("weather");
   box.className = "card";
-  box.textContent = "Memuat cuaca...";
+  box.textContent = "";
+  box.append(skel("sk-line", "40%"), skel("sk-line", "80%"), skel("sk-line", "60%"));
+  box.style.display = "flex"; box.style.flexDirection = "column"; box.style.gap = "10px";
   try {
     const d = await fetchWeather(force);
     renderWxBar(d);
     box.className = "card wx";
+    box.removeAttribute("style");
     box.textContent = "";
     const top = el("div", "wx-top");
     top.appendChild(el("div", "wx-ico", d.icon));
@@ -955,6 +1113,7 @@ async function loadWeather(force = true) {
     box.appendChild(hours);
   } catch (e) {
     box.className = "card";
+    box.removeAttribute("style");
     box.textContent = "Gagal memuat cuaca: " + e.message;
   }
 }
@@ -992,7 +1151,11 @@ function renderCats(active) {
 async function loadNews(topic) {
   const box = $("news");
   box.innerHTML = "";
-  box.appendChild(el("p", "muted", "Memuat berita..."));
+  for (let i = 0; i < 4; i++) {
+    const r = el("div", "sk-news"), col = el("div");
+    col.append(skel("sk-line", "90%"), skel("sk-line", "60%"));
+    r.append(skel("", ""), col); box.appendChild(r);
+  }
   try {
     const r = await fetch("/api/info?type=news&cat=" + encodeURIComponent(cat) + "&topic=" + encodeURIComponent(topic || ""));
     const d = await r.json();
