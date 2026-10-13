@@ -753,7 +753,6 @@ async function toggleTask(u, id) {
   if (!t) return null;
   t.done = !t.done;
   if (t.done) {
-    await mochiProgress(u, "task");
     if (t.rid) { await deleteReminderById(u, t.rid, false); t.rid = null; } // selesai: pengingat dibatalkan
   } else if (t.due && t.due > Date.now()) {
     const r = await addReminder(u, t.text, t.due, null, t.id);             // dibuka lagi & jamnya belum lewat
@@ -895,6 +894,7 @@ async function addReminder(u, text, ts, repeat, tid, until) {
   if (!tid) await dropDuplicateReminders(u, t, rule);
   if (tid) item.tid = tid;
   await redis("ZADD", key(u, "reminders"), when, JSON.stringify(item));
+  await mochiProgress(u, "remind");
   return { id: item.id, text: item.text, ts: when, repeat: item.repeat || null, until: item.until || null };
 }
 async function deleteReminderById(u, id, unlink = true) {
@@ -1854,13 +1854,15 @@ async function resolvePendingDelete(u, id, pick) {
 // Dipicu dari fungsi inti (toggleTask, addExpense, addIncome, obrolan), jadi web, Telegram, dan tag chat sama-sama terhitung.
 const MOCHI_LV = 100;
 const MOCHI_MISSIONS = [
-  { id: "task", text: "Selesaikan 2 tugas", need: 2, xp: 20 },
+  { id: "chat", text: "Ngobrol dengan asisten", need: 1, xp: 10 },
+  { id: "remind", text: "Pasang 1 pengingat", need: 1, xp: 15 },
   { id: "spend", text: "Catat uang hari ini", need: 1, xp: 15 },
   { id: "checkin", text: "Cerita harimu (curhat atau balas check-in)", need: 1, xp: 15 },
 ];
 const mochiDayDiff = (a, b) => Math.round((Date.parse(b + "T00:00:00Z") - Date.parse(a + "T00:00:00Z")) / DAY);
 const mochiAddDays = (k, n) => new Date(Date.parse(k + "T00:00:00Z") + n * DAY).toISOString().slice(0, 10);
-const mochiBlank = (day) => ({ xp: 0, en: 60, streak: 0, best: 0, frz: 1, day, m: { task: 0, spend: 0, checkin: 0 }, done: false, week: {}, ev: [] });
+const mochiZero = () => Object.fromEntries(MOCHI_MISSIONS.map((x) => [x.id, 0]));
+const mochiBlank = (day) => ({ xp: 0, en: 60, streak: 0, best: 0, frz: 1, day, m: mochiZero(), done: false, week: {}, ev: [] });
 
 // Maju ke hari ini: hari yang terlewat mengurangi kenyang; streak diselamatkan jatah libur kalau ada.
 function mochiRoll(s, today) {
@@ -1875,7 +1877,7 @@ function mochiRoll(s, today) {
     d = mochiAddDays(d, 1);
   }
   s.day = today;
-  s.m = { task: 0, spend: 0, checkin: 0 };
+  s.m = mochiZero();
   for (const k of Object.keys(s.week)) if (mochiDayDiff(k, today) > 14) delete s.week[k];
   s.ev = s.ev.slice(-8);
   return true;
@@ -1895,7 +1897,7 @@ async function getMochi(u) {
     } catch {}
     return s;
   }
-  s.m = s.m || { task: 0, spend: 0, checkin: 0 }; s.week = s.week || {}; s.ev = s.ev || [];
+  s.m = s.m || mochiZero(); s.week = s.week || {}; s.ev = s.ev || [];
   if (mochiRoll(s, today)) await redis("SET", key(u, "mochi"), JSON.stringify(s));
   return s;
 }
@@ -1930,6 +1932,7 @@ async function mochiProgress(u, id) {
 }
 // Pesan di obrolan dihitung sebagai "cerita harimu" kalau mode curhat, atau dikirim setelah jam check-in malam.
 async function mochiChat(u, mode) {
+  if (mode !== "curhat") await mochiProgress(u, "chat");
   if (mode === "curhat" || wib().hour >= HOURS.checkin) await mochiProgress(u, "checkin");
 }
 // Ambil lalu kosongkan kabar baru (dipakai sekali oleh web atau Telegram, mana yang sedang melayani)

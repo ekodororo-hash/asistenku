@@ -9,7 +9,7 @@ Tiap akun punya data, API key Gemini, dan bot Telegram sendiri.
 - **Panel web:** Tugas, Catatan, Pengingat, Uang, Info (cuaca + berita berfoto).
 - **Uang:** pengeluaran per kategori, pemasukan, saldo, rekap; foto struk dibaca lewat Telegram.
 - **Pengingat** sekali jalan dan berulang (harian, mingguan, dst).
-- **Mochi:** peliharaan virtual yang tumbuh kalau kamu aktif. Misi harian (selesaikan 2 tugas, catat uang, cerita harimu), XP dan level, streak dengan jatah libur, mata mengikuti kursor, bereaksi saat diketuk, efek suara. Data satu untuk web dan Telegram (`/mochi`), pengingat sore lewat cron.
+- **Mochi:** peliharaan virtual yang tumbuh kalau kamu aktif. Misi harian (ngobrol dengan asisten, pasang 1 pengingat, catat uang, cerita harimu), XP dan level, streak dengan jatah libur, mata mengikuti kursor, bereaksi saat diketuk, efek suara. Data satu untuk web dan Telegram (`/mochi`), pengingat sore lewat cron.
 - **Mode curhat** terpisah dari asisten (riwayat sendiri, tidak mencatat apa pun).
 - **Bot Telegram** per pengguna: teks, foto, voice note, tombol, perintah `/...`.
 - **Pesan otomatis:** ringkasan pagi, check-in malam, rekap mingguan (lewat cron).

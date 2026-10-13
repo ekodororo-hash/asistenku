@@ -2041,7 +2041,7 @@ function renderMochi() {
     '<div class="mo-h">Streak</div><div class="mo-streak"><div><div class="n">' + m.streak + '</div><div class="muted">hari beruntun</div></div>' +
     '<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:14px">Jatah libur: ' + m.frz + '</div><div class="muted" style="font-size:12px">Dipakai otomatis kalau satu hari terlewat, supaya streak tidak putus. Terbaik: ' + m.best + ' hari.</div></div></div>' +
     '<div class="mo-week">' + dots + "</div>" +
-    '<p class="muted" style="margin:14px 0 8px;font-size:12px">Misi terisi otomatis dari tugas, catatan uang, dan obrolan, baik dari web maupun Telegram. Ketik /mochi di Telegram untuk melihatnya di sana.</p>' +
+    '<p class="muted" style="margin:14px 0 8px;font-size:12px">Misi terisi otomatis dari obrolan, pengingat, dan catatan uang, baik dari web maupun Telegram. Ketik /mochi di Telegram untuk melihatnya di sana.</p>' +
     '<button type="button" id="moSnd">' + (mochiMuted ? "Suara: mati" : "Suara: nyala") + "</button>";
   $("moPet").addEventListener("click", moTap);
   $("moSnd").onclick = () => { mochiMuted = !mochiMuted; save("mochiMute", mochiMuted); $("moSnd").textContent = mochiMuted ? "Suara: mati" : "Suara: nyala"; if (!mochiMuted) { moCtx(); MO_SFX.ding(); } };
