@@ -395,9 +395,9 @@ function modelSort(a, b) {
 }
 let modelNames = [];
 let modelsP = null;
-// Saran model: tetap utama gemini-3.5-flash-lite, cadangan gemini-3.1-flash-lite
+// Saran model: tetap utama gemini-3.1-flash-lite, cadangan gemini-3.5-flash-lite
 function pickSuggest() {
-  return { main: "gemini-3.5-flash-lite", fb: "gemini-3.1-flash-lite" };
+  return { main: "gemini-3.1-flash-lite", fb: "gemini-3.5-flash-lite" };
 }
 function loadModelList() {
   if (modelsP) return modelsP;
