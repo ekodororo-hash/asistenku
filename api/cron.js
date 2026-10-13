@@ -3,7 +3,7 @@
 const {
   DAY, HOURS, redis, key, getBot, botUsers, sendTelegram, gemini: geminiBase, appendModelToHist,
   fmtWib, fmtTime, fmtDue, wib, startOfDayWib, nextRepeat, repeatLabel, getTasks,
-  cfgOn, getMochi, mochiText, createNag, dropNag, getNag, nagKeyboard, NAG_MAX, NAG_STEP, sendPush, pushUsers, pushCount, getWeather, recapText, loadContext, buildSystem, loadCurhatContext, buildCurhatSystem, getMode,
+  cfgOn, getMochi, mochiText, mochiCallName, createNag, dropNag, getNag, nagKeyboard, NAG_MAX, NAG_STEP, sendPush, pushUsers, pushCount, getWeather, recapText, loadContext, buildSystem, loadCurhatContext, buildCurhatSystem, getMode,
 } = require("./_lib");
 
 const gemini = (u, system, contents) => geminiBase(u, system, contents, "otomatis"); // riwayat key menandai sumbernya
@@ -207,9 +207,11 @@ async function mochiNudge(u, chatId) {
   if (!(await once(key(u, `sent:mochi:${w.dateKey}`), 2 * DAY / 1000))) return "done";
   const risk = s.streak > 0 ? `\n🔥 Streak ${s.streak} hari bisa putus kalau hari ini terlewat${s.frz > 0 ? " (ada " + s.frz + " jatah libur)" : ""}.` : "";
   const list = mochiText(s).split("\n\n")[1] + risk;
+  const nm = await mochiCallName(u);
+  const head = (s.sp ? "🐾 " + (s.name || "Mochi") + " menunggu kamu" : "🥚 Telur " + (s.name || "Mochi") + " menunggu dierami") + (nm ? ", " + nm : "");
   let ok = false;
-  if (chatId) ok = await sendTelegram(u, chatId, "🐾 " + (s.name || "Mochi") + " menunggu kamu.\n\n" + list); // Telegram diutamakan
-  else ok = (await sendPush(u, { title: "🐾 " + (s.name || "Mochi") + " menunggu kamu", body: list, tag: "mochi-" + w.dateKey })) > 0; // pengguna yang hanya punya PWA
+  if (chatId) ok = await sendTelegram(u, chatId, head + ".\n\n" + list); // Telegram diutamakan
+  else ok = (await sendPush(u, { title: head, body: list, tag: "mochi-" + w.dateKey })) > 0; // pengguna yang hanya punya PWA
   if (!ok) { await redis("DEL", key(u, `sent:mochi:${w.dateKey}`)); return "gagal kirim"; }
   return "terkirim";
 }

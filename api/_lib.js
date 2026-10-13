@@ -1954,11 +1954,16 @@ const MOCHI_MISSIONS = [
   { id: "spend", text: "Catat uang hari ini", need: 1, xp: 15 },
   { id: "task", text: "Selesaikan 1 tugas", need: 1, xp: 15 },
 ];
+const MOCHI_SPECIES = ["kucing", "kelinci", "burung"]; // diundi saat telur menetas, peluang sama, lalu dikunci
+// Mochi baru mulai sebagai telur (level 0) dan menetas di level 1. Mochi lama (sebelum ada telur) tetap kucing dan level-nya tidak berubah.
+const mochiLevel = (s) => Math.floor((s.xp || 0) / MOCHI_LV) + (s.old ? 1 : 0);
+const mochiStage = (lv) => (lv < 1 ? 0 : lv < 5 ? 1 : lv < 10 ? 2 : lv < 20 ? 3 : 4);
+const MOCHI_STAGE_NAME = ["Telur", "Anak", "Remaja", "Dewasa", "Legenda"];
 const MOCHI_STREAK_MIN = 3; // streak naik kalau minimal segini misi selesai dalam sehari (dari semua misi)
 const mochiDayDiff = (a, b) => Math.round((Date.parse(b + "T00:00:00Z") - Date.parse(a + "T00:00:00Z")) / DAY);
 const mochiAddDays = (k, n) => new Date(Date.parse(k + "T00:00:00Z") + n * DAY).toISOString().slice(0, 10);
 const mochiZero = () => Object.fromEntries(MOCHI_MISSIONS.map((x) => [x.id, 0]));
-const mochiBlank = (day) => ({ name: "Mochi", xp: 0, en: 60, streak: 0, best: 0, frz: 1, day, m: mochiZero(), done: false, week: {}, ev: [] });
+const mochiBlank = (day) => ({ name: "Mochi", sp: null, xp: 0, en: 60, streak: 0, best: 0, frz: 1, day, m: mochiZero(), done: false, week: {}, ev: [] });
 
 // Maju ke hari ini: hari yang terlewat mengurangi kenyang; streak diselamatkan jatah libur kalau ada.
 function mochiRoll(s, today) {
@@ -1994,8 +1999,14 @@ async function getMochi(u) {
     return s;
   }
   s.name = s.name || "Mochi"; s.m = s.m || mochiZero(); s.week = s.week || {}; s.ev = s.ev || [];
-  if (mochiRoll(s, today)) await redis("SET", key(u, "mochi"), JSON.stringify(s));
+  let dirty = false;
+  if (s.sp === undefined) { s.sp = "kucing"; s.old = true; dirty = true; } // data sebelum ada telur: sudah menetas jadi kucing
+  if (mochiRoll(s, today) || dirty) await redis("SET", key(u, "mochi"), JSON.stringify(s));
   return s;
+}
+// Nama panggilan dari profil (kata pertama), untuk sapaan Mochi. Kosong kalau profil belum diisi.
+async function mochiCallName(u) {
+  try { return String((await getProfile(u)).name || "").trim().split(/\s+/)[0].replace(/[<>\[\]{}\u0000-\u001f]/g, "").slice(0, 16); } catch { return ""; }
 }
 // Dipanggil dari fungsi inti. Tidak pernah melempar error supaya fitur utama tidak ikut gagal.
 async function mochiProgress(u, id) {
@@ -2007,10 +2018,19 @@ async function mochiProgress(u, id) {
     s.m[id] = (s.m[id] || 0) + 1;
     s.en = Math.min(100, s.en + 8);
     if (s.m[id] >= def.need) {
-      const before = Math.floor(s.xp / MOCHI_LV);
+      const lvBefore = mochiLevel(s);
       s.xp += def.xp;
       s.ev.push("✅ Misi selesai: " + def.text + " (+" + def.xp + " XP)");
-      if (Math.floor(s.xp / MOCHI_LV) > before) s.ev.push("🎉 " + s.name + " naik ke level " + (before + 2) + "!");
+      const nm = await mochiCallName(u);
+      if (!s.sp && s.xp >= MOCHI_LV) { // telur menetas, jenis diundi
+        s.sp = MOCHI_SPECIES[Math.floor(Math.random() * MOCHI_SPECIES.length)];
+        s.ev.push("🐣 Telurnya menetas jadi " + s.sp + (nm ? ", " + nm : "") + "! Beri nama lewat ikon pensil di web atau /namamochi di Telegram.");
+      }
+      const lvAfter = mochiLevel(s);
+      if (lvBefore >= 1 && lvAfter > lvBefore) {
+        s.ev.push("🎉 " + s.name + " naik ke level " + lvAfter + "!");
+        if (mochiStage(lvAfter) > mochiStage(lvBefore)) s.ev.push("✨ " + s.name + " berevolusi jadi " + MOCHI_STAGE_NAME[mochiStage(lvAfter)] + "!");
+      }
       const finished = MOCHI_MISSIONS.filter((x) => (s.m[x.id] || 0) >= x.need).length;
       if (!s.done && finished >= MOCHI_STREAK_MIN) {
         s.done = true;
@@ -2020,7 +2040,7 @@ async function mochiProgress(u, id) {
         s.en = Math.min(100, s.en + 20);
         let extra = "";
         if (s.streak % 7 === 0 && s.frz < 3) { s.frz++; extra = " Dapat 1 jatah libur."; }
-        s.ev.push("🔥 Misi hari ini cukup (" + finished + "/" + MOCHI_MISSIONS.length + "). Streak " + s.streak + " hari." + extra);
+        s.ev.push("🔥 Misi hari ini cukup (" + finished + "/" + MOCHI_MISSIONS.length + "). Streak " + s.streak + " hari" + (nm ? ", hebat " + nm + "!" : ".") + extra);
       } else if (s.done && finished === MOCHI_MISSIONS.length) {
         s.ev.push("🌟 Semua misi hari ini selesai!");
       }
@@ -2053,6 +2073,7 @@ async function mochiRename(u, name) {
   return s.name;
 }
 function mochiView(s) {
+  const lv = mochiLevel(s);
   const dn = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
   const w = [];
   for (let i = 6; i >= 0; i--) {
@@ -2060,16 +2081,16 @@ function mochiView(s) {
     w.push({ d: dn[new Date(k + "T00:00:00Z").getUTCDay()], st: i === 0 ? (s.done ? "on" : "") : (s.week[k] || ""), today: i === 0 });
   }
   return {
-    name: s.name || "Mochi", xp: s.xp, level: Math.floor(s.xp / MOCHI_LV) + 1, cur: s.xp % MOCHI_LV, lvlSize: MOCHI_LV,
+    name: s.name || "Mochi", sp: s.sp || null, spLabel: s.sp || "", egg: !s.sp, stage: mochiStage(lv), stageName: MOCHI_STAGE_NAME[mochiStage(lv)], xp: s.xp, level: lv, cur: s.xp % MOCHI_LV, lvlSize: MOCHI_LV,
     en: s.en, streak: s.streak, best: s.best || 0, frz: s.frz, done: s.done, day: s.day, week: w,
     missions: MOCHI_MISSIONS.map((x) => ({ id: x.id, text: x.text, need: x.need, xp: x.xp, n: Math.min(s.m[x.id] || 0, x.need) })),
   };
 }
 function mochiText(s) {
   const v = mochiView(s);
-  const mood = s.en >= 60 ? "senang" : s.en >= 30 ? "mulai lapar" : "lemas";
+  const mood = s.done || s.en >= 60 ? "senang" : s.en >= 30 ? "mulai lapar" : "lemas";
   const bar = (n, t) => "▰".repeat(Math.round((n / t) * 10)) + "▱".repeat(10 - Math.round((n / t) * 10));
-  return `🐾 ${v.name} (level ${v.level}) sedang ${mood}\nKenyang ${bar(v.en, 100)} ${v.en}%\nXP ${bar(v.cur, v.lvlSize)} ${v.cur}/${v.lvlSize}\n🔥 Streak ${v.streak} hari (terbaik ${v.best}) · ❄️ Jatah libur ${v.frz}\n\nMisi hari ini:\n` +
+  return `${v.egg ? "🥚 " + v.name + " masih telur, selesaikan misi biar cepat menetas" : "🐾 " + v.name + " (" + v.spLabel + ", " + v.stageName + ", level " + v.level + ") sedang " + mood}\n${v.egg ? "Kehangatan" : "Kenyang"} ${bar(v.en, 100)} ${v.en}%\n${v.egg ? "Menetas" : "XP"} ${bar(v.cur, v.lvlSize)} ${v.cur}/${v.lvlSize}\n🔥 Streak ${v.streak} hari (terbaik ${v.best}) · ❄️ Jatah libur ${v.frz}\n\nMisi hari ini:\n` +
     v.missions.map((m) => `${m.n >= m.need ? "✅" : "▫️"} ${m.text} (${m.n}/${m.need})`).join("\n");
 }
 
@@ -2090,7 +2111,7 @@ module.exports = {
   getMode, setMode, switchMode, takeCurhatExpiredNotice, CURHAT_TTL,
   getHist, saveHist, hasHist, clearHist,
   createNag, dropNag, getNag, ackNag, nagKeyboard, NAG_MAX, NAG_STEP, sendPush, pushSubscribe, pushUnsubscribe, pushUsers, pushCount, pushStatus,
-  getMochi, mochiRename, mochiProgress, mochiChat, takeMochiEvents, mochiView, mochiText,
+  getMochi, mochiRename, mochiProgress, mochiChat, takeMochiEvents, mochiView, mochiText, mochiCallName,
   getReminders, addReminder, dropDuplicateReminders, deleteReminderById, deleteReminderNumber, rescheduleReminderNumber, DELETE_INTENT,
   findDeleteTargets, planDeletes, getPendingDelete, resolvePendingDelete, deleteQuestion, deleteKeyboard, mentionsAmount, getLink, linkStatus, makeLinkCode, useLinkCode, unlinkPartner, incomingTransfers, sendTransfer, acceptTransfer, declineTransfer, handlePartnerIncome, answerDupMasuk, partnerContext,
 };

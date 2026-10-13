@@ -364,6 +364,8 @@
   .mochichip.hot span { color:#d9822b; }
   .mo-stage { position:relative; overflow:hidden; display:flex; flex-direction:column; align-items:center; gap:6px; padding:16px 12px 14px; margin-bottom:12px; border:1px solid var(--line); border-radius:16px; background:linear-gradient(180deg, color-mix(in srgb, var(--accent) 14%, var(--card)), var(--card)); }
   .mo-pet { width:170px; max-width:62%; height:auto; cursor:pointer; touch-action:manipulation; animation:moBob 2.6s ease-in-out infinite; transform-origin:50% 100%; }
+  .mo-pet.egg { animation:moWobble 2.4s ease-in-out infinite; }
+  @keyframes moWobble { 0%,100% { transform:rotate(0); } 20% { transform:rotate(-4deg); } 40% { transform:rotate(3deg); } 60% { transform:rotate(-2deg); } 80% { transform:rotate(0); } }
   .mo-pet.sad { animation-duration:4.5s; filter:saturate(.6) brightness(.96); }
   .mo-pet.jump { animation:moJump .6s ease-out; }
   @keyframes moBob { 0%,100% { transform:translateY(0) scale(1,1); } 50% { transform:translateY(-6px) scale(1.02,.98); } }
@@ -396,7 +398,7 @@
   .mo-dot { flex:1; max-width:34px; aspect-ratio:1; border-radius:8px; background:var(--line); display:grid; place-items:center; font-size:11px; color:var(--muted); }
   .mo-dot.on { background:#2a9d4b; color:#fff; } .mo-dot.frz { background:var(--accent); color:#fff; } .mo-dot.miss { background:#d33; color:#fff; }
   .mo-dot.today { outline:2px solid var(--accent); outline-offset:1px; }
-  @media (prefers-reduced-motion: reduce) { .mo-pet, .mo-pet.jump { animation:none; } }
+  @media (prefers-reduced-motion: reduce) { .mo-pet, .mo-pet.egg, .mo-pet.jump { animation:none; } }
   /* toast "Dihapus · Urungkan" */
   #toasts { position:fixed; left:50%; transform:translateX(-50%); bottom:calc(84px + env(safe-area-inset-bottom)); z-index:70; display:flex; flex-direction:column; gap:8px; width:min(92vw,380px); pointer-events:none; }
   .toast { pointer-events:auto; display:flex; align-items:center; gap:10px; padding:8px 8px 8px 14px; border-radius:12px; background:var(--ink); color:var(--bg); font-size:14px; box-shadow:0 4px 16px #0004; animation:paneIn .18s ease; }
@@ -2018,37 +2020,75 @@ const MO_SFX = {
   lose() { [392, 330, 262].forEach((f, i) => moTone(f, i * 0.2, 0.4, "sawtooth", 0.07)); },
 };
 
-function moPetSVG(mood) {
+// Jenis Mochi (diundi server saat telur menetas): kucing, kelinci, burung. Tahap tumbuh: telur, anak, remaja, dewasa, legenda.
+const MO_CHEEKS = '<ellipse cx="62" cy="116" rx="12" ry="8" fill="#ff7b8f" opacity=".5"/><ellipse cx="138" cy="116" rx="12" ry="8" fill="#ff7b8f" opacity=".5"/>';
+const moHead = (c1, c2) => '<path d="M100 18c-46 0-76 34-76 80 0 40 24 70 76 70s76-30 76-70c0-46-30-80-76-80z" fill="' + c1 + '"/><path d="M44 120c10 30 34 42 56 42s46-12 56-42c-12 18-34 26-56 26s-44-8-56-26z" fill="' + c2 + '" opacity=".28"/>';
+function moBody(sp) {
+  if (sp === "kelinci") {
+    return '<ellipse cx="74" cy="14" rx="12" ry="28" transform="rotate(-6 74 14)" fill="#f4ebe4"/><ellipse cx="74" cy="17" rx="6" ry="21" transform="rotate(-6 74 14)" fill="#f9b8c6"/>' +
+      '<ellipse cx="126" cy="14" rx="12" ry="28" transform="rotate(6 126 14)" fill="#f4ebe4"/><ellipse cx="126" cy="17" rx="6" ry="21" transform="rotate(6 126 14)" fill="#f9b8c6"/>' +
+      moHead("#f7efe9", "#b9a597") + MO_CHEEKS + '<ellipse cx="100" cy="103" rx="6" ry="4.5" fill="#f08ca0"/>';
+  }
+  if (sp === "burung") {
+    return '<ellipse cx="22" cy="122" rx="15" ry="26" transform="rotate(-20 22 122)" fill="#f0b82a"/><ellipse cx="178" cy="122" rx="15" ry="26" transform="rotate(20 178 122)" fill="#f0b82a"/>' +
+      '<path d="M82 164v10m-9 4h18M118 164v10m-9 4h18" stroke="#e8902a" stroke-width="5" stroke-linecap="round" fill="none"/>' +
+      moHead("#ffd75e", "#d89a10") + '<path d="M100 20q-3-12 5-16M100 20q8-12 18-9M100 20q-9-10-19-6" stroke="#f0b82a" stroke-width="5" fill="none" stroke-linecap="round"/>' +
+      MO_CHEEKS + '<path d="M89 98h22l-11 17z" fill="#ff9a2e"/>';
+  }
+  return moHead("#ffb86b", "#e48a2f") + '<path d="M62 30l-6-22 24 14zM138 30l6-22-24 14z" fill="#e48a2f"/>' + MO_CHEEKS; // kucing
+}
+function moMouth(sp, kind) {
+  if (sp === "burung") return { happy: "M91 103q9 9 18 0", ok: "M92 105h16", sad: "M92 109q8-7 16 0", tap: "M89 102q11 14 22 0" }[kind];
+  return { happy: "M82 112q18 22 36 0", ok: "M86 120h28", sad: "M84 126q16-16 32 0", tap: "M80 108q20 28 40 0" }[kind];
+}
+function moEggSVG(cur) {
+  const crack = (d) => '<path d="' + d + '" stroke="#8a5a2b" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>';
+  return '<path d="M100 14c-44 0-66 64-66 102 0 36 28 58 66 58s66-22 66-58c0-38-22-102-66-102z" fill="#fff3d6" stroke="#e8cf9c" stroke-width="3"/>' +
+    '<ellipse cx="72" cy="128" rx="10" ry="7" fill="#ffd9a0" opacity=".75"/><ellipse cx="126" cy="112" rx="8" ry="6" fill="#ffd9a0" opacity=".75"/><ellipse cx="104" cy="150" rx="12" ry="7" fill="#ffd9a0" opacity=".6"/><ellipse cx="86" cy="62" rx="7" ry="5" fill="#ffd9a0" opacity=".6"/>' +
+    (cur >= 34 ? crack("M70 94l14 12-12 10 14 12") : "") + (cur >= 67 ? crack("M132 84l-14 10 12 12-14 10") + crack("M92 34l8 10 8-10") : "");
+}
+function moPetSVG(mood, m) {
+  m = m || {};
+  const shadow = '<ellipse cx="100" cy="176" rx="62" ry="9" fill="#000" opacity=".12"/>';
+  if (m.egg) return shadow + moEggSVG(m.cur || 0);
+  const sp = m.sp || "kucing", st = m.stage || 1;
   const eyes = mood === "sad"
     ? '<path d="M56 88q10 8 20 0M124 88q10 8 20 0" stroke="#3a2210" stroke-width="5" fill="none" stroke-linecap="round"/>'
     : '<ellipse cx="68" cy="88" rx="8" ry="10" fill="#3a2210"/><ellipse cx="132" cy="88" rx="8" ry="10" fill="#3a2210"/><circle cx="71" cy="84" r="3" fill="#fff"/><circle cx="135" cy="84" r="3" fill="#fff"/>';
-  const mouth = mood === "happy" ? "M82 112q18 22 36 0" : mood === "ok" ? "M86 120h28" : "M84 126q16-16 32 0";
-  return '<ellipse cx="100" cy="176" rx="62" ry="9" fill="#000" opacity=".12"/>' +
-    '<path d="M100 18c-46 0-76 34-76 80 0 40 24 70 76 70s76-30 76-70c0-46-30-80-76-80z" fill="#ffb86b"/>' +
-    '<path d="M44 120c10 30 34 42 56 42s46-12 56-42c-12 18-34 26-56 26s-44-8-56-26z" fill="#e48a2f" opacity=".28"/>' +
-    '<path d="M62 30l-6-22 24 14zM138 30l6-22-24 14z" fill="#e48a2f"/>' +
-    '<ellipse cx="62" cy="116" rx="12" ry="8" fill="#ff7b8f" opacity=".5"/><ellipse cx="138" cy="116" rx="12" ry="8" fill="#ff7b8f" opacity=".5"/>' +
-    '<g class="pe">' + eyes + '</g><path class="pm" d="' + mouth + '" fill="none" stroke="#3a2210" stroke-width="5" stroke-linecap="round"/>';
+  let inner = moBody(sp) + '<g class="pe">' + eyes + '</g><path class="pm" d="' + moMouth(sp, mood) + '" fill="none" stroke="#3a2210" stroke-width="5" stroke-linecap="round"/>';
+  if (sp === "kelinci") inner = '<g transform="translate(10 20) scale(.9)">' + inner + "</g>"; // telinga panjang butuh ruang di atas
+  let acc = "";
+  if (st >= 2) acc += '<path d="M72 150q28 12 56 0" stroke="#e5547a" stroke-width="6" fill="none" stroke-linecap="round"/><circle cx="100" cy="162" r="7" fill="#ffc83d" stroke="#d99a1c" stroke-width="2"/>'; // remaja: kalung lonceng
+  if (st >= 3) acc += '<path d="M56 140q44 26 88 0l4 15q-48 28-96 0z" fill="#4f9de0"/><path d="M126 150l10 28 14-6-8-26z" fill="#3b82c4"/>'; // dewasa: syal
+  if (st >= 4) acc += '<path transform="translate(0 ' + (sp === "kelinci" ? 16 : 0) + ')" d="M80 28l5-17 15 11 15-11 5 17z" fill="#ffc83d" stroke="#d99a1c" stroke-width="2" stroke-linejoin="round"/>'; // legenda: mahkota
+  const k = 0.82 + 0.18 * Math.min(m.level || 1, 30) / 30; // tumbuh sedikit demi sedikit tiap level
+  return shadow + '<g transform="translate(100 176) scale(' + k.toFixed(3) + ') translate(-100 -176)">' + inner + acc + "</g>";
 }
+const moFirst = () => String((profile && profile.name) || "").trim().split(/\s+/)[0].slice(0, 16);
+const moSub = (t) => t.replace(/\{n\}/g, () => (moFirst() ? ", " + moFirst() : "")); // {n} jadi ", Nama" (kosong kalau profil belum berisi nama)
+const moCap = (t) => (t ? t[0].toUpperCase() + t.slice(1) : "");
 const moT = (t) => t.replace(/Mochi/g, () => (mochi && mochi.name) || "Mochi"); // nama peliharaan bisa diganti
-const MO_SAY = { done: "Misi hari ini beres. Mochi kenyang dan senang!", happy: "Mochi senang, hari ini lancar.", ok: "Mochi mulai lapar. Ayo selesaikan misi.", sad: "Mochi lemas. Kasih makan lewat misi ya." };
+const MO_SAY = { egg: "Telur Mochi masih hangat{n}. Selesaikan misi biar cepat menetas.", done: "Misi hari ini beres{n}. Mochi kenyang dan senang!", happy: "Mochi senang, hari ini lancar.", ok: "Mochi mulai lapar{n}. Ayo selesaikan misi.", sad: "Mochi lemas{n}. Kasih makan lewat misi ya." };
 const MO_TAP = {
-  happy: ["Hehe, geli!", "Hore! Ketuk lagi dong.", "Mochi sayang kamu.", "Ayo selesaikan misi, aku semangat!"],
-  ok: ["Ehh, aku lapar nih...", "Boleh minta misi dulu?", "Hmm, ketuk terus juga nggak kenyang."],
-  sad: ["Hiks... lapar.", "Lemes... kasih misi dong.", "Jangan tinggalin Mochi."],
+  happy: ["Hehe, geli{n}!", "Hore! Ketuk lagi dong.", "Mochi sayang kamu{n}.", "Ayo selesaikan misi, aku semangat!"],
+  ok: ["Ehh, aku lapar nih{n}...", "Boleh minta misi dulu?", "Hmm, ketuk terus juga nggak kenyang."],
+  sad: ["Hiks... lapar{n}.", "Lemes... kasih misi dong.", "Jangan tinggalin Mochi{n}."],
+  egg: ["Tok tok... masih hangat di dalam.", "Ada yang bergerak di dalam!", "Sebentar lagi menetas{n}..."],
 };
 
 function renderMochi() {
   const m = mochi;
   if (!m) return;
   const mood = moMood(m.en, m.done);
+  const lvTxt = m.egg ? "Telur" : moCap(m.spLabel) + " · " + m.stageName + " · Lv " + m.level;
+  const say = m.egg ? "egg" : m.done ? "done" : mood;
   const tab = document.querySelector('.tabs button[data-tab="mochi"]');
-  if (tab) tab.textContent = m.name + " · Lv " + m.level + " · Streak " + m.streak;
+  if (tab) tab.textContent = m.name + (m.egg ? " · Telur" : " · Lv " + m.level) + " · Streak " + m.streak;
   const chip = $("mochiChip");
   if (chip) {
-    chip.innerHTML = '<svg class="mo-svg" viewBox="14 8 172 172" aria-hidden="true">' + moPetSVG(mood) + "</svg><span>" + m.streak + "</span>";
+    chip.innerHTML = '<svg class="mo-svg" viewBox="14 8 172 172" aria-hidden="true">' + moPetSVG(mood, m) + "</svg><span>" + m.streak + "</span>";
     chip.classList.toggle("hot", m.streak > 0);
-    chip.title = m.name + " · Lv " + m.level + " · Streak " + m.streak + " hari";
+    chip.title = m.name + (m.egg ? " · Telur" : " · Lv " + m.level) + " · Streak " + m.streak + " hari";
   }
   const box = $("mochiBox");
   if (!box) return;
@@ -2056,10 +2096,10 @@ function renderMochi() {
   const dots = m.week.map((d) => '<div class="mo-dot ' + (d.st || "") + (d.today ? " today" : "") + '" title="' + d.d + '">' + (d.st === "on" ? "✓" : d.st === "frz" ? "❄" : d.st === "miss" ? "×" : d.d[0]) + "</div>").join("");
   const ms = m.missions.map((x) => '<div class="mo-mission ' + (x.n >= x.need ? "done" : "") + '"><div><div class="t">' + moEsc(x.text) + '</div><div class="p">' + x.n + " / " + x.need + '</div></div><div class="x">' + (x.n >= x.need ? "Selesai" : "+" + x.xp + " XP") + "</div></div>").join("");
   box.innerHTML =
-    '<div class="mo-stage"><svg id="moPet" class="mo-svg mo-pet ' + (mood === "sad" ? "sad" : "") + '" viewBox="0 0 200 190" role="img" aria-label="' + moEsc(m.name) + ', peliharaanmu">' + moPetSVG(mood) + "</svg>" +
-    '<div class="mo-name" id="moNameRow"><span id="moName">' + moEsc(m.name) + '</span><button type="button" class="mo-edit" id="moEdit" title="Ganti nama" aria-label="Ganti nama peliharaan"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg></button><span class="mo-lvl">Lv ' + m.level + '</span></div><div class="mo-say" id="moSay">' + moEsc(moT(MO_SAY[m.done ? "done" : mood])) + "</div>" +
-    '<div class="mo-bars"><div class="mo-bar"><label><span>Kenyang</span><span>' + m.en + '%</span></label><div class="mo-track"><div class="mo-fill en" style="width:' + m.en + '%"></div></div></div>' +
-    '<div class="mo-bar"><label><span>XP</span><span>' + m.cur + " / " + m.lvlSize + '</span></label><div class="mo-track"><div class="mo-fill xp" style="width:' + (m.cur / m.lvlSize * 100) + '%"></div></div></div></div></div>' +
+    '<div class="mo-stage"><svg id="moPet" class="mo-svg mo-pet ' + (m.egg ? "egg" : mood === "sad" ? "sad" : "") + '" viewBox="0 0 200 190" role="img" aria-label="' + moEsc(m.name) + ', peliharaanmu">' + moPetSVG(mood, m) + "</svg>" +
+    '<div class="mo-name" id="moNameRow"><span id="moName">' + moEsc(m.name) + '</span><button type="button" class="mo-edit" id="moEdit" title="Ganti nama" aria-label="Ganti nama peliharaan"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg></button><span class="mo-lvl">' + moEsc(lvTxt) + '</span></div><div class="mo-say" id="moSay">' + moEsc(moSub(moT(MO_SAY[say]))) + "</div>" +
+    '<div class="mo-bars"><div class="mo-bar"><label><span>' + (m.egg ? "Kehangatan" : "Kenyang") + '</span><span>' + m.en + '%</span></label><div class="mo-track"><div class="mo-fill en" style="width:' + m.en + '%"></div></div></div>' +
+    '<div class="mo-bar"><label><span>' + (m.egg ? "Menetas" : "XP") + '</span><span>' + m.cur + " / " + m.lvlSize + '</span></label><div class="mo-track"><div class="mo-fill xp" style="width:' + (m.cur / m.lvlSize * 100) + '%"></div></div></div></div></div>' +
     '<div class="mo-h">Misi hari ini</div>' + ms +
     '<div class="mo-h">Streak</div><div class="mo-streak"><div><div class="n">' + m.streak + '</div><div class="muted">hari beruntun</div></div>' +
     '<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:14px">Jatah libur: ' + m.frz + '</div><div class="muted" style="font-size:12px">Dipakai otomatis kalau satu hari terlewat, supaya streak tidak putus. Terbaik: ' + m.best + ' hari.</div></div></div>' +
@@ -2112,6 +2152,8 @@ function mochiUpdate(m) {
   mochi = m;
   renderMochi();
   if (!old) return;
+  if (old.egg && !m.egg) { MO_SFX.level(); moToast("Telur menetas jadi " + m.spLabel + "! Ketuk ikon pensil untuk memberi nama."); moJump(); return; }
+  if (!old.egg && m.stage > old.stage && m.level > old.level) { MO_SFX.level(); moToast("✨ " + m.name + " berevolusi jadi " + m.stageName + "!"); moJump(); return; }
   if (m.day === old.day) {
     const gained = m.missions.filter((x, i) => old.missions[i] && x.n > old.missions[i].n);
     if (m.level > old.level) { MO_SFX.level(); moToast("Naik level! " + m.name + " sekarang level " + m.level); moJump(); }
@@ -2125,15 +2167,22 @@ function mochiUpdate(m) {
   else if (m.frz < old.frz) { MO_SFX.save(); moToast("Jatah libur dipakai. Streak aman."); }
 }
 function moTap(e) {
+  if (mochi.egg) { // telur: bergoyang dan "bicara", tidak punya wajah
+    moJump(); MO_SFX.tap("ok");
+    const el0 = MO_TAP.egg;
+    $("moSay").textContent = moSub(moT(el0[Math.floor(Math.random() * el0.length)]));
+    clearTimeout(mochiTapT); mochiTapT = setTimeout(renderMochi, 1600);
+    return;
+  }
   const mood = moMood(mochi.en, mochi.done);
   mochiTapN++;
   moJump(); MO_SFX.tap(mood);
   const svg = $("moPet");
   const eyes = svg.querySelector(".pe"), mouth = svg.querySelector(".pm");
   eyes.innerHTML = '<path d="M56 90q12-14 24 0M120 90q12-14 24 0" stroke="#3a2210" stroke-width="5" fill="none" stroke-linecap="round"/>';
-  if (mood !== "sad") mouth.setAttribute("d", "M80 108q20 28 40 0");
+  if (mood !== "sad") mouth.setAttribute("d", moMouth(mochi.sp || "kucing", "tap"));
   const l = MO_TAP[mood];
-  $("moSay").textContent = mochiTapN >= 6 && mood === "happy" ? "Sudah ah, geli banget!" : moT(l[Math.floor(Math.random() * l.length)]);
+  $("moSay").textContent = mochiTapN >= 6 && mood === "happy" ? "Sudah ah, geli banget!" : moSub(moT(l[Math.floor(Math.random() * l.length)]));
   if (mochiTapN >= 6) mochiTapN = 0;
   const stage = svg.parentElement, r = stage.getBoundingClientRect();
   const s = el("span", "mo-pop", mood === "sad" ? "..." : "♥");
