@@ -218,21 +218,35 @@
   #skeleton .sk-bubble.r { width:52%; align-self:flex-end; }
   #skeleton .sk-chips { display:flex; gap:8px; margin-bottom:10px; overflow:hidden; }
   #skeleton .sk-chips .sk { height:32px; width:110px; border-radius:999px; flex:none; }
-  #pinGate { position:fixed; inset:0; background:var(--bg); z-index:50; display:flex; align-items:center; justify-content:center; padding:20px; }
+  #pinGate { position:fixed; inset:0; z-index:50; display:flex; padding:20px; overflow-y:auto;
+    background:radial-gradient(900px 480px at 50% -8%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 70%), var(--bg); }
   #pinGate.hide { display:none; }
-  #pinGate .box { width:min(360px,100%); text-align:left; }
-  #pinGate h2 { font-size:24px; line-height:1.2; text-align:center; }
-  #pinGate .muted { text-align:center; }
-  #pinGate form { display:flex; flex-direction:column; gap:10px; margin-top:18px; }
+  #pinGate .box { width:min(400px,100%); margin:auto; }
+  .brand { display:flex; flex-direction:column; align-items:center; gap:8px; }
+  .brand img { width:56px; height:56px; border-radius:14px; box-shadow:0 4px 14px color-mix(in srgb, var(--accent) 35%, transparent); }
+  .bname { font-size:22px; font-weight:700; letter-spacing:-.01em; }
+  .tagline { text-align:center; color:var(--muted); font-size:14px; line-height:1.4; margin:6px 0 18px; }
+  .authcard { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:22px 20px; box-shadow:0 6px 24px rgba(0,0,0,.06); }
+  .authcard h2 { font-size:20px; line-height:1.2; margin:0 0 2px; }
+  .authcard .muted { margin:0 0 18px; }
+  #pinGate .fld { margin-bottom:14px; }
+  #pinGate .fld label { display:block; font-size:13px; font-weight:600; margin-bottom:6px; }
   #pinGate .pw { margin:0 !important; }
-  #pinGate input { display:block; width:100%; text-align:left; font-size:16px; letter-spacing:0; padding:13px 14px; border-radius:12px; border:1px solid var(--line); background:var(--card); color:var(--ink); margin:0 !important; font-family:inherit; }
+  #pinGate input { display:block; width:100%; text-align:left; font-size:16px; letter-spacing:0; padding:12px 14px; border-radius:12px; border:1px solid var(--line); background:var(--bg); color:var(--ink); margin:0 !important; font-family:inherit; }
   #pinGate input:focus { outline:2px solid var(--accent); outline-offset:-1px; border-color:var(--accent); }
-  #pinGate p.err { color:#d33; font-size:13px; min-height:0; margin:0; text-align:center; }
-  #pinGate p.err.ok { color:#2a9d4b; }
+  #pinGate .fld.bad input { border-color:#d33; }
+  #pinGate .fld.bad input:focus { outline-color:#d33; }
+  #pinGate .ferr { color:#d33; font-size:12.5px; line-height:1.35; margin:5px 0 0; }
+  #pinGate .ferr:empty { display:none; }
+  #pinGate p.err { color:#d33; font-size:13px; min-height:0; margin:0 0 12px; text-align:center; }
   #pinGate p.err:empty { display:none; }
-  #pinGate button.primary { width:100%; padding:13px; font-size:16px; font-weight:600; border-radius:12px; margin-top:4px; }
-  #pinGate .switch { margin:18px 0 0; font-size:14px; text-align:center; }
-  #pinGate .switch a { color:var(--accent); text-decoration:none; font-weight:600; }
+  #pinGate button.primary { display:flex; align-items:center; justify-content:center; gap:8px; width:100%; padding:13px; font-size:16px; font-weight:600; border-radius:12px; margin-top:4px; }
+  #pinGate button.primary:disabled { opacity:.75; cursor:default; }
+  .spin { display:none; width:15px; height:15px; border:2px solid rgba(255,255,255,.4); border-top-color:#fff; border-radius:50%; animation:spin .7s linear infinite; }
+  button.loading .spin { display:inline-block; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  #pinGate #authSwitch { width:100%; margin-top:14px; padding:11px; font-size:14px; font-weight:600; border-radius:12px; background:transparent; color:var(--accent); }
+  @media (prefers-reduced-motion: reduce) { .spin { animation-duration:1.6s; } }
 
   dialog { border:1px solid var(--line); border-radius:16px; background:var(--card); color:var(--ink); width:min(92vw,420px); }
   dialog label { display:block; margin:10px 0 4px; font-size:13px; color:var(--muted); }
@@ -358,16 +372,26 @@
 </div>
 <div id="pinGate" class="hide">
   <div class="box">
-    <h2 style="margin:0 0 6px" id="authTitle">🔒 Masuk</h2>
-    <p class="muted" style="margin:0 0 4px" id="authSub">Masuk ke asistenmu.</p>
-    <form id="authForm">
-      <input id="authUser" type="text" autocomplete="username" autocapitalize="none" placeholder="Username">
-      <input id="authPass" type="password" autocomplete="current-password" placeholder="Password">
-      <input id="authInvite" type="password" autocomplete="off" placeholder="Kode undangan">
-      <p class="err" id="pinErr"></p>
-      <button class="primary" type="submit" id="authBtn">Masuk</button>
-    </form>
-    <p class="switch"><a href="#" id="authSwitch">Belum punya akun? Daftar</a></p>
+    <div class="brand"><img src="/icon-192.png" alt="" width="56" height="56"><div class="bname">Asistenku</div></div>
+    <p class="tagline">Tugas, catatan, dan uang dalam satu tempat, sinkron dengan Telegram.</p>
+    <div class="authcard">
+      <h2 id="authTitle">Masuk</h2>
+      <p class="muted" id="authSub">Masuk ke asistenmu.</p>
+      <form id="authForm" novalidate>
+        <div class="fld" id="fUser"><label for="authUser">Username</label>
+          <input id="authUser" name="username" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="next" placeholder="mis. budi_01">
+          <p class="ferr"></p></div>
+        <div class="fld" id="fPass"><label for="authPass">Password</label>
+          <input id="authPass" name="password" type="password" autocomplete="current-password" enterkeyhint="go" placeholder="Password">
+          <p class="ferr"></p></div>
+        <div class="fld" id="fInvite"><label for="authInvite">Kode undangan</label>
+          <input id="authInvite" name="invite" type="text" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Kode dari pemilik app">
+          <p class="ferr"></p></div>
+        <p class="err" id="pinErr" role="alert"></p>
+        <button class="primary" type="submit" id="authBtn"><i class="spin"></i><span id="authBtnTxt">Masuk</span></button>
+      </form>
+      <button type="button" id="authSwitch">Belum punya akun? Daftar</button>
+    </div>
   </div>
 </div>
 <dialog id="exitDlg">
@@ -534,25 +558,36 @@ async function api(path, opts = {}) {
   return d;
 }
 
-window.authPwBox = PW.attach($("authPass"), { examples: true });
+window.authPwBox = PW.attach($("authPass"), { compact: true });
 window.authPwBox.style.display = "none"; // bar kekuatan hanya saat Daftar
-PW.eye($("authInvite"));
-$("authInvite").parentElement.style.display = "none"; // tampil hanya saat Daftar
+$("authPass").parentElement.insertAdjacentElement("afterend", $("fPass").querySelector(".ferr")); // pesan error tepat di bawah kolom
+$("fInvite").style.display = "none"; // tampil hanya saat Daftar
+function setFieldErr(id, msg) { $(id).classList.toggle("bad", msg !== ""); $(id).querySelector(".ferr").textContent = msg || ""; }
+function clearAuthErrs() { ["fUser", "fPass", "fInvite"].forEach((i) => setFieldErr(i, "")); $("pinErr").textContent = ""; }
+["authUser", "authPass", "authInvite"].forEach((id) => $(id).addEventListener("input", () => { setFieldErr({ authUser: "fUser", authPass: "fPass", authInvite: "fInvite" }[id], ""); $("pinErr").textContent = ""; }));
+function routeAuthError(msg) { // taruh pesan server di kolom yang bersangkutan
+  if (/undangan/i.test(msg)) setFieldErr("fInvite", msg);
+  else if (/^username atau password/i.test(msg)) { setFieldErr("fUser", ""); $("fUser").classList.add("bad"); setFieldErr("fPass", msg); }
+  else if (/^username/i.test(msg)) setFieldErr("fUser", msg);
+  else if (/^password/i.test(msg)) setFieldErr("fPass", msg);
+  else $("pinErr").textContent = msg;
+}
 let registerMode = false;
 function setAuthMode(reg) {
   registerMode = reg;
-  $("authTitle").textContent = reg ? "✨ Daftar" : "🔒 Masuk";
+  $("authTitle").textContent = reg ? "Daftar" : "Masuk";
   $("authSub").textContent = reg ? "Buat akun baru (perlu kode undangan)." : "Masuk ke asistenmu.";
-  $("authInvite").parentElement.style.display = reg ? "" : "none";
+  $("fInvite").style.display = reg ? "" : "none";
   if (window.authPwBox) window.authPwBox.style.display = reg ? "" : "none";
   $("authPass").autocomplete = reg ? "new-password" : "current-password";
-  $("authBtn").textContent = reg ? "Daftar" : "Masuk";
+  $("authBtnTxt").textContent = reg ? "Daftar" : "Masuk";
   $("authSwitch").textContent = reg ? "Sudah punya akun? Masuk" : "Belum punya akun? Daftar";
-  $("pinErr").textContent = "";
+  clearAuthErrs();
 }
 function showGate(err) {
   document.body.classList.add("gate");
   $("pinGate").classList.remove("hide");
+  clearAuthErrs();
   $("pinErr").textContent = err || "";
   $("authPass").value = "";
   $("authInvite").value = "";
@@ -1890,17 +1925,24 @@ $("authSwitch").addEventListener("click", (e) => { e.preventDefault(); setAuthMo
 
 $("authForm").addEventListener("submit", async (e) => {
   e.preventDefault();
-  $("pinErr").textContent = "Memproses..."; $("pinErr").classList.add("ok");
-  const body = { op: registerMode ? "register" : "login", username: $("authUser").value, password: $("authPass").value };
+  clearAuthErrs();
+  const user = $("authUser").value.trim(), pass = $("authPass").value;
+  let bad = false;
+  if (!user) { setFieldErr("fUser", "Isi username."); bad = true; }
+  if (!pass) { setFieldErr("fPass", "Isi password."); bad = true; }
+  if (registerMode && !$("authInvite").value.trim()) { setFieldErr("fInvite", "Isi kode undangan."); bad = true; }
+  if (bad) { const f = document.querySelector("#authForm .fld.bad input"); if (f) f.focus(); return; }
+  const btn = $("authBtn");
+  btn.disabled = true; btn.classList.add("loading"); $("authBtnTxt").textContent = "Memproses...";
+  const body = { op: registerMode ? "register" : "login", username: user, password: pass };
   if (registerMode) body.invite = $("authInvite").value;
   try {
     const r = await fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify(body) });
     const d = await r.json().catch(() => ({}));
-    $("pinErr").classList.remove("ok");
-    if (!r.ok) { $("pinErr").textContent = d.error || "Gagal"; return; }
-    $("pinErr").textContent = "";
+    if (!r.ok) { routeAuthError(d.error || "Gagal"); return; }
     boot();
-  } catch (err) { $("pinErr").classList.remove("ok"); $("pinErr").textContent = "Gagal terhubung: " + err.message; }
+  } catch (err) { $("pinErr").textContent = "Gagal terhubung: " + err.message; }
+  finally { btn.disabled = false; btn.classList.remove("loading"); $("authBtnTxt").textContent = registerMode ? "Daftar" : "Masuk"; }
 });
 
 

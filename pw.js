@@ -81,16 +81,18 @@
     const wrap = eye(input);
     const box = document.createElement("div");
     box.className = "pw-box";
-    box.innerHTML =
-      '<div class="pw-bar"><i></i></div>' +
-      '<div class="pw-top"><span>Kekuatan: <b class="pw-lvl">-</b></span></div>' +
-      '<div class="pw-list">' + CHECKS.map((c) => "<span>○ " + c[0] + "</span>").join("") + "</div>";
+    box.innerHTML = opts.compact
+      ? '<div class="pw-bar"><i></i></div><div class="pw-top"><span style="white-space:nowrap">Kekuatan: <b class="pw-lvl">-</b></span><span class="pw-tip"></span></div>'
+      : '<div class="pw-bar"><i></i></div>' +
+        '<div class="pw-top"><span>Kekuatan: <b class="pw-lvl">-</b></span></div>' +
+        '<div class="pw-list">' + CHECKS.map((c) => "<span>○ " + c[0] + "</span>").join("") + "</div>";
     const anchor = wrap.parentElement.classList.contains("row") ? wrap.parentElement : wrap;
     anchor.insertAdjacentElement("afterend", box);
 
     const bar = box.querySelector(".pw-bar i");
     const lvl = box.querySelector(".pw-lvl");
     const items = box.querySelectorAll(".pw-list span");
+    const tip = box.querySelector(".pw-tip");
     function update() {
       const p = input.value;
       const s = score(p);
@@ -99,7 +101,13 @@
       bar.style.background = L[2];
       lvl.textContent = p ? L[1] : "-";
       lvl.style.color = p ? L[2] : "";
+      if (tip) { // mode ringkas: satu kalimat petunjuk saja
+        const miss = CHECKS.filter((c) => !c[1](p));
+        tip.textContent = !p ? "Tips: 3 kata + angka + simbol" : miss.length ? "Kurang: " + miss[0][0].toLowerCase() : "Syarat terpenuhi";
+        tip.style.textAlign = "right";
+      }
       CHECKS.forEach((c, i) => {
+        if (!items[i]) return;
         const ok = c[1](p);
         items[i].className = ok ? "ok" : "";
         items[i].textContent = (ok ? "✓ " : "○ ") + c[0];
@@ -108,7 +116,7 @@
     input.addEventListener("input", update);
     update();
 
-    if (opts.examples) {
+    if (opts.examples && !opts.compact) {
       // Hanya petunjuk statis (tanpa contoh password dan tanpa tombol)
       const ex = document.createElement("div");
       ex.className = "pw-ex";
