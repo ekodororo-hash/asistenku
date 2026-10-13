@@ -14,6 +14,7 @@ const {
   getHist, clearHist, getBot,
   getReminders, addReminder, deleteReminderById,
   linkStatus, makeLinkCode, useLinkCode, unlinkPartner, incomingTransfers, acceptTransfer, declineTransfer,
+  getPendingDelete, resolvePendingDelete,
 } = require("./_lib");
 
 // Riwayat -> bentuk yang dipakai web
@@ -32,10 +33,11 @@ module.exports = async (req, res) => {
       // ?light=1: dipakai web untuk penyegaran berkala (tanpa key dan tanpa panggilan ke Telegram)
       const light = !!(req.query && req.query.light);
       const mode = await getMode(u);
-      const [tasks, notes, expenses, incomes, money, profile, hist, reminders, kstate, bot, rawBot, mcfg, xferIn, link] = await Promise.all([
+      const [tasks, notes, expenses, incomes, money, profile, hist, reminders, kstate, bot, rawBot, mcfg, xferIn, link, pendingDelete] = await Promise.all([
         getTasks(u), getNotes(u), getExpenses(u), getIncomes(u), moneySummary(u), getProfile(u), getHist(u, mode), getReminders(u),
         light ? null : keyState(u), light ? null : botStatus(u), light ? getBot(u).catch(() => null) : null, light ? null : getModelCfg(u),
         incomingTransfers(u).catch(() => []), light ? null : linkStatus(u).catch(() => null),
+        getPendingDelete(u).catch(() => null),
       ]);
       const botLinked = light ? !!(rawBot && rawBot.chatId) : !!(bot && bot.linked);
       const messages = toMessages(hist); // riwayat milik mode yang sedang aktif
@@ -45,7 +47,7 @@ module.exports = async (req, res) => {
         expenses: expenses.slice(-100).reverse(),
         incomes: incomes.slice(-100).reverse(),
         money,
-        profile, mode, messages, reminders, botLinked, xferIn,
+        profile, mode, messages, reminders, botLinked, xferIn, pendingDelete,
         ...(light ? {} : { link, geminiKeys: kstate.keys, keyHistoryCount: kstate.history.length, modelCfg: mcfg, maxKeys: MAX_KEYS, globalKey: !!process.env.GEMINI_API_KEY, bot }),
       });
     } catch (e) {
@@ -98,6 +100,12 @@ module.exports = async (req, res) => {
           const r = await declineTransfer(u, p.id);
           if (r.error) throw Object.assign(new Error(r.error), { status: 400 });
           result = { link: await linkStatus(u) };
+          break;
+        }
+        case "confirmDelete": case "cancelDelete": {
+          const r = await resolvePendingDelete(u, p.id, op === "cancelDelete" ? "no" : p.pick);
+          if (r.error) throw Object.assign(new Error(r.error), { status: 400 });
+          result = r;
           break;
         }
         case "removeBot": result = await removeBot(u); break;

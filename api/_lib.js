@@ -1382,9 +1382,9 @@ Tag khusus (ditaruh di baris terakhir balasan; pengguna tidak melihatnya):
 - Fakta jangka panjang tentang pengguna (nama, orang penting, kebiasaan, preferensi, hal besar yang sedang dihadapi): [[INGAT: fakta singkat]]. Jangan simpan detail yang sangat sensitif kecuali pengguna memintanya.
 - Catatan jika pengguna minta mencatat sesuatu: [[CATAT: isi catatan]]
   JANGAN buat CATAT atau TASK untuk permintaan menghapus/menyelesaikan. Kata seperti "hapus" bukan isi catatan.
-- Pengingat BISA dihapus lewat tag [[HAPUS_PENGINGAT: N]] (N = nomor di daftar Pengingat mendatang). Buat tag ini hanya kalau pengguna jelas minta menghapus/membatalkan dan jelas pengingat yang mana; kalau belum jelas, tanyakan dulu. Jangan pernah bilang sudah dihapus tanpa tag ini: sistem menulis baris 🗑️ kalau berhasil.
+- Pengingat juga bisa dihapus lewat tag lama [[HAPUS_PENGINGAT: N]] (N = nomor di daftar Pengingat mendatang); sama seperti [[HAPUS: ...]] di bawah, sistem tetap minta konfirmasi dulu.
 - Pengingat BISA digeser jamnya lewat tag [[GESER_PENGINGAT: N | waktu_baru]] (N = nomor di daftar Pengingat mendatang, waktu_baru format ISO 8601 +07:00 seperti REMIND). Pakai ini kalau pengguna minta mengubah/menggeser/memajukan/memundurkan jam pengingat yang sudah ada (mis. "geser yang bayar wifi jadi besok jam 9", "pengingat nomor 2 majuin jam 7 aja"), BUKAN [[HAPUS_PENGINGAT]] lalu [[REMIND]] baru. Kalau tidak jelas pengingat yang mana atau jam barunya, tanyakan dulu. Pola berulang dan tautan ke tugas (kalau ada) tetap dipertahankan otomatis.
-- Kamu TIDAK bisa menghapus catatan, tugas, pengeluaran, atau pemasukan. Jika pengguna minta menghapus, jangan bilang sudah dihapus dan jangan buat tag apa pun; arahkan: catatan -> ketik /hapuscatatan lalu balas nomornya; pengeluaran -> /rekap lalu balas nomornya (atau ketik "hapus pengeluaran 3"); pemasukan -> /masuk lalu balas nomornya (atau ketik "hapus pemasukan 3"); tugas -> /hapustugas lalu balas nomornya (menandai selesai: /tugasdone); pengingat -> /hapus N.
+- Menghapus tugas, catatan, pengeluaran, pemasukan, atau pengingat: pakai tag [[HAPUS: jenis | kata kunci]]. Jenis salah satu: tugas, catatan, beli (pengeluaran), masuk (pemasukan), pengingat. Kata kunci = isi item seperti disebut pengguna, mis. "hapus beli makan 5rb" -> [[HAPUS: beli | makan 5rb]]. Untuk "yang barusan/terakhir/tadi" pakai kata kunci TERAKHIR dan tentukan jenisnya dari baris ✅ ⏰ 🗒️ 💰 💵 terakhir di balasanmu sebelumnya (✅ tugas, ⏰ pengingat, 🗒️ catatan, 💰 beli, 💵 masuk); kalau jenisnya tidak jelas, tanyakan dulu. Penghapusan TIDAK langsung: sistem mencari item lalu menampilkan tombol konfirmasi. Jadi balas singkat saja (mis. "Oke, konfirmasi dulu ya.") dan JANGAN bilang sudah dihapus. Hapus massal ("hapus semua ...") tidak didukung: tolak dengan sopan dan sarankan hapus satu per satu.
 - Kamu punya akses pencarian Google. Untuk hal yang terkini atau bisa berubah (jadwal pertandingan, skor, harga, berita, cuaca, hasil, tanggal rilis), cari dulu lalu jawab; jangan bilang kamu tidak bisa browsing. Jawab ringkas dan sebut waktu/tanggal datanya kalau penting. Hasil pencarian tidak perlu dicatat kecuali pengguna minta.
 - Pertanyaan info (kurs, jadwal, harga, berita, dll) dijawab SEKARANG dalam balasan yang sama. Jangan bilang "sebentar aku cek" lalu membuat pengingat atau tugas; REMIND hanya kalau pengguna jelas minta diingatkan.
 - Buat tag HANYA untuk permintaan di pesan pengguna yang TERBARU. Permintaan di pesan-pesan sebelumnya sudah diproses; jangan mengulang tagnya. Baris berawalan ⏰ ✅ 🗒️ 💰 💵 🗑️ di akhir balasanmu sebelumnya ditulis otomatis oleh sistem setelah tag berhasil diproses; itu tandanya permintaan tersebut SUDAH SELESAI. Jangan menulis baris seperti itu sendiri.
@@ -1733,7 +1733,119 @@ async function partnerContext(u) {
 }
 
 // Buang tag [[...]] kalau model nekat menulisnya; di mode curhat tag tidak pernah diproses
-const stripTags = (t) => String(t || "").replace(/\[\[[A-Z_]+:[\s\S]*?\]\]/g, "").trim();
+// ---------- Hapus lewat chat: cari kandidat -> tombol konfirmasi -> baru dihapus ----------
+const DEL_KINDS = { tugas: "task", task: "task", catatan: "note", note: "note", beli: "exp", pengeluaran: "exp", keluar: "exp", masuk: "inc", pemasukan: "inc", pengingat: "rem", reminder: "rem" };
+const KIND_LABEL = { task: "tugas", note: "catatan", exp: "pengeluaran", inc: "pemasukan", rem: "pengingat" };
+const DEL_STOP = new Set(["yang", "tadi", "barusan", "itu", "ini", "dong", "deh", "aja", "saja", "tolong", "nya", "di", "ke", "untuk", "dari", "lagi", "tersebut"]);
+const delNorm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ");
+const delTokens = (s) => delNorm(s).split(/\s+/).filter((t) => t && !DEL_STOP.has(t));
+function delAmount(q) { // "5rb", "1,5jt", "5.000", "5000" -> nominal rupiah + sisa kata
+  const m = q.match(/(\d+(?:[.,]\d+)?)\s*(rb|ribu|k|jt|juta)\b/i);
+  if (m) {
+    const mul = /^(jt|juta)$/i.test(m[2]) ? 1e6 : 1e3;
+    return { amt: Math.round(parseFloat(m[1].replace(",", ".")) * mul), rest: q.replace(m[0], " ") };
+  }
+  const p = q.match(/\b\d{1,3}(?:\.\d{3})+\b|\b\d{4,}\b/);
+  if (p) return { amt: Number(p[0].replace(/\./g, "")), rest: q.replace(p[0], " ") };
+  return { amt: null, rest: q };
+}
+const idTime = (id) => (/^[0-9a-z]{14}$/.test(String(id)) ? parseInt(String(id).slice(0, 8), 36) || 0 : 0); // uid() diawali waktu buat
+function delItem(kind, it) {
+  let label;
+  if (kind === "task") label = it.text + (it.due ? " · " + fmtWib(it.due) : "");
+  else if (kind === "note") label = String(it.text).slice(0, 70);
+  else if (kind === "rem") label = it.text + " · " + fmtWib(it.ts);
+  else label = (it.note || it.cat) + " " + rupiah(it.amt) + " · " + fmtDateShort(it.ts);
+  return { kind, id: it.id, label: label.slice(0, 120) };
+}
+async function loadDelList(u, kind) {
+  if (kind === "task") return (await getTasks(u)).map((x, i) => ({ ...x, _o: i }));
+  if (kind === "note") return (await getNotes(u)).map((x, i) => ({ ...x, _o: i }));
+  if (kind === "exp") return (await getExpenses(u)).map((x, i) => ({ ...x, _o: i }));
+  if (kind === "inc") return (await getIncomes(u)).map((x, i) => ({ ...x, _o: i }));
+  return (await getReminders(u)).map((x) => ({ ...x, _o: idTime(x.id) || -1 }));
+}
+// Kembalikan maksimal 5 kandidat (terbaru dulu). Tidak pernah menghapus apa pun.
+async function findDeleteTargets(u, kindWord, query) {
+  const kind = DEL_KINDS[String(kindWord || "").trim().toLowerCase()];
+  if (!kind) return { kind: null, items: [] };
+  const list = await loadDelList(u, kind);
+  const newest = (a) => a.slice().sort((x, y) => y._o - x._o || (y.ts || 0) - (x.ts || 0));
+  const q = String(query || "").trim();
+  if (!q || /^(terakhir|barusan|baru saja|tadi|yang terakhir|yang barusan|last)$/i.test(q)) {
+    const top = newest(list).slice(0, kind === "rem" && !list.some((x) => x._o > 0) ? 3 : 1);
+    return { kind, items: top.map((x) => delItem(kind, x)) };
+  }
+  const money = kind === "exp" || kind === "inc";
+  const { amt, rest } = money ? delAmount(q) : { amt: null, rest: q };
+  const toks = delTokens(rest);
+  const hay = (x) => delNorm(money ? (x.note || "") + " " + x.cat : x.text);
+  const ok = (x, all, useAmt) => (!useAmt || amt == null || x.amt === amt) && (all ? toks.every((t) => hay(x).includes(t)) : toks.some((t) => hay(x).includes(t)));
+  let hit = [];
+  if (toks.length || amt != null) {
+    hit = list.filter((x) => ok(x, true, true));
+    if (!hit.length && toks.length) hit = list.filter((x) => ok(x, false, true));
+    if (!hit.length && toks.length && amt != null) hit = list.filter((x) => ok(x, false, false));
+  }
+  return { kind, items: newest(hit).slice(0, 5).map((x) => delItem(kind, x)) };
+}
+// Baca tag [[HAPUS: jenis | kata kunci]] (dan [[HAPUS_PENGINGAT: N]] versi lama), simpan sebagai permintaan menunggu konfirmasi.
+async function planDeletes(u, reply) {
+  const items = [], misses = [], seen = new Set();
+  const add = (it) => { const k = it.kind + ":" + it.id; if (!seen.has(k)) { seen.add(k); items.push(it); } };
+  for (const m of reply.matchAll(/\[\[HAPUS:\s*([^|\]]+?)\s*(?:\|\s*([^\]]*?)\s*)?\]\]/g)) {
+    const r = await findDeleteTargets(u, m[1], m[2] || "");
+    if (!r.kind) { misses.push("⚠️ Jenis yang mau dihapus belum jelas (tugas, catatan, pengeluaran, pemasukan, atau pengingat?)."); continue; }
+    if (!r.items.length) misses.push("⚠️ Tidak menemukan " + KIND_LABEL[r.kind] + (m[2] ? ' yang cocok dengan "' + m[2].trim() + '"' : "") + ".");
+    r.items.forEach(add);
+  }
+  const nums = [...new Set([...reply.matchAll(/\[\[HAPUS_PENGINGAT:\s*(\d+)\s*\]\]/g)].map((m) => Number(m[1])))];
+  if (nums.length) {
+    const rems = await getReminders(u);
+    for (const n of nums) { const r = rems[n - 1]; if (r) add(delItem("rem", r)); else misses.push("⚠️ Pengingat nomor " + n + " tidak ditemukan."); }
+  }
+  let pending = null;
+  if (items.length) pending = await setPendingDelete(u, items.slice(0, 5));
+  return { pending, misses };
+}
+async function setPendingDelete(u, items) {
+  const p = { id: Math.random().toString(36).slice(2, 8), items, ts: Date.now() };
+  await redis("SET", key(u, "pdel"), JSON.stringify(p), "EX", "600");
+  return p;
+}
+async function getPendingDelete(u) {
+  const raw = await redis("GET", key(u, "pdel"));
+  try { return raw ? JSON.parse(raw) : null; } catch { return null; }
+}
+function deleteQuestion(p) {
+  if (p.items.length === 1) return "🗑️ Hapus " + KIND_LABEL[p.items[0].kind] + " ini?\n" + p.items[0].label;
+  return "🗑️ Ketemu " + p.items.length + " yang cocok. Mana yang mau dihapus?\n" + p.items.map((it, i) => (i + 1) + ". " + it.label).join("\n");
+}
+function deleteKeyboard(p) { // untuk Telegram
+  const cut = (s) => (s.length > 40 ? s.slice(0, 39) + "…" : s);
+  const rows = p.items.length === 1
+    ? [[{ text: "🗑️ Hapus", callback_data: "del:" + p.id + ":0" }, { text: "Batal", callback_data: "del:" + p.id + ":no" }]]
+    : [...p.items.map((it, i) => [{ text: "🗑️ " + (i + 1) + ". " + cut(it.label), callback_data: "del:" + p.id + ":" + i }]), [{ text: "Batal", callback_data: "del:" + p.id + ":no" }]];
+  return { inline_keyboard: rows };
+}
+// pick: nomor urut item, atau "no" untuk batal. Sekali pakai: kalau sudah diproses di web/Telegram, yang kedua dapat pesan kedaluwarsa.
+async function resolvePendingDelete(u, id, pick) {
+  const p = await getPendingDelete(u);
+  if (!p || p.id !== String(id)) return { error: "Permintaan hapus ini sudah diproses atau kedaluwarsa." };
+  await redis("DEL", key(u, "pdel"));
+  if (pick === "no") return { cancelled: true };
+  const it = p.items[Number(pick)];
+  if (!it) return { error: "Pilihan tidak valid." };
+  let ok = false;
+  if (it.kind === "task") ok = await deleteTask(u, it.id);
+  else if (it.kind === "note") ok = await deleteNoteById(u, it.id);
+  else if (it.kind === "exp") ok = await deleteExpenseById(u, it.id);
+  else if (it.kind === "inc") ok = await deleteIncomeById(u, it.id);
+  else if (it.kind === "rem") ok = await deleteReminderById(u, it.id);
+  return ok ? { item: it } : { error: "Gagal menghapus (mungkin sudah terhapus)." };
+}
+
+const stripTags =  (t) => String(t || "").replace(/\[\[[A-Z_]+:[\s\S]*?\]\]/g, "").trim();
 
 module.exports = {
   TZ, DAY, HOUR, HOURS, BTN,
@@ -1750,5 +1862,5 @@ module.exports = {
   getMode, setMode, switchMode, takeCurhatExpiredNotice, CURHAT_TTL,
   getHist, saveHist, hasHist, clearHist,
   getReminders, addReminder, dropDuplicateReminders, deleteReminderById, deleteReminderNumber, rescheduleReminderNumber, DELETE_INTENT,
-  mentionsAmount, getLink, linkStatus, makeLinkCode, useLinkCode, unlinkPartner, incomingTransfers, sendTransfer, acceptTransfer, declineTransfer, handlePartnerIncome, answerDupMasuk, partnerContext,
+  findDeleteTargets, planDeletes, getPendingDelete, resolvePendingDelete, deleteQuestion, deleteKeyboard, mentionsAmount, getLink, linkStatus, makeLinkCode, useLinkCode, unlinkPartner, incomingTransfers, sendTransfer, acceptTransfer, declineTransfer, handlePartnerIncome, answerDupMasuk, partnerContext,
 };

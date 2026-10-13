@@ -329,6 +329,15 @@
   .toast { pointer-events:auto; display:flex; align-items:center; gap:10px; padding:8px 8px 8px 14px; border-radius:12px; background:var(--ink); color:var(--bg); font-size:14px; box-shadow:0 4px 16px #0004; animation:paneIn .18s ease; }
   .toast span { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .toast button { flex:none; border:0; background:transparent; color:#8ab4ff; font-weight:700; padding:6px 10px; border-radius:8px; }
+  /* kartu konfirmasi hapus (hasil perintah ketik "hapus ...") */
+  .delcard { align-self:flex-start; max-width:92%; padding:12px; border-radius:14px; background:var(--card); border:1px solid #d33; border-left-width:4px; }
+  .delcard .dq { font-size:14px; font-weight:600; margin-bottom:8px; }
+  .delcard .dl { font-size:13px; color:var(--muted); margin:0 0 8px; word-break:break-word; }
+  .delcard .db { display:flex; flex-direction:column; gap:6px; }
+  .delcard .db button { text-align:left; padding:8px 12px; }
+  .delcard .db button.danger { border-color:#d33; color:#d33; font-weight:600; }
+  .delcard .dr { display:flex; gap:8px; }
+  .delcard .dr button { flex:1; text-align:center; }
 </style>
 <link rel="stylesheet" href="/theme.css">
 </head>
@@ -656,7 +665,7 @@ async function copyText(t) {
 }
 
 /* Baris konfirmasi aksi AI (✅ ⏰ 🗒️ 💰 ...) di akhir balasan dijadikan kartu kecil */
-const ACT_RE = /^(✅ Tugas ditambahkan|⏰ Pengingat|🗒️ Dicatat|💰 Dicatat|💵 |💸 Dicatat|🗑️ Pengingat dihapus|⚠️ |\(Jamnya)/;
+const ACT_RE = /^(✅ Tugas ditambahkan|⏰ Pengingat|🗒️ Dicatat|💰 Dicatat|💵 |💸 Dicatat|🗑️ Pengingat dihapus|🗑️ Dihapus|⚠️ |\(Jamnya)/;
 const ACT_KIND = { "✅": "task", "⏰": "remind", "🗒️": "note", "💰": "money", "💵": "money", "💸": "money", "🗑️": "del", "⚠️": "warn" };
 function splitActions(text) {
   const paras = String(text).split(/\n{2,}/), acts = [];
@@ -725,6 +734,7 @@ function dayLabel(ts) {
 
 function addBubble(role, text, cls, ts) {
   const chatEl = $("chat");
+  const dc = $("delCard"); if (dc) dc.remove(); // kartu konfirmasi selalu di paling bawah; dipasang ulang lewat renderConfirm()
   if (ts && chatEl.dataset.lastDay !== dayKey(ts)) { // ganti hari: sisipkan pemisah tanggal
     chatEl.dataset.lastDay = dayKey(ts);
     chatEl.appendChild(mk("div", "daysep", dayLabel(ts)));
@@ -764,6 +774,37 @@ function renderChat() {
       b.insertBefore(im, b.firstChild);
     }
   });
+  renderConfirm();
+}
+
+/* ---------- Konfirmasi hapus (dari perintah ketik "hapus ...") ---------- */
+let pdel = null; // { id, items:[{kind,id,label}] } menunggu tombol
+const DEL_KIND = { task: "tugas", note: "catatan", exp: "pengeluaran", inc: "pemasukan", rem: "pengingat" };
+function renderConfirm() {
+  const old = $("delCard"); if (old) old.remove();
+  if (!pdel || !pdel.items || !pdel.items.length || mode === "curhat") return;
+  const items = pdel.items, id = pdel.id, one = items.length === 1;
+  const card = el("div", "delcard"); card.id = "delCard";
+  card.appendChild(el("div", "dq", one ? "🗑️ Hapus " + DEL_KIND[items[0].kind] + " ini?" : "🗑️ Ketemu " + items.length + " yang cocok. Mana yang dihapus?"));
+  if (one) card.appendChild(el("p", "dl", items[0].label));
+  const box = el("div", one ? "dr" : "db");
+  const run = async (op, pick) => {
+    box.querySelectorAll("button").forEach((b) => { b.disabled = true; });
+    try {
+      const { result } = await api("/api/state", { method: "POST", body: JSON.stringify({ op, id, pick }) });
+      pdel = null; card.remove();
+      if (result && result.item) { addBubble("bot", "🗑️ Dihapus: " + result.item.label); await refreshFromServer(); }
+      else addBubble("bot", "Oke, tidak jadi dihapus.", "note");
+    } catch (e) { pdel = null; card.remove(); addBubble("bot", "⚠️ " + e.message, "note"); }
+  };
+  items.forEach((it, i) => {
+    const b = el("button", "danger", one ? "Hapus" : (i + 1) + ". " + it.label);
+    b.type = "button"; b.onclick = () => run("confirmDelete", i); box.appendChild(b);
+  });
+  const no = el("button", "", "Batal"); no.type = "button"; no.onclick = () => run("cancelDelete", "no"); box.appendChild(no);
+  card.appendChild(box);
+  $("chat").appendChild(card);
+  $("chat").scrollTop = $("chat").scrollHeight;
 }
 
 function renderMode() {
@@ -1456,6 +1497,8 @@ async function send(text, media) {
     if (d.xferIn) xferIn = d.xferIn;
     if (d.expenses) { expenses = d.expenses; incomes = d.incomes || incomes; money = d.money || money; renderMoney(); }
     if (d.reminders) { reminders = d.reminders; renderReminders(); }
+    if (d.confirm) pdel = d.confirm;
+    renderConfirm();
     showQuota(d.quota);
   } catch (e) {
     setBubble(wait, "Error: " + e.message);
@@ -1794,6 +1837,7 @@ $("clearBtn").onclick = async () => {
 /* ---------- Boot: cek PIN lalu muat semua data dari server ---------- */
 async function loadState() {
   const d = await api("/api/state");
+  pdel = d.pendingDelete || null;
   tasks = d.tasks || [];
   notes = d.notes || [];
   expenses = d.expenses || [];
@@ -1817,9 +1861,10 @@ async function refreshFromServer() {
     const before = sig(messages), oldMode = mode;
     tasks = notPending("deleteTask", d.tasks || []); notes = notPending("deleteNote", d.notes || []); expenses = notPending("deleteExpense", d.expenses || []); incomes = notPending("deleteIncome", d.incomes || []); money = d.money || null; xferIn = d.xferIn || [];
     reminders = notPending("deleteReminder", d.reminders || []); botLinked = d.botLinked !== false;
+    const pd = d.pendingDelete || null, pdChanged = (pd && pd.id) !== (pdel && pdel.id); pdel = pd;
     mode = d.mode || "asisten"; messages = d.messages || [];
     if (mode !== oldMode) renderMode();
-    if (sig(messages) !== before || mode !== oldMode) renderChat();
+    if (sig(messages) !== before || mode !== oldMode) renderChat(); else if (pdChanged) renderConfirm();
     renderTasks(); renderNotes(); renderMoney(); renderReminders();
   } catch {}
 }

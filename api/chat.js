@@ -8,7 +8,7 @@ const {
   getTasks, addTask, getNotes, addNote, getExpenses, addExpense,
   getReminders, addReminder, parseRepeat, repeatLabel, rescheduleReminderNumber, getBot, sendTelegram, cfgOn, quotaStatus, setSaldo, addOutsideMoney, moneyContext, parseWib, addIncome, getIncomes, moneySummary,
   mentionsAmount, partnerContext, incomingTransfers, sendTransfer, handlePartnerIncome, answerDupMasuk,
-  getFacts, addFacts,
+  getFacts, addFacts, planDeletes, getPendingDelete,
 } = require("./_lib");
 
 const { requireUser } = require("./_auth");
@@ -65,10 +65,10 @@ Tag khusus (taruh di baris terakhir balasan; pengguna tidak melihatnya):
   Kalau pengguna menyebut jam/hari untuk tugas itu (mis. "nyuci piring besok jam 7"), tambahkan waktu: [[TASK: nyuci piring | 2026-10-13T07:00:00+07:00]]. Tugas berjam otomatis jadi pengingat yang bunyi tepat waktu dan dibatalkan kalau tugasnya dicentang selesai. Jangan buat TASK dan REMIND sekaligus untuk hal yang sama.
   Pakai REMIND hanya untuk pengingat murni yang bukan tugas (minum obat, rapat, tagihan) atau yang berulang.
 - Catatan jika pengguna minta mencatat sesuatu: [[CATAT: isi catatan]]
-- Pengingat BISA dihapus lewat tag [[HAPUS_PENGINGAT: N]] (N = nomor di daftar Pengingat mendatang). Buat tag ini hanya kalau pengguna jelas minta menghapus/membatalkan dan jelas pengingat yang mana; kalau belum jelas, tanyakan dulu. Jangan pernah bilang sudah dihapus tanpa tag ini: sistem menulis baris 🗑️ kalau berhasil.
+- Pengingat juga bisa dihapus lewat tag lama [[HAPUS_PENGINGAT: N]] (N = nomor di daftar Pengingat mendatang); sama seperti [[HAPUS: ...]] di bawah, sistem tetap minta konfirmasi dulu.
 - Pengingat BISA digeser jamnya lewat tag [[GESER_PENGINGAT: N | waktu_baru]] (N = nomor di daftar Pengingat mendatang, waktu_baru format ISO 8601 +07:00 seperti REMIND). Pakai ini kalau pengguna minta mengubah/menggeser/memajukan/memundurkan jam pengingat yang sudah ada, BUKAN hapus lalu bikin REMIND baru. Kalau tidak jelas pengingat yang mana atau jam barunya, tanyakan dulu.
 - Fakta jangka panjang tentang pengguna (nama, orang penting, kebiasaan, preferensi, hal besar yang sedang dihadapi): [[INGAT: fakta singkat]]. Jangan simpan detail yang sangat sensitif kecuali pengguna memintanya. Tag ini tidak terlihat pengguna, jangan bilang "sudah kucatat" secara eksplisit kecuali relevan.
-- Kamu TIDAK bisa menghapus tugas, catatan, pengeluaran, atau pemasukan. Kalau pengguna minta, jangan bilang sudah dihapus dan jangan buat tag; arahkan ke Panel (tombol x di samping item yang mau dihapus).
+- Menghapus tugas, catatan, pengeluaran, pemasukan, atau pengingat: pakai tag [[HAPUS: jenis | kata kunci]]. Jenis salah satu: tugas, catatan, beli (pengeluaran), masuk (pemasukan), pengingat. Kata kunci = isi item seperti disebut pengguna, mis. "hapus beli makan 5rb" -> [[HAPUS: beli | makan 5rb]]. Untuk "yang barusan/terakhir/tadi" pakai kata kunci TERAKHIR dan tentukan jenisnya dari baris ✅ ⏰ 🗒️ 💰 💵 terakhir di balasanmu sebelumnya (✅ tugas, ⏰ pengingat, 🗒️ catatan, 💰 beli, 💵 masuk); kalau jenisnya tidak jelas, tanyakan dulu. Penghapusan TIDAK langsung: sistem mencari item lalu menampilkan tombol konfirmasi. Jadi balas singkat saja (mis. "Oke, konfirmasi dulu ya.") dan JANGAN bilang sudah dihapus. Hapus massal ("hapus semua ...") tidak didukung: tolak dengan sopan dan sarankan hapus satu per satu.
 - Pengeluaran yang sudah terjadi (mis. "makan siang 25rb", "beli bensin 50 ribu"): [[BELI: 25000 | makan | makan siang]]
   Jumlah rupiah angka bulat tanpa titik ("25rb" = 25000, "1,5jt" = 1500000). Kategori satu kata: makan, transport, belanja, tagihan, hiburan, kesehatan, lainnya.
 - Pemasukan / uang masuk yang sudah terjadi (mis. "gajian 3jt", "dapat bonus 500rb"): [[MASUK: 3000000 | gaji | gajian]]
@@ -147,13 +147,12 @@ async function processTags(u, reply, userText = "", hasImage = false) {
     if (r) added.push("💵 Uang lain " + rupiah(r.extra) + " ditambahkan ke catatan (" + rupiah(r.base) + "). Sisa uang sekarang: " + rupiah(r.saldo.amt));
   }
 
-  // Hapus pengingat (hanya kalau pesan pengguna memang meminta menghapus/membatalkan)
+  // Hapus (tugas/catatan/uang/pengingat): TIDAK langsung. Cari item, simpan sebagai permintaan, minta konfirmasi lewat tombol.
+  let confirm = null;
   if (DELETE_INTENT.test(userText)) {
-    const nums = [...new Set([...reply.matchAll(/\[\[HAPUS_PENGINGAT:\s*(\d+)\s*\]\]/g)].map((m) => Number(m[1])))].sort((a, b) => b - a);
-    for (const n of nums) { // dari nomor terbesar supaya nomor lain tidak bergeser
-      const r = await deleteReminderNumber(u, n);
-      added.push(r ? "🗑️ Pengingat dihapus: " + r.text : "Gagal menghapus: pengingat nomor " + n + " tidak ditemukan.");
-    }
+    const pl = await planDeletes(u, reply);
+    confirm = pl.pending;
+    pl.misses.forEach((x) => added.push(x));
   }
 
   // Geser jam pengingat (mis. "geser yang bayar wifi jadi besok jam 9")
@@ -165,8 +164,8 @@ async function processTags(u, reply, userText = "", hasImage = false) {
     }
   }
 
-  const clean = reply.replace(/\[\[(TASK|REMIND|INGAT|CATAT|BELI|MASUK|KIRIM|PASANGAN_MASUK|SALDO_LAIN|SALDO|HAPUS_PENGINGAT|GESER_PENGINGAT):[\s\S]*?\]\]/g, "").trim();
-  return { clean, added };
+  const clean = reply.replace(/\[\[(TASK|REMIND|INGAT|CATAT|BELI|MASUK|KIRIM|PASANGAN_MASUK|SALDO_LAIN|SALDO|HAPUS_PENGINGAT|HAPUS|GESER_PENGINGAT):[\s\S]*?\]\]/g, "").trim();
+  return { clean, added, confirm };
 }
 
 function moneyText(expenses) {
@@ -329,7 +328,7 @@ module.exports = async (req, res) => {
 
     const found = await geminiSearch(u, system, contents, "web", onText);
     const raw = found.text;
-    const { clean, added } = await processTags(u, raw, text, !!image);
+    const { clean, added, confirm } = await processTags(u, raw, text, !!image);
     const reply = clean || (added.length ? "" : "(tidak ada jawaban)");
     const shown = [expiredNotice, reply, sourceLine(found.sources, found.searchError)].filter(Boolean).join("\n\n"); // sumber hanya ditampilkan, tidak masuk riwayat
 
@@ -346,7 +345,7 @@ module.exports = async (req, res) => {
     const [freshTasks, freshNotes, freshExpenses, freshReminders, quota, freshIncomes, money] = await Promise.all([getTasks(u), getNotes(u), getExpenses(u), getReminders(u), quotaStatus(u), getIncomes(u), moneySummary(u)]);
     const xferIn = await incomingTransfers(u).catch(() => []);
     return finish({
-      reply: shown, added, quota, xferIn,
+      reply: shown, added, quota, xferIn, confirm: confirm || null,
       tasks: freshTasks,
       reminders: freshReminders,
       notes: freshNotes.slice(-100).reverse(),

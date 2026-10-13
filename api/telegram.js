@@ -2,7 +2,7 @@
 const {
   HOURS, BTN, redis, tg, key, getBot, saveBot, sendTelegram, downloadTelegramFile, gemini, geminiSearch, sourceLine, REMIND_INTENT, DELETE_INTENT, deleteReminderNumber, rescheduleReminderNumber, trimHist,
   fmtWib, fmtTime, wib, rupiah, parseRepeat, repeatLabel, dropDuplicateReminders, cfgOn, getLocation, setLocation, getWeather, getNews,
-  recapText, deleteExpenseNumber, incomeListText, deleteIncomeNumber, loadContext, buildSystem,
+  recapText, planDeletes, resolvePendingDelete, deleteQuestion, deleteKeyboard, deleteExpenseNumber, incomeListText, deleteIncomeNumber, loadContext, buildSystem,
   getTasks, addTask, toggleTask, deleteTask, unlinkTaskReminder, parseWib, fmtDue,
   addNote, addExpense, addIncome, setSaldo, addOutsideMoney, fmtDateShort, mentionsAmount,
   sendTransfer, acceptTransfer, declineTransfer, handlePartnerIncome, answerDupMasuk,
@@ -569,13 +569,12 @@ async function processTags(u, reply, userText = "", hasImage = false) {
     if (n) notes.push("🗒️ Dicatat: " + n.text);
   }
 
-  // Hapus pengingat (hanya kalau pesan pengguna memang meminta menghapus/membatalkan)
+  // Hapus (tugas/catatan/uang/pengingat): TIDAK langsung. Cari item, minta konfirmasi lewat tombol.
+  let confirm = null;
   if (DELETE_INTENT.test(userText)) {
-    const nums = [...new Set([...reply.matchAll(/\[\[HAPUS_PENGINGAT:\s*(\d+)\s*\]\]/g)].map((m) => Number(m[1])))].sort((a, b) => b - a);
-    for (const n of nums) { // dari nomor terbesar supaya nomor lain tidak bergeser
-      const r = await deleteReminderNumber(u, n);
-      notes.push(r ? "🗑️ Pengingat dihapus: " + r.text : "Gagal menghapus: pengingat nomor " + n + " tidak ditemukan.");
-    }
+    const pl = await planDeletes(u, reply);
+    confirm = pl.pending;
+    pl.misses.forEach((x) => notes.push(x));
   }
 
   // Geser jam pengingat (mis. "geser yang bayar wifi jadi besok jam 9")
@@ -587,8 +586,8 @@ async function processTags(u, reply, userText = "", hasImage = false) {
     }
   }
 
-  const clean = reply.replace(/\[\[(TASK|REMIND|INGAT|BELI|MASUK|KIRIM|PASANGAN_MASUK|CATAT|SALDO_LAIN|SALDO|HAPUS_PENGINGAT|GESER_PENGINGAT):[\s\S]*?\]\]/g, "").trim();
-  return { clean, notes };
+  const clean = reply.replace(/\[\[(TASK|REMIND|INGAT|BELI|MASUK|KIRIM|PASANGAN_MASUK|CATAT|SALDO_LAIN|SALDO|HAPUS_PENGINGAT|HAPUS|GESER_PENGINGAT):[\s\S]*?\]\]/g, "").trim();
+  return { clean, notes, confirm };
 }
 
 // ---------- Handler utama ----------
@@ -640,6 +639,13 @@ module.exports = async (req, res) => {
           out = r.error ? "⚠️ " + r.error : "Oke, tidak dicatat.";
         }
         await tg(bot.token, "editMessageText", { chat_id: chatId, message_id: msg.message_id, text: out }); // tombol hilang, tidak bisa ditekan dua kali
+        return res.status(200).end();
+      }
+      const dm = String(cq.data || "").match(/^del:([a-z0-9]{4,12}):(\d|no)$/);
+      if (dm) { // konfirmasi hapus dari chat
+        const r = await resolvePendingDelete(u, dm[1], dm[2]);
+        const out = r.error ? "⚠️ " + r.error : r.cancelled ? "Oke, tidak jadi dihapus." : "🗑️ Dihapus: " + r.item.label;
+        await tg(bot.token, "editMessageText", { chat_id: chatId, message_id: msg.message_id, text: out }); // tombol hilang
         return res.status(200).end();
       }
       const m = String(cq.data || "").match(/^exit:(delete|keep|stay)$/);
@@ -824,7 +830,7 @@ module.exports = async (req, res) => {
 
     const found = await geminiSearch(u, buildSystem(mode, ctx), contents);
     const raw = found.text;
-    const { clean, notes } = await processTags(u, raw, text, !!image);
+    const { clean, notes, confirm } = await processTags(u, raw, text, !!image);
     const reply = clean || (notes.length ? "" : "(tidak ada jawaban)");
 
     hist.push({ role: "model", parts: [{ text: [reply, ...notes].filter(Boolean).join("\n\n") || "(dicatat)" }], ts: Date.now() }); // sertakan hasil tag: tanda bahwa permintaan sudah selesai
@@ -832,6 +838,7 @@ module.exports = async (req, res) => {
 
     const echo = voice ? `🎙️ "${text}"\n\n` : "";
     await say(echo + [reply, ...notes, sourceLine(found.sources, found.searchError)].filter(Boolean).join("\n\n"));
+    if (confirm) await say(deleteQuestion(confirm), { reply_markup: deleteKeyboard(confirm) });
   } catch (e) {
     try { await say("Maaf, ada error: " + e.message); } catch {}
   }
