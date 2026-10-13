@@ -409,6 +409,8 @@
   .mo-pet.walk-l .wk.r, .mo-pet.walk-r .wk.l { opacity:0; }
   .tailflip { transition:transform .35s ease; transform-box:view-box; transform-origin:0 0; }
   .mo-pet.walk-r .tailflip { transform:translateX(200px) scaleX(-1); }
+  .mo-pet.walk-l [filter], .mo-pet.walk-r [filter] { filter:none; }
+  .mo-stage { contain:paint; }
   .mo-pet.jump { animation:moJump .6s ease-out; }
   @keyframes moBob { 0%,100% { transform:translateY(0) scale(1,1); } 50% { transform:translateY(-6px) scale(1.02,.98); } }
   @keyframes moJump { 0% { transform:translateY(0); } 35% { transform:translateY(-30px) scale(.95,1.06); } 70% { transform:translateY(0) scale(1.06,.94); } 100% { transform:translateY(0); } }
@@ -2334,8 +2336,8 @@ function moWander(force) {
   if (Math.abs(nx - moX) < 36) nx = moX > 0 ? -lim : lim;
   const dir = nx < moX ? -1 : 1;
   moX = nx;
-  w.style.transform = "translateX(" + moX + "px)";
   svg.classList.add(dir < 0 ? "walk-l" : "walk-r");
+  requestAnimationFrame(() => requestAnimationFrame(() => { const w2 = $("moWalk"); if (w2) w2.style.transform = "translateX(" + moX + "px)"; }));
   const eyes = svg.querySelector(".pe"), mouth = svg.querySelector(".pm");
   if (eyes) eyes.setAttribute("transform", "translate(" + dir * 2 + " 0)");
   if (mouth) mouth.setAttribute("transform", "translate(" + dir * 1 + " 0)");
@@ -2344,7 +2346,7 @@ function moWander(force) {
     s2.classList.remove("walk-l", "walk-r");
     const e2 = s2.querySelector(".pe"), m2 = s2.querySelector(".pm");
     if (e2) e2.setAttribute("transform", "translate(0 0)"); if (m2) m2.setAttribute("transform", "translate(0 0)");
-  }, 1650);
+  }, 1750);
 }
 (function moLoop() { setTimeout(() => { try { moWander(); } catch {} moLoop(); }, 3200 + Math.random() * 3000); })();
 $("mochiChip").onclick = () => { toggleSide(true); showTab("mochi"); };
