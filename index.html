@@ -170,8 +170,8 @@
   .seg button { padding:8px 6px; font-size:14px; }
   .seg button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
   .seg button.on[data-t="in"] { background:#2a9d4b; border-color:#2a9d4b; }
-  .row-in > span { color:#2a9d4b; }
-  .row-in > span small { color:var(--muted); }
+  .task .amt { flex:none; font-size:14px; font-weight:600; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .row-in .amt { color:#2a9d4b; }
   .muted { color:var(--muted); font-size:14px; }
   .card { border:1px solid var(--line); border-radius:12px; padding:10px; margin-bottom:10px; font-size:14px; line-height:1.5; white-space:pre-line; }
   .task { display:flex; align-items:flex-start; gap:8px; padding:8px 0; border-bottom:1px solid var(--line); }
@@ -312,19 +312,19 @@
   .rc-tile small { display:block; font-size:11px; color:var(--muted); }
   .rc-tile b { display:block; font-size:15px; font-weight:700; margin-top:2px; overflow-wrap:anywhere; }
   .rc-hint { font-size:12px; color:var(--muted); margin-top:6px; }
-  .rc-chart { display:flex; gap:14px; align-items:center; margin-top:12px; }
-  .rc-donut { position:relative; flex:none; width:96px; height:96px; border-radius:50%; }
-  .rc-donut::after { content:""; position:absolute; inset:24px; border-radius:50%; background:var(--card); }
-  .rc-donut span { position:absolute; inset:0; z-index:1; display:flex; flex-direction:column; align-items:center; justify-content:center; font-size:13px; font-weight:700; line-height:1.15; }
-  .rc-donut span small { font-size:10px; font-weight:400; color:var(--muted); }
-  .rc-leg { flex:1; min-width:0; display:flex; flex-direction:column; gap:7px; }
-  .rc-row { font-size:12.5px; }
-  .rc-row .t { display:flex; align-items:center; gap:6px; }
-  .rc-row .t i { width:9px; height:9px; border-radius:50%; flex:none; background:var(--c); }
-  .rc-row .t span { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .rc-row .t em { font-style:normal; color:var(--muted); }
-  .rc-row .bar { height:4px; border-radius:2px; background:var(--line); margin-top:3px; overflow:hidden; }
-  .rc-row .bar u { display:block; height:100%; background:var(--c); border-radius:2px; }
+  .rc-chart { display:flex; flex-direction:column; align-items:center; gap:16px; margin-top:14px; padding-top:14px; border-top:1px solid var(--line); }
+  .rc-donut { position:relative; flex:none; width:128px; height:128px; border-radius:50%; }
+  .rc-donut::after { content:""; position:absolute; inset:20px; border-radius:50%; background:var(--card); }
+  .rc-donut span { position:absolute; inset:0; z-index:1; display:flex; flex-direction:column; align-items:center; justify-content:center; font-size:16px; font-weight:700; line-height:1.2; }
+  .rc-donut span small { font-size:11px; font-weight:400; color:var(--muted); margin-top:1px; }
+  .rc-leg { width:100%; min-width:0; display:flex; flex-direction:column; }
+  .rc-row { padding:7px 0; font-size:13px; border-top:1px solid var(--line); }
+  .rc-row:first-child { border-top:0; }
+  .rc-row .t { display:grid; grid-template-columns:10px minmax(0,1fr) auto auto; align-items:center; column-gap:8px; }
+  .rc-row .t i { width:10px; height:10px; border-radius:50%; background:var(--c); }
+  .rc-row .t span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-transform:capitalize; }
+  .rc-row .t em { font-style:normal; color:var(--muted); text-align:right; min-width:34px; font-variant-numeric:tabular-nums; }
+  .rc-row .t b { font-weight:600; text-align:right; min-width:58px; font-variant-numeric:tabular-nums; }
   /* empty state */
   .empty { text-align:center; padding:22px 12px; }
   .empty-ico { color:var(--muted); margin-bottom:8px; opacity:.8; }
@@ -1056,7 +1056,7 @@ async function doAddRem() {
 }
 
 /* ---------- Baris umum (catatan, pengeluaran) ---------- */
-function makeRow(text, sub, onDel) {
+function makeRow(text, sub, onDel, amt) {
   const row = document.createElement("div");
   row.className = "task";
   const sp = document.createElement("span");
@@ -1070,7 +1070,9 @@ function makeRow(text, sub, onDel) {
   const del = document.createElement("button");
   del.textContent = "x";
   del.onclick = onDel;
-  row.append(sp, del);
+  row.append(sp);
+  if (amt) { const a = document.createElement("b"); a.className = "amt"; a.textContent = amt; row.append(a); }
+  row.append(del);
   return row;
 }
 
@@ -1163,14 +1165,13 @@ function renderMoney() {
       const chart = el("div", "rc-chart");
       const donut = el("div", "rc-donut");
       donut.style.background = "conic-gradient(" + stops.join(",") + ")";
-      const ctr = el("span", "", shortRp(te)); ctr.appendChild(el("small", "", "keluar"));
+      const ctr = el("span", "", shortRp(te)); ctr.appendChild(el("small", "", "pengeluaran"));
       donut.appendChild(ctr);
-      const leg = el("div", "rc-leg"), max = ents[0][1];
+      const leg = el("div", "rc-leg");
       ents.forEach(([c, v]) => {
         const r = el("div", "rc-row"); r.style.setProperty("--c", colorOf(c));
-        const t = el("div", "t"); t.append(el("i"), el("span", "", c), el("em", "", Math.round(v / te * 100) + "% · " + shortRp(v)));
-        const bar = el("div", "bar"), u = el("u"); u.style.width = (v / max * 100) + "%"; bar.appendChild(u);
-        r.append(t, bar); leg.appendChild(r);
+        const t = el("div", "t"); t.append(el("i"), el("span", "", c), el("em", "", Math.round(v / te * 100) + "%"), el("b", "", shortRp(v)));
+        r.appendChild(t); leg.appendChild(r);
       });
       chart.append(donut, leg);
       rc.appendChild(chart);
@@ -1183,7 +1184,7 @@ function renderMoney() {
   all.forEach((e) => {
     const isIn = e.t === "in";
     const row = makeRow(
-      (isIn ? "+ " : "- ") + (e.note || e.cat) + " - " + rupiah(e.amt),
+      e.note || e.cat,
       fmtDate(e.ts) + " · " + e.cat + (isIn ? " · pemasukan" : ""),
       () => {
         const list = isIn ? incomes : expenses, idx = list.findIndex((x) => x.id === e.id);
@@ -1201,7 +1202,8 @@ function renderMoney() {
             if (adj()) money.remaining += isIn ? e.amt : -e.amt;
             renderMoney();
           });
-      }
+      },
+      (isIn ? "+" : "-") + rupiah(e.amt)
     );
     if (isIn) row.classList.add("row-in");
     box.appendChild(row);
