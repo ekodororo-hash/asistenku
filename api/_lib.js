@@ -1885,7 +1885,16 @@ async function getMochi(u) {
   const raw = await redis("GET", key(u, "mochi"));
   let s = null;
   try { s = raw ? JSON.parse(raw) : null; } catch {}
-  if (!s) { s = mochiBlank(today); await redis("SET", key(u, "mochi"), JSON.stringify(s)); return s; }
+  if (!s) {
+    s = mochiBlank(today);
+    await redis("SET", key(u, "mochi"), JSON.stringify(s));
+    try { // akun yang baru punya Mochi: catatan uang yang sudah ada hari ini ikut dihitung
+      const [ex, inc] = await Promise.all([getExpenses(u), getIncomes(u)]);
+      const t0 = startOfDayWib();
+      if ([...ex, ...inc].some((e) => e.ts >= t0)) { await mochiProgress(u, "spend"); s = await getMochi(u); }
+    } catch {}
+    return s;
+  }
   s.m = s.m || { task: 0, spend: 0, checkin: 0 }; s.week = s.week || {}; s.ev = s.ev || [];
   if (mochiRoll(s, today)) await redis("SET", key(u, "mochi"), JSON.stringify(s));
   return s;
