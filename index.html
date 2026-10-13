@@ -376,7 +376,9 @@
   .mo-name input { width:9.5em; padding:4px 8px; font:inherit; font-size:16px; border:1px solid var(--accent); border-radius:8px; background:var(--bg); color:var(--ink); }
   .mo-name button.ok { padding:4px 10px; font-size:13px; }
   .mo-lvl { font-size:12px; font-weight:600; background:var(--accent); color:#fff; border-radius:999px; padding:1px 9px; }
-  .mo-say { font-size:13px; color:var(--muted); min-height:18px; text-align:center; }
+  .mo-say { position:relative; max-width:92%; min-height:44px; display:flex; align-items:center; justify-content:center; padding:9px 14px; margin-bottom:10px; font-size:13.5px; line-height:1.35; color:var(--ink); text-align:center; background:var(--card); border:1px solid var(--line); border-radius:16px; box-shadow:0 2px 8px rgba(0,0,0,.08); animation:moSayIn .25s ease-out; }
+  .mo-say::after { content:""; position:absolute; left:50%; bottom:-7px; width:12px; height:12px; background:var(--card); border-right:1px solid var(--line); border-bottom:1px solid var(--line); transform:translateX(-50%) rotate(45deg); }
+  @keyframes moSayIn { from { opacity:0; transform:translateY(4px) scale(.97); } to { opacity:1; transform:none; } }
   .mo-bars { display:grid; gap:9px; width:100%; margin-top:4px; }
   .mo-bar label { display:flex; justify-content:space-between; font-size:12px; color:var(--muted); margin-bottom:3px; }
   .mo-track { height:9px; border-radius:999px; background:var(--line); overflow:hidden; }
@@ -2146,8 +2148,8 @@ function renderMochi() {
   const dots = m.week.map((d) => '<div class="mo-dot ' + (d.st || "") + (d.today ? " today" : "") + '" title="' + d.d + '">' + (d.st === "on" ? "✓" : d.st === "frz" ? "❄" : d.st === "miss" ? "×" : d.d[0]) + "</div>").join("");
   const ms = m.missions.map((x) => '<div class="mo-mission ' + (x.n >= x.need ? "done" : "") + '"><div><div class="t">' + moEsc(x.text) + '</div><div class="p">' + x.n + " / " + x.need + '</div></div><div class="x">' + (x.n >= x.need ? "Selesai" : "+" + x.xp + " XP") + "</div></div>").join("");
   box.innerHTML =
-    '<div class="mo-stage"><svg id="moPet" class="mo-svg mo-pet ' + (m.egg ? "egg" : mood === "sad" ? "sad" : "") + '" viewBox="0 -8 200 198" role="img" aria-label="' + moEsc(m.name) + ', peliharaanmu">' + moPetSVG(mood, m, "m") + "</svg>" +
-    '<div class="mo-name" id="moNameRow"><span id="moName">' + moEsc(m.name) + '</span><button type="button" class="mo-edit" id="moEdit" title="Ganti nama" aria-label="Ganti nama peliharaan"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg></button><span class="mo-lvl">' + moEsc(lvTxt) + '</span></div><div class="mo-say" id="moSay">' + moEsc(moSub(moT(MO_SAY[say]))) + "</div>" +
+    '<div class="mo-stage"><div class="mo-say" id="moSay">' + moEsc(moSub(moT(MO_SAY[say]))) + '</div><svg id="moPet" class="mo-svg mo-pet ' + (m.egg ? "egg" : mood === "sad" ? "sad" : "") + '" viewBox="0 -8 200 198" role="img" aria-label="' + moEsc(m.name) + ', peliharaanmu">' + moPetSVG(mood, m, "m") + "</svg>" +
+    '<div class="mo-name" id="moNameRow"><span id="moName">' + moEsc(m.name) + '</span><button type="button" class="mo-edit" id="moEdit" title="Ganti nama" aria-label="Ganti nama peliharaan"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg></button><span class="mo-lvl">' + moEsc(lvTxt) + '</span></div>' +
     '<div class="mo-bars"><div class="mo-bar"><label><span>' + (m.egg ? "Kehangatan" : "Kenyang") + '</span><span>' + m.en + '%</span></label><div class="mo-track"><div class="mo-fill en" style="width:' + m.en + '%"></div></div></div>' +
     '<div class="mo-bar"><label><span>' + (m.egg ? "Menetas" : "XP") + '</span><span>' + m.cur + " / " + m.lvlSize + '</span></label><div class="mo-track"><div class="mo-fill xp" style="width:' + (m.cur / m.lvlSize * 100) + '%"></div></div></div></div></div>' +
     '<div class="mo-h">Misi hari ini</div>' + ms +
