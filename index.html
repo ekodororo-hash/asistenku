@@ -363,13 +363,56 @@
   .mochichip span { font-size:13px; font-weight:700; font-variant-numeric:tabular-nums; color:var(--muted); }
   .mochichip.hot span { color:#d9822b; }
   .mo-stage { position:relative; overflow:hidden; display:flex; flex-direction:column; align-items:center; gap:6px; padding:16px 12px 14px; margin-bottom:12px; border:1px solid var(--line); border-radius:16px; background:linear-gradient(180deg, color-mix(in srgb, var(--accent) 14%, var(--card)), var(--card)); }
-  .mo-pet { width:170px; max-width:62%; height:auto; cursor:pointer; touch-action:manipulation; animation:moBob 2.6s ease-in-out infinite; transform-origin:50% 100%; filter:drop-shadow(0 6px 6px rgba(0,0,0,.18)); }
+  .mo-pet { width:100%; height:auto; cursor:pointer; touch-action:manipulation; transform-origin:50% 100%; filter:drop-shadow(0 6px 6px rgba(0,0,0,.18)); display:block; }
+  .mo-walk { width:170px; max-width:62%; transition:transform 1.6s cubic-bezier(.45,0,.55,1); will-change:transform; }
   .mo-pet.egg { animation:moWobble 2.4s ease-in-out infinite; }
   @keyframes moWobble { 0%,100% { transform:rotate(0); } 20% { transform:rotate(-4deg); } 40% { transform:rotate(3deg); } 60% { transform:rotate(-2deg); } 80% { transform:rotate(0); } }
   .mo-pet.sad { animation-duration:4.5s; filter:saturate(.6) brightness(.96) drop-shadow(0 6px 6px rgba(0,0,0,.18)); }
+  .blink { transform-box:fill-box; transform-origin:center; animation:moBlink 4.2s infinite; }
+  @keyframes moBlink { 0%,90%,100% { transform:scaleY(1); } 94% { transform:scaleY(.08); } }
+  .breathe { transform-box:fill-box; transform-origin:50% 100%; animation:moBreathe 3.4s ease-in-out infinite; }
+  @keyframes moBreathe { 0%,100% { transform:scale(1,1); } 50% { transform:scale(1.012,.975); } }
+  .mo-pet.sad .breathe { animation-duration:6.5s; }
+  .tail { transform-box:fill-box; transform-origin:0% 100%; animation:moTail 2.2s ease-in-out infinite alternate; }
+  @keyframes moTail { from { transform:rotate(-9deg); } to { transform:rotate(13deg); } }
+  .ear { transform-box:fill-box; transform-origin:50% 100%; animation:moTwitch 5.5s infinite; }
+  .ear.r { animation-delay:2.6s; }
+  @keyframes moTwitch { 0%,88%,100% { transform:rotate(0); } 91% { transform:rotate(-11deg); } 94% { transform:rotate(5deg); } 97% { transform:rotate(-3deg); } }
+  .rear { transform-box:fill-box; transform-origin:50% 100%; animation:moSway 3.8s ease-in-out infinite alternate; }
+  .rear.r { animation-delay:-1.4s; animation-duration:4.3s; }
+  @keyframes moSway { from { transform:rotate(-3.5deg); } to { transform:rotate(3.5deg); } }
+  .wing { transform-box:fill-box; transform-origin:100% 25%; animation:moFlapL 4.6s ease-in-out infinite; }
+  .wing.r { transform-origin:0% 25%; animation-name:moFlapR; }
+  @keyframes moFlapL { 0%,78%,100% { transform:rotate(0); } 82% { transform:rotate(26deg); } 86% { transform:rotate(2deg); } 90% { transform:rotate(26deg); } 94% { transform:rotate(0); } }
+  @keyframes moFlapR { 0%,78%,100% { transform:rotate(0); } 82% { transform:rotate(-26deg); } 86% { transform:rotate(-2deg); } 90% { transform:rotate(-26deg); } 94% { transform:rotate(0); } }
+  .mo-pet.walk-l { animation:moStepL .56s ease-in-out infinite; }
+  .mo-pet.walk-r { animation:moStepR .56s ease-in-out infinite; }
+  .foot { transform-box:fill-box; transform-origin:50% 50%; }
+  .mo-pet.walk-l { --d:-1; } .mo-pet.walk-r { --d:1; }
+  .hturn, .nturn { transition:transform .35s ease; }
+  .mo-pet.walk-l .hturn, .mo-pet.walk-r .hturn, .mo-pet.walk-l .nturn, .mo-pet.walk-r .nturn { transform:translateX(calc(var(--d) * 13px)); }
+  .bturn { transition:transform .35s ease; }
+  .mo-pet.walk-l .bturn, .mo-pet.walk-r .bturn { transform:translateX(calc(var(--d) * 8px)); }
+  .fturn { transition:transform .35s ease; }
+  .mo-pet.walk-l .fturn { transform:translateX(-14px); }
+  .mo-pet.walk-r .fturn { transform:translateX(14px); }
+  .mo-pet.walk-l .foot, .mo-pet.walk-r .foot { animation:moStride .56s infinite; }
+  .mo-pet.walk-l .foot.r, .mo-pet.walk-r .foot.r { animation-delay:-.28s; }
+  @keyframes moStride { 0% { transform:translate(calc(var(--d) * -9px), 0); animation-timing-function:ease-in-out; } 25% { transform:translate(0, -10px); animation-timing-function:ease-in-out; } 50% { transform:translate(calc(var(--d) * 9px), 0); animation-timing-function:linear; } 100% { transform:translate(calc(var(--d) * -9px), 0); } }
+  .mo-pet.walk-l .tail, .mo-pet.walk-r .tail { animation-duration:.7s; }
+  @keyframes moStepL { 0%,50%,100% { transform:translateY(0); } 25%,75% { transform:translateY(-2px); } }
+  @keyframes moStepR { 0%,50%,100% { transform:translateY(0); } 25%,75% { transform:translateY(-2px); } }
+  .turn { transition:transform .35s ease; }
+  .mo-pet.walk-l .turn { transform:translateX(-26px); }
+  .mo-pet.walk-r .turn { transform:translateX(26px); }
+  .wk { transition:opacity .3s; }
+  .mo-pet.walk-l .wk.r, .mo-pet.walk-r .wk.l { opacity:0; }
+  .tailflip { transition:transform .35s ease; transform-box:view-box; transform-origin:0 0; }
+  .mo-pet.walk-r .tailflip { transform:translateX(200px) scaleX(-1); }
   .mo-pet.jump { animation:moJump .6s ease-out; }
   @keyframes moBob { 0%,100% { transform:translateY(0) scale(1,1); } 50% { transform:translateY(-6px) scale(1.02,.98); } }
   @keyframes moJump { 0% { transform:translateY(0); } 35% { transform:translateY(-30px) scale(.95,1.06); } 70% { transform:translateY(0) scale(1.06,.94); } 100% { transform:translateY(0); } }
+  @keyframes moPop { 0% { opacity:1; transform:translateY(0) scale(.7); } 100% { opacity:0; transform:translateY(-46px) scale(1.25); } }
   .mo-name { font-size:18px; font-weight:700; display:flex; gap:8px; align-items:baseline; }
   .mo-edit { padding:3px; border:0; background:transparent; color:var(--muted); line-height:0; align-self:center; border-radius:6px; }
   .mo-edit:hover { color:var(--accent); }
@@ -385,7 +428,6 @@
   .mo-fill { height:100%; border-radius:999px; transition:width .5s; }
   .mo-fill.xp { background:var(--accent); } .mo-fill.en { background:#2a9d4b; }
   .mo-pop { position:absolute; font-size:22px; font-weight:800; pointer-events:none; color:#d33; animation:moPop 1s ease-out forwards; }
-  @keyframes moPop { 0% { opacity:0; transform:translateY(0) scale(.6); } 20% { opacity:1; } 100% { opacity:0; transform:translateY(-70px) scale(1.2); } }
   .mo-h { font-size:15px; font-weight:700; margin:14px 0 6px; }
   .mo-mission { display:grid; grid-template-columns:1fr auto; gap:2px 10px; align-items:center; padding:9px 0; border-top:1px solid var(--line); }
   .mo-mission:first-of-type { border-top:0; }
@@ -402,7 +444,7 @@
   .mo-dot.today { outline:2px solid var(--accent); outline-offset:1px; }
   .mo-spark { transform-box:fill-box; transform-origin:center; animation:moTw 1.8s ease-in-out infinite; }
   @keyframes moTw { 0%,100% { opacity:.2; transform:scale(.55); } 50% { opacity:1; transform:scale(1); } }
-  @media (prefers-reduced-motion: reduce) { .mo-spark { animation:none; opacity:1; } .mo-pet, .mo-pet.egg, .mo-pet.jump { animation:none; } }
+  @media (prefers-reduced-motion: reduce) { .mo-pet, .mo-pet.egg, .mo-pet.jump, .mo-pet.walk-l, .mo-pet.walk-r, .blink, .breathe, .tail, .ear, .rear, .wing, .foot { animation:none !important; } .mo-spark { animation:none; opacity:1; } }
   /* toast "Dihapus · Urungkan" */
   #toasts { position:fixed; left:50%; transform:translateX(-50%); bottom:calc(84px + env(safe-area-inset-bottom)); z-index:70; display:flex; flex-direction:column; gap:8px; width:min(92vw,380px); pointer-events:none; }
   .toast { pointer-events:auto; display:flex; align-items:center; gap:10px; padding:8px 8px 8px 14px; border-radius:12px; background:var(--ink); color:var(--bg); font-size:14px; box-shadow:0 4px 16px #0004; animation:paneIn .18s ease; }
@@ -1991,6 +2033,7 @@ $("clearBtn").onclick = async () => {
 };
 
 /* ---------- Mochi: peliharaan, misi harian, streak (data dari server, sama dengan Telegram) ---------- */
+let moX = 0; // posisi Mochi saat berjalan-jalan (px dari tengah)
 let mochi = null, mochiMuted = load("mochiMute", false), mochiAC = null, mochiTapN = 0, mochiTapT = 0;
 const moEsc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const moMood = (en, done) => (done || en >= 60 ? "happy" : en >= 30 ? "ok" : "sad"); // misi hari ini cukup = senang; energi rendah = lesu
@@ -2029,7 +2072,7 @@ const MO_SFX = {
 function moDefs(u) {
   const rg = (id, a, b, c) => '<radialGradient id="' + id + u + '" cx=".35" cy=".28" r=".85"><stop offset="0" stop-color="' + a + '"/><stop offset=".55" stop-color="' + b + '"/><stop offset="1" stop-color="' + c + '"/></radialGradient>';
   return '<defs>' +
-    rg("hdc", "#ffd9a8", "#ffb86b", "#d9772a") + rg("hdr", "#ffffff", "#f7efe9", "#c9b5a6") + rg("hdb", "#fff3a8", "#ffd75e", "#dfa012") + rg("egg", "#fffdf6", "#fff3d6", "#efd29a") +
+    rg("hdc", "#ffd9a8", "#ffb86b", "#d9772a") + rg("hdr", "#ffffff", "#f7efe9", "#c9b5a6") + rg("hdb", "#fff3a8", "#ffd75e", "#dfa012") + rg("egg", "#fffdf6", "#fff3d6", "#efd29a") + rg("hdo", "#ffc46a", "#ff9a2e", "#d9701a") +
     '<radialGradient id="shd' + u + '"><stop offset="0" stop-color="#000" stop-opacity=".38"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>' +
     '<radialGradient id="aura' + u + '"><stop offset="0" stop-color="#ffe27a" stop-opacity=".6"/><stop offset="1" stop-color="#ffe27a" stop-opacity="0"/></radialGradient>' +
     '<linearGradient id="gold' + u + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff0a0"/><stop offset="1" stop-color="#df9f18"/></linearGradient>' +
@@ -2039,8 +2082,15 @@ function moDefs(u) {
     '<radialGradient id="eye' + u + '" cx=".4" cy=".3" r=".9"><stop offset="0" stop-color="#7a4a22"/><stop offset="1" stop-color="#241206"/></radialGradient>' +
     '<filter id="bl' + u + '" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="3"/></filter>' +
     '<filter id="bs' + u + '" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="2"/></filter>' +
+    '<linearGradient id="ps' + u + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a1a10" stop-opacity=".34"/><stop offset=".6" stop-color="#2a1a10" stop-opacity="0"/></linearGradient>' +
+    '<clipPath id="hc' + u + '"><path d="M100 18c-46 0-76 34-76 80 0 40 24 70 76 70s76-30 76-70c0-46-30-80-76-80z"/></clipPath>' +
     '</defs>';
 }
+const moClip = (u, inner) => '<g clip-path="url(#hc' + u + ')">' + inner + '</g>';
+const moPawShadow = (u) => moClip(u, '<g class="fturn"><ellipse cx="78" cy="158" rx="20" ry="7" fill="#2a1a10" opacity=".3" filter="url(#bl' + u + ')"/><ellipse cx="122" cy="158" rx="20" ry="7" fill="#2a1a10" opacity=".3" filter="url(#bl' + u + ')"/></g>');
+const moBirdFoot = (x, u) => '<ellipse cx="' + x + '" cy="170" rx="16" ry="8.5" fill="url(#hdo' + u + ')" stroke="#b8650f" stroke-opacity=".55" stroke-width="2"/><path d="M' + (x - 8) + ' 173.5v3.5M' + x + ' 174.5v3.5M' + (x + 8) + ' 173.5v3.5" stroke="#b8650f" stroke-opacity=".6" stroke-width="2" stroke-linecap="round"/><ellipse cx="' + x + '" cy="170" rx="16" ry="8.5" fill="url(#ps' + u + ')"/>';
+const moBirdFeet = (u) => moClip(u, '<g class="fturn"><ellipse cx="80" cy="159" rx="19" ry="7" fill="#7a4a08" opacity=".3" filter="url(#bl' + u + ')"/><ellipse cx="120" cy="159" rx="19" ry="7" fill="#7a4a08" opacity=".3" filter="url(#bl' + u + ')"/></g>') +
+  '<g class="fturn"><g class="foot l">' + moBirdFoot(80, u) + '</g><g class="foot r">' + moBirdFoot(120, u) + '</g></g>';
 const moCheeks = (u) => '<ellipse cx="60" cy="118" rx="13" ry="9" fill="#ff6f86" opacity=".55" filter="url(#bs' + u + ')"/><ellipse cx="140" cy="118" rx="13" ry="9" fill="#ff6f86" opacity=".55" filter="url(#bs' + u + ')"/>';
 const moHead = (u, id, rim) =>
   '<path d="M100 18c-46 0-76 34-76 80 0 40 24 70 76 70s76-30 76-70c0-46-30-80-76-80z" fill="url(#' + id + u + ')" stroke="' + rim + '" stroke-opacity=".4" stroke-width="2"/>' +
@@ -2073,43 +2123,41 @@ function moPetSVG(mood, m, u) {
   let back = "", body = "", acc = "";
 
   if (sp === "kelinci") {
-    back = '<ellipse cx="74" cy="14" rx="12" ry="28" transform="rotate(-6 74 14)" fill="url(#hdr' + u + ')" stroke="#b9a597" stroke-opacity=".4" stroke-width="2"/><ellipse cx="74" cy="17" rx="6" ry="21" transform="rotate(-6 74 14)" fill="#f7a9bd"/><ellipse cx="70" cy="2" rx="3" ry="9" transform="rotate(-6 74 14)" fill="#fff" opacity=".6" filter="url(#bs' + u + ')"/>' +
-      '<ellipse cx="126" cy="14" rx="12" ry="28" transform="rotate(6 126 14)" fill="url(#hdr' + u + ')" stroke="#b9a597" stroke-opacity=".4" stroke-width="2"/><ellipse cx="126" cy="17" rx="6" ry="21" transform="rotate(6 126 14)" fill="#f7a9bd"/>';
-    body = moHead(u, "hdr", "#8d7868") + moCheeks(u) +
-      '<path d="M54 108q-22-4-34 2M54 114q-24 4-36 12M146 108q22-4 34 2M146 114q24 4 36 12" stroke="#a89484" stroke-width="2" fill="none" stroke-linecap="round" opacity=".75"/>' +
-      '<ellipse cx="100" cy="103" rx="6" ry="4.5" fill="#f08ca0"/><ellipse cx="98.5" cy="101.5" rx="2" ry="1.2" fill="#fff" opacity=".7"/>' +
-      '<ellipse cx="78" cy="168" rx="17" ry="10" fill="url(#hdr' + u + ')" stroke="#8d7868" stroke-opacity=".35" stroke-width="2"/><ellipse cx="122" cy="168" rx="17" ry="10" fill="url(#hdr' + u + ')" stroke="#8d7868" stroke-opacity=".35" stroke-width="2"/>';
-    if (st >= 2) acc += '<path d="M138 40l-17-10v21z" fill="url(#pnk' + u + ')"/><path d="M138 40l17-10v21z" fill="url(#pnk' + u + ')"/><circle cx="138" cy="40" r="4.5" fill="#ff6fa0" stroke="#c23a6c" stroke-width="1.5"/>'; // remaja: pita di telinga
-    if (st >= 3) acc += '<circle cx="68" cy="88" r="17" fill="#bfe6ff" fill-opacity=".28" stroke="#33405e" stroke-width="4"/><circle cx="132" cy="88" r="17" fill="#bfe6ff" fill-opacity=".28" stroke="#33405e" stroke-width="4"/><path d="M85 86q15-9 30 0M51 84l-8-4M149 84l8-4" stroke="#33405e" stroke-width="4" fill="none" stroke-linecap="round"/><path d="M58 80q4-6 11-6" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" opacity=".8"/><path d="M122 80q4-6 11-6" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" opacity=".8"/>' + // dewasa: kacamata + dasi kupu-kupu
-      '<path d="M100 160l-17-9v18z" fill="url(#blu' + u + ')"/><path d="M100 160l17-9v18z" fill="url(#blu' + u + ')"/><circle cx="100" cy="160" r="4.5" fill="#2f6fb8" stroke="#1f4d86" stroke-width="1.2"/>';
-    if (st >= 4) acc += '<path d="M62 38q38-22 76 0" stroke="#4aa35a" stroke-width="4" fill="none" stroke-linecap="round"/><ellipse cx="76" cy="28" rx="7" ry="3.5" transform="rotate(-30 76 28)" fill="#58b868"/><ellipse cx="124" cy="28" rx="7" ry="3.5" transform="rotate(30 124 28)" fill="#58b868"/>' + // legenda: mahkota bunga
-      moFlower(66, 36, "#ff8fb8") + moFlower(83, 26, "#fff") + moFlower(100, 22, "#ffb347") + moFlower(117, 26, "#fff") + moFlower(134, 36, "#c9a0ff");
+    back = '<g class="rear l"><ellipse cx="74" cy="14" rx="12" ry="28" transform="rotate(-6 74 14)" fill="url(#hdr' + u + ')" stroke="#b9a597" stroke-opacity=".4" stroke-width="2"/><ellipse cx="74" cy="17" rx="6" ry="21" transform="rotate(-6 74 14)" fill="#f7a9bd"/><ellipse cx="70" cy="2" rx="3" ry="9" transform="rotate(-6 74 14)" fill="#fff" opacity=".6" filter="url(#bs' + u + ')"/></g>' +
+      '<g class="rear r"><ellipse cx="126" cy="14" rx="12" ry="28" transform="rotate(6 126 14)" fill="url(#hdr' + u + ')" stroke="#b9a597" stroke-opacity=".4" stroke-width="2"/><ellipse cx="126" cy="17" rx="6" ry="21" transform="rotate(6 126 14)" fill="#f7a9bd"/></g>';
+    body = moHead(u, "hdr", "#8d7868") +
+      moClip(u, '<g class="turn">' + moCheeks(u) + '<ellipse cx="100" cy="103" rx="6" ry="4.5" fill="#f08ca0"/><ellipse cx="98.5" cy="101.5" rx="2" ry="1.2" fill="#fff" opacity=".7"/></g>') +
+      '<g class="turn"><g class="wk l"><path d="M54 108q-22-4-34 2M54 114q-24 4-36 12" stroke="#a89484" stroke-width="2" fill="none" stroke-linecap="round" opacity=".75"/></g><g class="wk r"><path d="M146 108q22-4 34 2M146 114q24 4 36 12" stroke="#a89484" stroke-width="2" fill="none" stroke-linecap="round" opacity=".75"/></g></g>' +
+      moPawShadow(u) + '<g class="fturn"><g class="foot l"><ellipse cx="78" cy="168" rx="17" ry="10" fill="url(#hdr' + u + ')" stroke="#8d7868" stroke-opacity=".35" stroke-width="2"/><ellipse cx="78" cy="168" rx="17" ry="10" fill="url(#ps' + u + ')"/></g><g class="foot r"><ellipse cx="122" cy="168" rx="17" ry="10" fill="url(#hdr' + u + ')" stroke="#8d7868" stroke-opacity=".35" stroke-width="2"/><ellipse cx="122" cy="168" rx="17" ry="10" fill="url(#ps' + u + ')"/></g></g>';
+    if (st >= 2) acc += '<g class="hturn"><path d="M138 40l-17-10v21z" fill="url(#pnk' + u + ')"/><path d="M138 40l17-10v21z" fill="url(#pnk' + u + ')"/><circle cx="138" cy="40" r="4.5" fill="#ff6fa0" stroke="#c23a6c" stroke-width="1.5"/></g>'; // remaja: pita di telinga
+    if (st >= 3) acc += '<g class="turn"><circle cx="68" cy="88" r="17" fill="#bfe6ff" fill-opacity=".28" stroke="#33405e" stroke-width="4"/><circle cx="132" cy="88" r="17" fill="#bfe6ff" fill-opacity=".28" stroke="#33405e" stroke-width="4"/><path d="M85 86q15-9 30 0M51 84l-8-4M149 84l8-4" stroke="#33405e" stroke-width="4" fill="none" stroke-linecap="round"/><path d="M58 80q4-6 11-6" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" opacity=".8"/><path d="M122 80q4-6 11-6" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" opacity=".8"/></g>' + // dewasa: kacamata + dasi kupu-kupu
+      '<g class="nturn"><path d="M100 160l-17-9v18z" fill="url(#blu' + u + ')"/><path d="M100 160l17-9v18z" fill="url(#blu' + u + ')"/><circle cx="100" cy="160" r="4.5" fill="#2f6fb8" stroke="#1f4d86" stroke-width="1.2"/></g>';
+    if (st >= 4) acc += '<g class="hturn"><path d="M62 38q38-22 76 0" stroke="#4aa35a" stroke-width="4" fill="none" stroke-linecap="round"/><ellipse cx="76" cy="28" rx="7" ry="3.5" transform="rotate(-30 76 28)" fill="#58b868"/><ellipse cx="124" cy="28" rx="7" ry="3.5" transform="rotate(30 124 28)" fill="#58b868"/>' + // legenda: mahkota bunga
+      moFlower(66, 36, "#ff8fb8") + moFlower(83, 26, "#fff") + moFlower(100, 22, "#ffb347") + moFlower(117, 26, "#fff") + moFlower(134, 36, "#c9a0ff") + '</g>';
   } else if (sp === "burung") {
-    if (st >= 4) { const cols = ["#ff5a5f", "#ff9f1c", "#ffd23f", "#2ec4b6", "#7b6cf6"]; [-48, -24, 0, 24, 48].forEach((a, i) => { back += '<ellipse cx="100" cy="8" rx="7.5" ry="21" transform="rotate(' + a + ' 100 30)" fill="' + cols[i] + '" stroke="#000" stroke-opacity=".15" stroke-width="1.2"/>'; }); }
-    back += '<g transform="rotate(-20 22 122)"><ellipse cx="22" cy="122" rx="15" ry="26" fill="url(#hdb' + u + ')" stroke="#b9800d" stroke-opacity=".4" stroke-width="2"/><path d="M16 106v32M24 104v34" stroke="#c78a10" stroke-opacity=".5" stroke-width="2" fill="none"/></g>' +
-      '<g transform="rotate(20 178 122)"><ellipse cx="178" cy="122" rx="15" ry="26" fill="url(#hdb' + u + ')" stroke="#b9800d" stroke-opacity=".4" stroke-width="2"/><path d="M176 106v32M184 104v34" stroke="#c78a10" stroke-opacity=".5" stroke-width="2" fill="none"/></g>' +
-      '<path d="M82 164v10m-9 4h18M118 164v10m-9 4h18" stroke="#e8902a" stroke-width="5" stroke-linecap="round" fill="none"/>';
-    body = moHead(u, "hdb", "#a8740a") + '<ellipse cx="100" cy="143" rx="38" ry="22" fill="#fff8c9" opacity=".7"/>' +
-      '<path d="M100 20q-3-12 5-16M100 20q8-12 18-9M100 20q-9-10-19-6" stroke="#f0b82a" stroke-width="5" fill="none" stroke-linecap="round"/>' + moCheeks(u) +
-      '<path d="M89 98h22l-11 17z" fill="#ff9a2e" stroke="#c86a10" stroke-opacity=".5" stroke-width="1.5" stroke-linejoin="round"/><path d="M92.5 99.5h15l-2 4h-11z" fill="#ffc77a" opacity=".85"/>';
-    if (st >= 2) acc += '<path d="M64 148q36 14 72 0l-36 26z" fill="url(#red' + u + ')" stroke="#9a2230" stroke-opacity=".4" stroke-width="1.5" stroke-linejoin="round"/><circle cx="84" cy="156" r="2.6" fill="#fff"/><circle cx="116" cy="156" r="2.6" fill="#fff"/><circle cx="100" cy="164" r="2.6" fill="#fff"/>'; // remaja: bandana
-    if (st >= 3) acc += '<path d="M26 66q74-30 148 0" stroke="#5a3b1e" stroke-width="9" fill="none" stroke-linecap="round"/><circle cx="80" cy="52" r="14" fill="#8fd3ff" fill-opacity=".7" stroke="url(#gold' + u + ')" stroke-width="5"/><circle cx="120" cy="52" r="14" fill="#8fd3ff" fill-opacity=".7" stroke="url(#gold' + u + ')" stroke-width="5"/><path d="M72 47q3-5 9-5M112 47q3-5 9-5" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" opacity=".85"/>'; // dewasa: goggles pilot
+    if (st >= 4) { back += '<g class="hturn">'; const cols = ["#ff5a5f", "#ff9f1c", "#ffd23f", "#2ec4b6", "#7b6cf6"]; [-48, -24, 0, 24, 48].forEach((a, i) => { back += '<ellipse cx="100" cy="8" rx="7.5" ry="21" transform="rotate(' + a + ' 100 30)" fill="' + cols[i] + '" stroke="#000" stroke-opacity=".15" stroke-width="1.2"/>'; }); back += '</g>'; }
+    back += '<g class="bturn"><g class="wing l"><g transform="rotate(-20 22 122)"><ellipse cx="22" cy="122" rx="15" ry="26" fill="url(#hdb' + u + ')" stroke="#b9800d" stroke-opacity=".4" stroke-width="2"/><path d="M16 106v32M24 104v34" stroke="#c78a10" stroke-opacity=".5" stroke-width="2" fill="none"/></g></g>' +
+      '<g class="wing r"><g transform="rotate(20 178 122)"><ellipse cx="178" cy="122" rx="15" ry="26" fill="url(#hdb' + u + ')" stroke="#b9800d" stroke-opacity=".4" stroke-width="2"/><path d="M176 106v32M184 104v34" stroke="#c78a10" stroke-opacity=".5" stroke-width="2" fill="none"/></g></g></g>';
+    body = moHead(u, "hdb", "#a8740a") + '<g class="nturn"><ellipse cx="100" cy="143" rx="38" ry="22" fill="#fff8c9" opacity=".7"/></g>' +
+      '<g class="hturn"><path d="M100 20q-3-12 5-16M100 20q8-12 18-9M100 20q-9-10-19-6" stroke="#f0b82a" stroke-width="5" fill="none" stroke-linecap="round"/></g>' + moClip(u, '<g class="turn">' + moCheeks(u) + '</g>') +
+      '<g class="turn"><path d="M89 98h22l-11 17z" fill="#ff9a2e" stroke="#c86a10" stroke-opacity=".5" stroke-width="1.5" stroke-linejoin="round"/><path d="M92.5 99.5h15l-2 4h-11z" fill="#ffc77a" opacity=".85"/></g>' + moBirdFeet(u);
+    if (st >= 2) acc += '<g class="nturn"><path d="M64 148q36 14 72 0l-36 26z" fill="url(#red' + u + ')" stroke="#9a2230" stroke-opacity=".4" stroke-width="1.5" stroke-linejoin="round"/><circle cx="84" cy="156" r="2.6" fill="#fff"/><circle cx="116" cy="156" r="2.6" fill="#fff"/><circle cx="100" cy="164" r="2.6" fill="#fff"/></g>'; // remaja: bandana
+    if (st >= 3) acc += moClip(u, '<g class="hturn"><path d="M26 66q74-30 148 0" stroke="#5a3b1e" stroke-width="9" fill="none" stroke-linecap="round"/><circle cx="80" cy="52" r="14" fill="#8fd3ff" fill-opacity=".7" stroke="url(#gold' + u + ')" stroke-width="5"/><circle cx="120" cy="52" r="14" fill="#8fd3ff" fill-opacity=".7" stroke="url(#gold' + u + ')" stroke-width="5"/><path d="M72 47q3-5 9-5M112 47q3-5 9-5" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" opacity=".85"/></g>'); // dewasa: goggles pilot
   } else { // kucing
-    back = '<path d="M158 152q36 4 30-42q-3-16-16-18" stroke="#c9691f" stroke-width="17" fill="none" stroke-linecap="round"/><path d="M158 152q36 4 30-42q-3-16-16-18" stroke="#ffb86b" stroke-width="11" fill="none" stroke-linecap="round"/><path d="M186 132q2 8-2 14M184 112q2-4 0-9" stroke="#b85f1c" stroke-width="4" fill="none" stroke-linecap="round" opacity=".7"/>';
+    back = '<g class="tailflip"><g class="tail"><path d="M158 152q36 4 30-42q-3-16-16-18" stroke="#c9691f" stroke-width="17" fill="none" stroke-linecap="round"/><path d="M158 152q36 4 30-42q-3-16-16-18" stroke="#ffb86b" stroke-width="11" fill="none" stroke-linecap="round"/><path d="M186 132q2 8-2 14M184 112q2-4 0-9" stroke="#b85f1c" stroke-width="4" fill="none" stroke-linecap="round" opacity=".7"/></g></g>';
     body = moHead(u, "hdc", "#8a4a12") +
-      '<path d="M62 30l-6-22 24 14z" fill="#e0822a" stroke="#a85a16" stroke-opacity=".4" stroke-width="1.5" stroke-linejoin="round"/><path d="M138 30l6-22-24 14z" fill="#e0822a" stroke="#a85a16" stroke-opacity=".4" stroke-width="1.5" stroke-linejoin="round"/>' +
-      '<path d="M64 26l-3-13 13 8z" fill="#f7a9a0"/><path d="M136 26l3-13-13 8z" fill="#f7a9a0"/>' +
-      '<path d="M100 24v14M88 26l2 11M112 26l-2 11" stroke="#b85f1c" stroke-width="5" stroke-linecap="round" opacity=".7"/>' + moCheeks(u) +
-      '<path d="M50 108q-22-6-32-2M50 114q-24 2-34 10M150 108q22-6 32-2M150 114q24 2 34 10" stroke="#7a4417" stroke-width="2" fill="none" stroke-linecap="round" opacity=".55"/>' +
-      '<path d="M94 100h12l-6 7z" fill="#e8708a"/>' +
-      '<ellipse cx="78" cy="168" rx="17" ry="10" fill="url(#hdc' + u + ')" stroke="#8a4a12" stroke-opacity=".35" stroke-width="2"/><ellipse cx="122" cy="168" rx="17" ry="10" fill="url(#hdc' + u + ')" stroke="#8a4a12" stroke-opacity=".35" stroke-width="2"/>';
-    if (st === 2) acc += '<path d="M64 148q36 20 72 0" stroke="url(#red' + u + ')" stroke-width="7" fill="none" stroke-linecap="round"/>';
-    if (st >= 3) acc += '<path d="M56 140q44 26 88 0l4 15q-48 28-96 0z" fill="url(#blu' + u + ')" stroke="#1f4d86" stroke-opacity=".4" stroke-width="1.5"/><path d="M72 148v14M90 152v14M110 152v14M128 148v14" stroke="#fff" stroke-width="3" opacity=".5"/><path d="M126 150l10 28 14-6-8-26z" fill="#3b82c4" stroke="#1f4d86" stroke-opacity=".4" stroke-width="1.5"/>'; // dewasa: syal belang
-    if (st >= 2) acc += '<circle cx="100" cy="164" r="8" fill="url(#gold' + u + ')" stroke="#b9801a" stroke-width="1.5"/><path d="M92 165h16" stroke="#b9801a" stroke-width="1.5"/><circle cx="97" cy="161" r="2.2" fill="#fff" opacity=".85"/>'; // lonceng
-    if (st >= 4) acc += '<path d="M76 30l-2-22 16 12 10-16 10 16 16-12-2 22z" fill="url(#gold' + u + ')" stroke="#b9801a" stroke-width="2" stroke-linejoin="round"/><rect x="76" y="26" width="48" height="6" rx="2.5" fill="#d99a1c"/><circle cx="74" cy="8" r="3.2" fill="#ff5a7a"/><circle cx="100" cy="4" r="3.4" fill="#fff"/><circle cx="126" cy="8" r="3.2" fill="#ff5a7a"/><circle cx="100" cy="29" r="3.4" fill="#4fa3ff" stroke="#2f6fb8" stroke-width="1"/>'; // legenda: mahkota
+      '<g class="ear l"><path d="M62 30l-6-22 24 14z" fill="#e0822a" stroke="#a85a16" stroke-opacity=".4" stroke-width="1.5" stroke-linejoin="round"/><path d="M64 26l-3-13 13 8z" fill="#f7a9a0"/></g>' +
+      '<g class="ear r"><path d="M138 30l6-22-24 14z" fill="#e0822a" stroke="#a85a16" stroke-opacity=".4" stroke-width="1.5" stroke-linejoin="round"/><path d="M136 26l3-13-13 8z" fill="#f7a9a0"/></g>' +
+      moClip(u, '<g class="turn"><path d="M100 24v14M88 26l2 11M112 26l-2 11" stroke="#b85f1c" stroke-width="5" stroke-linecap="round" opacity=".7"/>' + moCheeks(u) + '<path d="M94 100h12l-6 7z" fill="#e8708a"/></g>') +
+      '<g class="turn"><g class="wk l"><path d="M50 108q-22-6-32-2M50 114q-24 2-34 10" stroke="#7a4417" stroke-width="2" fill="none" stroke-linecap="round" opacity=".55"/></g><g class="wk r"><path d="M150 108q22-6 32-2M150 114q24 2 34 10" stroke="#7a4417" stroke-width="2" fill="none" stroke-linecap="round" opacity=".55"/></g></g>' +
+      moPawShadow(u) + '<g class="fturn"><g class="foot l"><ellipse cx="78" cy="168" rx="17" ry="10" fill="url(#hdc' + u + ')" stroke="#8a4a12" stroke-opacity=".35" stroke-width="2"/><ellipse cx="78" cy="168" rx="17" ry="10" fill="url(#ps' + u + ')"/></g><g class="foot r"><ellipse cx="122" cy="168" rx="17" ry="10" fill="url(#hdc' + u + ')" stroke="#8a4a12" stroke-opacity=".35" stroke-width="2"/><ellipse cx="122" cy="168" rx="17" ry="10" fill="url(#ps' + u + ')"/></g></g>';
+    if (st === 2) acc += '<g class="nturn"><path d="M64 148q36 20 72 0" stroke="url(#red' + u + ')" stroke-width="7" fill="none" stroke-linecap="round"/></g>';
+    if (st >= 3) acc += '<g class="nturn"><path d="M56 140q44 26 88 0l4 15q-48 28-96 0z" fill="url(#blu' + u + ')" stroke="#1f4d86" stroke-opacity=".4" stroke-width="1.5"/><path d="M72 148v14M90 152v14M110 152v14M128 148v14" stroke="#fff" stroke-width="3" opacity=".5"/><path d="M126 150l10 28 14-6-8-26z" fill="#3b82c4" stroke="#1f4d86" stroke-opacity=".4" stroke-width="1.5"/></g>'; // dewasa: syal belang
+    if (st >= 2) acc += '<g class="nturn"><circle cx="100" cy="164" r="8" fill="url(#gold' + u + ')" stroke="#b9801a" stroke-width="1.5"/><path d="M92 165h16" stroke="#b9801a" stroke-width="1.5"/><circle cx="97" cy="161" r="2.2" fill="#fff" opacity=".85"/></g>'; // lonceng
+    if (st >= 4) acc += '<g class="hturn"><path d="M76 30l-2-22 16 12 10-16 10 16 16-12-2 22z" fill="url(#gold' + u + ')" stroke="#b9801a" stroke-width="2" stroke-linejoin="round"/><rect x="76" y="26" width="48" height="6" rx="2.5" fill="#d99a1c"/><circle cx="74" cy="8" r="3.2" fill="#ff5a7a"/><circle cx="100" cy="4" r="3.4" fill="#fff"/><circle cx="126" cy="8" r="3.2" fill="#ff5a7a"/><circle cx="100" cy="29" r="3.4" fill="#4fa3ff" stroke="#2f6fb8" stroke-width="1"/></g>'; // legenda: mahkota
   }
-  const face = '<g class="pe">' + moEyes(mood, u) + '</g><path class="pm" d="' + moMouth(sp, mood) + '" fill="none" stroke="#3a2210" stroke-width="5" stroke-linecap="round"/>';
-  let inner = back + body + face + acc;
+  const face = '<g class="turn"><g class="pe"><g class="blink" style="animation-delay:' + (Math.random() * 3).toFixed(1) + 's">' + moEyes(mood, u) + '</g></g><path class="pm" d="' + moMouth(sp, mood) + '" fill="none" stroke="#3a2210" stroke-width="5" stroke-linecap="round"/></g>';
+  let inner = '<g class="breathe">' + back + body + face + acc + '</g>';
   if (sp === "kelinci") inner = '<g transform="translate(10 20) scale(.9)">' + inner + "</g>";
   const aura = st >= 4 ? '<circle cx="100" cy="100" r="96" fill="url(#aura' + u + ')"/>' : "";
   const sparks = st >= 4 ? moSpark(26, 52, 9, 0) + moSpark(176, 40, 7, .6) + moSpark(16, 140, 7, 1.1) + moSpark(184, 128, 9, .3) : "";
@@ -2148,7 +2196,7 @@ function renderMochi() {
   const dots = m.week.map((d) => '<div class="mo-dot ' + (d.st || "") + (d.today ? " today" : "") + '" title="' + d.d + '">' + (d.st === "on" ? "✓" : d.st === "frz" ? "❄" : d.st === "miss" ? "×" : d.d[0]) + "</div>").join("");
   const ms = m.missions.map((x) => '<div class="mo-mission ' + (x.n >= x.need ? "done" : "") + '"><div><div class="t">' + moEsc(x.text) + '</div><div class="p">' + x.n + " / " + x.need + '</div></div><div class="x">' + (x.n >= x.need ? "Selesai" : "+" + x.xp + " XP") + "</div></div>").join("");
   box.innerHTML =
-    '<div class="mo-stage"><div class="mo-say" id="moSay">' + moEsc(moSub(moT(MO_SAY[say]))) + '</div><svg id="moPet" class="mo-svg mo-pet ' + (m.egg ? "egg" : mood === "sad" ? "sad" : "") + '" viewBox="0 -8 200 198" role="img" aria-label="' + moEsc(m.name) + ', peliharaanmu">' + moPetSVG(mood, m, "m") + "</svg>" +
+    '<div class="mo-stage"><div class="mo-say" id="moSay">' + moEsc(moSub(moT(MO_SAY[say]))) + '</div><div class="mo-walk" id="moWalk" style="transform:translateX(' + (m.egg ? 0 : moX) + 'px)"><svg id="moPet" class="mo-svg mo-pet ' + (m.egg ? "egg" : mood === "sad" ? "sad" : "") + '" viewBox="0 -8 200 198" role="img" aria-label="' + moEsc(m.name) + ', peliharaanmu">' + moPetSVG(mood, m, "m") + "</svg></div>" +
     '<div class="mo-name" id="moNameRow"><span id="moName">' + moEsc(m.name) + '</span><button type="button" class="mo-edit" id="moEdit" title="Ganti nama" aria-label="Ganti nama peliharaan"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg></button><span class="mo-lvl">' + moEsc(lvTxt) + '</span></div>' +
     '<div class="mo-bars"><div class="mo-bar"><label><span>' + (m.egg ? "Kehangatan" : "Kenyang") + '</span><span>' + m.en + '%</span></label><div class="mo-track"><div class="mo-fill en" style="width:' + m.en + '%"></div></div></div>' +
     '<div class="mo-bar"><label><span>' + (m.egg ? "Menetas" : "XP") + '</span><span>' + m.cur + " / " + m.lvlSize + '</span></label><div class="mo-track"><div class="mo-fill xp" style="width:' + (m.cur / m.lvlSize * 100) + '%"></div></div></div></div></div>' +
@@ -2236,7 +2284,7 @@ function moTap(e) {
   const l = MO_TAP[mood];
   $("moSay").textContent = mochiTapN >= 6 && mood === "happy" ? "Sudah ah, geli banget!" : moSub(moT(l[Math.floor(Math.random() * l.length)]));
   if (mochiTapN >= 6) mochiTapN = 0;
-  const stage = svg.parentElement, r = stage.getBoundingClientRect();
+  const stage = svg.closest(".mo-stage"), r = stage.getBoundingClientRect();
   const s = el("span", "mo-pop", mood === "sad" ? "..." : "♥");
   s.style.left = (e.clientX - r.left - 8) + "px"; s.style.top = (e.clientY - r.top - 16) + "px";
   stage.appendChild(s); setTimeout(() => s.remove(), 1000);
@@ -2258,6 +2306,33 @@ function moLook(x, y) {
 }
 window.addEventListener("pointermove", (e) => moLook(e.clientX, e.clientY), { passive: true });
 window.addEventListener("pointerdown", (e) => { moLook(e.clientX, e.clientY); moCtx(); }, { passive: true });
+function moWander(force) {
+  const m = mochi, w = $("moWalk"), svg = $("moPet");
+  if (!m || m.egg || !w || !svg || document.hidden) return;
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  if (moMood(m.en, m.done) === "sad") { if (force) moToast("Mochi lemas, kasih makan lewat misi dulu"); return; }
+  if (svg.classList.contains("jump") || svg.classList.contains("walk-l") || svg.classList.contains("walk-r")) { if (force) setTimeout(() => moWander(true), 700); return; }
+  if (!force && Math.random() < 0.25) return; // kadang diam saja
+  const stage = w.closest(".mo-stage");
+  if (!stage.clientWidth || !w.offsetWidth) return; // tab Mochi sedang tertutup
+  const lim = Math.min(110, Math.max(0, (stage.clientWidth - w.offsetWidth) / 2 - 16));
+  let nx = Math.round((Math.random() * 2 - 1) * lim);
+  if (Math.abs(nx - moX) < 36) nx = moX > 0 ? -lim : lim;
+  const dir = nx < moX ? -1 : 1;
+  moX = nx;
+  w.style.transform = "translateX(" + moX + "px)";
+  svg.classList.add(dir < 0 ? "walk-l" : "walk-r");
+  const eyes = svg.querySelector(".pe"), mouth = svg.querySelector(".pm");
+  if (eyes) eyes.setAttribute("transform", "translate(" + dir * 2 + " 0)");
+  if (mouth) mouth.setAttribute("transform", "translate(" + dir * 1 + " 0)");
+  setTimeout(() => {
+    const s2 = $("moPet"); if (!s2) return;
+    s2.classList.remove("walk-l", "walk-r");
+    const e2 = s2.querySelector(".pe"), m2 = s2.querySelector(".pm");
+    if (e2) e2.setAttribute("transform", "translate(0 0)"); if (m2) m2.setAttribute("transform", "translate(0 0)");
+  }, 1650);
+}
+(function moLoop() { setTimeout(() => { try { moWander(); } catch {} moLoop(); }, 3200 + Math.random() * 3000); })();
 $("mochiChip").onclick = () => { toggleSide(true); showTab("mochi"); };
 
 /* ---------- Menu "+" di HP (Curhat / Chat baru) ---------- */
