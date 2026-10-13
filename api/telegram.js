@@ -874,7 +874,13 @@ module.exports = async (req, res) => {
     await say(echo + [reply, ...notes, sourceLine(found.sources, found.searchError)].filter(Boolean).join("\n\n"));
     if (confirm) await say(deleteQuestion(confirm), { reply_markup: deleteKeyboard(confirm) });
   } catch (e) {
-    try { await say("Maaf, ada error: " + e.message); } catch {}
+    // Pesan dari sistem sendiri (key kosong/ditolak, limit, model tidak ditemukan) sudah jelas, tetap ditampilkan.
+    // Error mentah dari Google (mis. "Internal error encountered.") diganti saran ganti model.
+    const own = /^(Belum ada API key|Semua API key|Model ")/.test(String((e && e.message) || ""));
+    const msg = own
+      ? e.message
+      : "Maaf, AI sedang bermasalah. Coba ganti model AI di Pengaturan web: klik \"Isi saran model\", lalu \"Simpan model\", setelah itu coba kirim pesan lagi.";
+    try { await say(msg); } catch {}
   }
 
   return res.status(200).end();
