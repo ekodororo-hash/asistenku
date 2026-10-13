@@ -16,7 +16,7 @@ const {
   linkStatus, makeLinkCode, useLinkCode, unlinkPartner, incomingTransfers, acceptTransfer, declineTransfer,
   getPendingDelete, resolvePendingDelete,
   getMochi, mochiRename, takeMochiEvents, mochiView,
-  ackNag, pushSubscribe, pushUnsubscribe, pushStatus, sendPush,
+  ackNag, pushSubscribe, pushUnsubscribe, pushStatus, pushCount, sendPush,
 } = require("./_lib");
 
 // Riwayat -> bentuk yang dipakai web
@@ -43,6 +43,7 @@ module.exports = async (req, res) => {
       ]);
       const mochi = mochiView(await getMochi(u).catch(() => null) || { xp: 0, en: 60, streak: 0, best: 0, frz: 1, day: new Date().toISOString().slice(0, 10), m: {}, week: {}, done: false, ev: [] });
       const botLinked = light ? !!(rawBot && rawBot.chatId) : !!(bot && bot.linked);
+      const pushOn = (await pushCount(u).catch(() => 1)) > 0; // ada perangkat yang berlangganan notifikasi PWA
       const messages = toMessages(hist); // riwayat milik mode yang sedang aktif
       return res.status(200).json({
         tasks,
@@ -50,7 +51,7 @@ module.exports = async (req, res) => {
         expenses: expenses.slice(-100).reverse(),
         incomes: incomes.slice(-100).reverse(),
         money,
-        profile, mode, messages, reminders, botLinked, xferIn, pendingDelete, mochi,
+        profile, mode, messages, reminders, botLinked, pushOn, xferIn, pendingDelete, mochi,
         ...(light ? {} : { push: await pushStatus(u), link, geminiKeys: kstate.keys, keyHistoryCount: kstate.history.length, modelCfg: mcfg, maxKeys: MAX_KEYS, globalKey: !!process.env.GEMINI_API_KEY, bot }),
       });
     } catch (e) {

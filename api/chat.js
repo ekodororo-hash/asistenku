@@ -8,7 +8,7 @@ const {
   getTasks, addTask, getNotes, addNote, getExpenses, addExpense,
   getReminders, addReminder, parseRepeat, repeatLabel, rescheduleReminderNumber, getBot, sendTelegram, cfgOn, quotaStatus, setSaldo, addOutsideMoney, moneyContext, parseWib, addIncome, getIncomes, moneySummary,
   mentionsAmount, partnerContext, incomingTransfers, sendTransfer, handlePartnerIncome, answerDupMasuk,
-  getFacts, addFacts, planDeletes, getPendingDelete, mochiChat, getMochi, takeMochiEvents, mochiView,
+  getFacts, addFacts, planDeletes, getPendingDelete, mochiChat, getMochi, takeMochiEvents, mochiView, pushCount,
 } = require("./_lib");
 
 const { requireUser } = require("./_auth");
@@ -27,7 +27,15 @@ Kalau pengguna terlihat sedang curhat atau emosional, berubah jadi pendengar yan
 - Dukung hubungannya dengan teman dan keluarga; jangan membuat dia bergantung hanya padamu.`,
 };
 
-function buildSystem(mode, { profile, taskList, noteList, moneyText, remindText, botLinked, partnerText, factsList }) {
+// Status tujuan pengingat (Telegram dan/atau notifikasi PWA) untuk prompt
+function deliveryLine(botLinked, pushOn) {
+  if (botLinked && pushOn) return "Tujuan pengingat: bot Telegram sudah terhubung dan notifikasi PWA sudah aktif, jadi pengingat dikirim ke keduanya.";
+  if (botLinked) return "Tujuan pengingat: bot Telegram sudah terhubung (pengingat dikirim ke sana). Notifikasi PWA belum aktif di perangkat mana pun; boleh sebut SEKALI dan singkat bahwa itu bisa diaktifkan di Pengaturan, jangan memaksa dan jangan diulang-ulang.";
+  if (pushOn) return "Tujuan pengingat: notifikasi PWA sudah aktif (pengingat dikirim ke sana). Bot Telegram belum terhubung, tapi itu opsional, jadi jangan didesak.";
+  return "Tujuan pengingat: bot Telegram BELUM terhubung dan notifikasi PWA BELUM aktif. Pengingat tetap tersimpan tapi belum akan sampai ke mana pun sampai salah satunya diaktifkan di Pengaturan; ingatkan pengguna soal ini saat membuat pengingat.";
+}
+
+function buildSystem(mode, { profile, taskList, noteList, moneyText, remindText, botLinked, pushOn, partnerText, factsList }) {
   return `${mode === "curhat" ? PERSONA.curhat : PERSONA.asisten}
 Nama kamu: ${profile.assistantName || "Asisten"}.
 Pengguna bernama: ${profile.name || "(belum diisi)"}.
@@ -48,7 +56,7 @@ ${moneyText}
 
 Pengingat mendatang:
 ${remindText}
-Bot Telegram pengguna: ${botLinked ? "sudah terhubung (pengingat dikirim ke sana)" : "BELUM terhubung. Pengingat tetap tersimpan tapi baru terkirim setelah bot dihubungkan di Pengaturan; ingatkan pengguna soal ini saat membuat pengingat."}
+${deliveryLine(botLinked, pushOn)}
 
 ${partnerText ? partnerText + "\n" : ""}
 Aturan:
@@ -327,7 +335,7 @@ module.exports = async (req, res) => {
       });
     }
 
-    const system = buildSystem(mode, { profile, taskList, noteList, moneyText: await moneyContext(u), remindText, botLinked: !!(bot && bot.chatId), partnerText: await partnerContext(u).catch(() => ""), factsList });
+    const system = buildSystem(mode, { profile, taskList, noteList, moneyText: await moneyContext(u), remindText, botLinked: !!(bot && bot.chatId), pushOn: await pushCount(u).then((n) => n > 0).catch(() => true), partnerText: await partnerContext(u).catch(() => ""), factsList });
 
     const userTurn = { role: "user", parts: [{ text: histText }], ts: Date.now() };
     const contents = withImage(trimHist([...hist, userTurn]), image, text);

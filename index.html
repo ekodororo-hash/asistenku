@@ -679,6 +679,7 @@ const OUT_CATS = ["makan", "transport", "belanja", "tagihan", "hiburan", "keseha
 const IN_CATS = ["gaji", "bonus", "usaha", "hadiah", "lainnya"];
 let reminders = [];
 let botLinked = true;
+let pushOn = true; // notifikasi PWA (true dulu supaya catatan tidak berkedip sebelum data termuat)
 let profile = { name: "", assistantName: "Asisten", notes: "" };
 let mode = "asisten";
 let busy = false;
@@ -1086,7 +1087,7 @@ const repLabel = (r) => REPEAT_LABEL[r] || (/^(\d+)m$/.test(r) ? (+r.slice(0, -1
 const fmtWhen = (ts) => new Date(ts).toLocaleString("id-ID", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false }).replace(":", ".");
 
 function renderReminders() {
-  $("remNote").textContent = botLinked ? "" : "Bot Telegram belum terhubung, jadi pengingat belum bisa terkirim. Hubungkan dulu di Pengaturan.";
+  $("remNote").textContent = (botLinked || pushOn) ? "" : "Pengingat belum bisa terkirim: bot Telegram belum terhubung dan notifikasi PWA belum aktif. Aktifkan salah satunya di Pengaturan.";
   renderTodayBar(); renderBadges();
   const box = $("reminders");
   box.innerHTML = "";
@@ -2185,6 +2186,7 @@ async function loadState() {
   messages = d.messages || [];
   reminders = d.reminders || [];
   botLinked = d.botLinked !== false;
+  pushOn = d.pushOn !== false;
 }
 
 // Segarkan berkala supaya obrolan dari Telegram (dan perubahan lain) muncul tanpa muat ulang halaman
@@ -2196,7 +2198,7 @@ async function refreshFromServer() {
     if (busy) return; // pesan sedang dikirim, jangan timpa
     const before = sig(messages), oldMode = mode;
     tasks = notPending("deleteTask", d.tasks || []); notes = notPending("deleteNote", d.notes || []); expenses = notPending("deleteExpense", d.expenses || []); incomes = notPending("deleteIncome", d.incomes || []); money = d.money || null; xferIn = d.xferIn || [];
-    reminders = notPending("deleteReminder", d.reminders || []); botLinked = d.botLinked !== false;
+    reminders = notPending("deleteReminder", d.reminders || []); botLinked = d.botLinked !== false; pushOn = d.pushOn !== false;
     const pd = d.pendingDelete || null, pdChanged = (pd && pd.id) !== (pdel && pdel.id); pdel = pd;
     mode = d.mode || "asisten"; messages = d.messages || [];
     if (mode !== oldMode) renderMode();
