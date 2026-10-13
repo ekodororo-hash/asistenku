@@ -395,14 +395,9 @@ function modelSort(a, b) {
 }
 let modelNames = [];
 let modelsP = null;
-// Saran model: utama = gratis paling longgar (bukan Gemma), cadangan = jenis berbeda dari utama
+// Saran model: tetap utama gemini-3.5-flash-lite, cadangan gemini-3.1-flash-lite
 function pickSuggest() {
-  const cand = modelNames.filter((m) => { const i = modelInfo(m); return i.tier === "gratis" && i.kind !== "gemma"; });
-  const main = cand[0] || "";
-  if (!main) return { main: "", fb: "" };
-  const kind = modelInfo(main).kind;
-  const fb = cand.find((m) => modelInfo(m).kind !== kind) || cand.find((m) => m !== main) || "";
-  return { main, fb };
+  return { main: "gemini-3.5-flash-lite", fb: "gemini-3.1-flash-lite" };
 }
 function loadModelList() {
   if (modelsP) return modelsP;
