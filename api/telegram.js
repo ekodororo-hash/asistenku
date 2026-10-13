@@ -1,12 +1,13 @@
 // Webhook bot Telegram: /api/telegram
 const {
-  HOURS, BTN, redis, tg, key, getBot, saveBot, sendTelegram, downloadTelegramFile, gemini, geminiSearch, sourceLine, REMIND_INTENT, DELETE_INTENT, deleteReminderNumber, trimHist,
+  HOURS, BTN, redis, tg, key, getBot, saveBot, sendTelegram, downloadTelegramFile, gemini, geminiSearch, sourceLine, REMIND_INTENT, DELETE_INTENT, deleteReminderNumber, rescheduleReminderNumber, trimHist,
   fmtWib, fmtTime, wib, rupiah, parseRepeat, repeatLabel, dropDuplicateReminders, cfgOn, getLocation, setLocation, getWeather, getNews,
   recapText, deleteExpenseNumber, incomeListText, deleteIncomeNumber, loadContext, buildSystem,
   getTasks, addTask, toggleTask, deleteTask, unlinkTaskReminder, parseWib, fmtDue,
   addNote, addExpense, addIncome, setSaldo, addOutsideMoney, fmtDateShort, mentionsAmount,
   sendTransfer, acceptTransfer, declineTransfer, handlePartnerIncome, answerDupMasuk,
   getMode, switchMode, takeCurhatExpiredNotice, getHist, saveHist, clearHist, loadCurhatContext, buildCurhatSystem, stripTags,
+  getFacts, addFacts, clearFacts,
 } = require("./_lib");
 const { getOwnerId, safeEq } = require("./_auth");
 
@@ -290,7 +291,7 @@ async function handleCommand(u, cmd, arg, say, ensureCb) {
     }
 
     case "/memori": {
-      const facts = await redis("LRANGE", key(u, "facts"), 0, -1);
+      const facts = await getFacts(u);
       await say(
         facts && facts.length
           ? "Yang kuingat tentangmu:\n\n" + facts.map((f, i) => `${i + 1}. ${f}`).join("\n")
@@ -300,7 +301,7 @@ async function handleCommand(u, cmd, arg, say, ensureCb) {
     }
 
     case "/lupakan":
-      await redis("DEL", key(u, "facts"));
+      await clearFacts(u);
       await say("Semua yang kuingat tentangmu sudah dihapus.");
       return;
 
@@ -517,25 +518,20 @@ async function processTags(u, reply, userText = "", hasImage = false) {
   }
 
   // Fakta tentang pengguna
-  let savedFacts = false;
-  for (const m of reply.matchAll(/\[\[INGAT:\s*([^\]]+?)\s*\]\]/g)) {
-    await redis("RPUSH", key(u, "facts"), m[1].trim().slice(0, 300));
-    savedFacts = true;
-  }
-  if (savedFacts) await redis("LTRIM", key(u, "facts"), -40, -1);
+  await addFacts(u, [...reply.matchAll(/\[\[INGAT:\s*([^\]]+?)\s*\]\]/g)].map((m) => m[1]));
 
   // Pengeluaran
   for (const m of amountOk ? [...reply.matchAll(/\[\[BELI:\s*([^|\]]+?)\s*\|\s*([^|\]]+?)\s*\|\s*([^\]]*?)\s*\]\]/g)] : []) {
     const amt = Number(String(m[1]).replace(/[^\d]/g, ""));
     const e = await addExpense(u, amt, m[2].trim(), m[3].trim());
-    if (e) notes.push("💰 Dicatat: " + rupiah(e.amt) + " (" + e.cat + ")" + (e.note ? " - " + e.note : ""));
+    if (e) notes.push("💰 Dicatat: " + rupiah(e.amt) + " (" + e.cat + ")" + (e.note ? " - " + e.note : "") + (e.dup ? "\n⚠️ Mirip pencatatan beberapa menit lalu (nominal & kategori sama) — kalau ini memang transaksi lain, nggak apa-apa." : ""));
   }
 
   // Pemasukan
   for (const m of amountOk ? [...reply.matchAll(/\[\[MASUK:\s*([^|\]]+?)\s*\|\s*([^|\]]+?)\s*\|\s*([^\]]*?)\s*\]\]/g)] : []) {
     const amt = Number(String(m[1]).replace(/[^\d]/g, ""));
     const e = await addIncome(u, amt, m[2].trim(), m[3].trim());
-    if (e) notes.push("💵 Pemasukan dicatat: " + rupiah(e.amt) + " (" + e.cat + ")" + (e.note ? " - " + e.note : ""));
+    if (e) notes.push("💵 Pemasukan dicatat: " + rupiah(e.amt) + " (" + e.cat + ")" + (e.note ? " - " + e.note : "") + (e.dup ? "\n⚠️ Mirip pemasukan beberapa menit lalu (nominal & kategori sama) — kalau ini memang beda, nggak apa-apa." : ""));
   }
 
   // Kirim uang ke pasangan (pasangan diminta konfirmasi) dan terima uang dari pasangan (dicocokkan supaya tidak dobel)
@@ -582,7 +578,16 @@ async function processTags(u, reply, userText = "", hasImage = false) {
     }
   }
 
-  const clean = reply.replace(/\[\[(TASK|REMIND|INGAT|BELI|MASUK|KIRIM|PASANGAN_MASUK|CATAT|SALDO_LAIN|SALDO|HAPUS_PENGINGAT):[\s\S]*?\]\]/g, "").trim();
+  // Geser jam pengingat (mis. "geser yang bayar wifi jadi besok jam 9")
+  if (remindOk) {
+    for (const m of reply.matchAll(/\[\[GESER_PENGINGAT:\s*(\d+)\s*\|\s*([^\]]+?)\s*\]\]/g)) {
+      const n = Number(m[1]);
+      const r = await rescheduleReminderNumber(u, n, parseWib(m[2]));
+      notes.push(r ? "⏰ Pengingat digeser: " + r.text + " -> " + fmtWib(r.ts) : "Gagal menggeser: pengingat nomor " + n + " tidak ditemukan atau waktu tidak valid.");
+    }
+  }
+
+  const clean = reply.replace(/\[\[(TASK|REMIND|INGAT|BELI|MASUK|KIRIM|PASANGAN_MASUK|CATAT|SALDO_LAIN|SALDO|HAPUS_PENGINGAT|GESER_PENGINGAT):[\s\S]*?\]\]/g, "").trim();
   return { clean, notes };
 }
 

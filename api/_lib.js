@@ -801,12 +801,27 @@ async function deleteNoteById(u, id) {
 }
 
 // ---------- Pengeluaran (dipakai bareng web & Telegram) ----------
+// Deteksi kemungkinan dobel catat (mis. sama-sama lewat web & Telegram, atau pesan ke-klik/terkirim 2x):
+// nominal & kategori sama, dalam jarak DUP_WINDOW. Tidak memblokir, cuma ngasih tanda supaya pengguna sadar.
+const DUP_WINDOW = 3 * 60 * 1000;
+async function isLikelyDuplicate(u, listName, amt, cat) {
+  const rows = await redis("LRANGE", key(u, listName), -5, -1);
+  const now = Date.now();
+  for (const r of rows || []) {
+    let it; try { it = JSON.parse(r); } catch { continue; }
+    if (it.amt === amt && it.cat === cat && now - it.ts < DUP_WINDOW) return true;
+  }
+  return false;
+}
+
 async function addExpense(u, amt, cat, note) {
   const n = Math.round(Number(amt));
   if (!Number.isFinite(n) || n <= 0 || n > 1e10) return null;
-  const item = { id: uid(), ts: Date.now(), amt: n, cat: String(cat || "lainnya").toLowerCase().slice(0, 20), note: String(note || "").slice(0, 100) };
+  const c = String(cat || "lainnya").toLowerCase().slice(0, 20);
+  const item = { id: uid(), ts: Date.now(), amt: n, cat: c, note: String(note || "").slice(0, 100) };
+  const dup = await isLikelyDuplicate(u, "exp:" + wib().monthKey, n, c);
   await redis("RPUSH", key(u, "exp:" + wib().monthKey), JSON.stringify(item));
-  return item;
+  return { ...item, dup };
 }
 async function getExpenses(u, monthKey) {
   const rows = await redis("LRANGE", key(u, "exp:" + (monthKey || wib().monthKey)), 0, -1);
@@ -820,9 +835,11 @@ async function deleteExpenseById(u, id, monthKey) {
 async function addIncome(u, amt, cat, note) {
   const n = Math.round(Number(amt));
   if (!Number.isFinite(n) || n <= 0 || n > 1e12) return null;
-  const item = { id: uid(), ts: Date.now(), amt: n, cat: String(cat || "lainnya").toLowerCase().slice(0, 20), note: String(note || "").slice(0, 100) };
+  const c = String(cat || "lainnya").toLowerCase().slice(0, 20);
+  const item = { id: uid(), ts: Date.now(), amt: n, cat: c, note: String(note || "").slice(0, 100) };
+  const dup = await isLikelyDuplicate(u, "inc:" + wib().monthKey, n, c);
   await redis("RPUSH", key(u, "inc:" + wib().monthKey), JSON.stringify(item));
-  return item;
+  return { ...item, dup };
 }
 async function getIncomes(u, monthKey) {
   const rows = await redis("LRANGE", key(u, "inc:" + (monthKey || wib().monthKey)), 0, -1);
@@ -899,6 +916,29 @@ async function deleteReminderNumber(u, n) {
   return (await deleteReminderById(u, r.id)) ? r : null;
 }
 
+// Geser jam pengingat berdasarkan nomor di daftar (mis. "geser yang bayar wifi jadi besok"), tanpa hapus+buat ulang.
+// Teks, pola berulang, dan tautan ke tugas (kalau ada) dipertahankan; cuma jamnya yang berubah.
+async function rescheduleReminderNumber(u, n, newTs) {
+  const list = await getReminders(u);
+  const r = list[Number(n) - 1];
+  if (!r) return null;
+  const when = Number(newTs);
+  if (!Number.isFinite(when) || when <= Date.now()) return null;
+  const removed = await deleteReminderById(u, r.id, false); // false: jangan lepas tautan tugas, kita update manual di bawah
+  if (!removed) return null;
+  const item = { id: r.id, text: r.text };
+  if (r.repeat) item.repeat = r.repeat;
+  if (r.until) item.until = r.until;
+  if (r.tid) item.tid = r.tid;
+  await redis("ZADD", key(u, "reminders"), when, JSON.stringify(item));
+  if (r.tid) {
+    const tasks = await getTasks(u);
+    const t = tasks.find((x) => x.id === r.tid);
+    if (t) { t.due = when; await saveTasks(u, tasks); }
+  }
+  return { id: r.id, text: r.text, ts: when, repeat: r.repeat || null, until: r.until || null };
+}
+
 // ---------- Profil (web) ----------
 async function getProfile(u) {
   const raw = await redis("GET", key(u, "profile"));
@@ -913,6 +953,20 @@ async function saveProfile(u, p) {
   };
   await redis("SET", key(u, "profile"), JSON.stringify(profile));
   return profile;
+}
+
+// ---------- Fakta jangka panjang / memori (dipakai bareng web & Telegram) ----------
+async function getFacts(u) {
+  return (await redis("LRANGE", key(u, "facts"), 0, -1)) || [];
+}
+async function addFacts(u, arr) {
+  const list = (arr || []).map((f) => String(f).trim().slice(0, 300)).filter(Boolean);
+  if (!list.length) return;
+  for (const f of list) await redis("RPUSH", key(u, "facts"), f);
+  await redis("LTRIM", key(u, "facts"), -40, -1);
+}
+async function clearFacts(u) {
+  await redis("DEL", key(u, "facts"));
 }
 
 // ---------- Mode (dipakai bareng web & Telegram) ----------
@@ -1105,6 +1159,32 @@ async function recapText(u, interactive = false) {
   const bw = breakdown(week), bm = breakdown(month);
   const remaining = (await moneySummary(u)).remaining;
 
+  // Insight: bandingkan pace pengeluaran bulan ini vs bulan lalu, di periode hari yang sama (month-to-date)
+  let insight = "";
+  if (month.length >= 3) {
+    let py = w.y, pm = w.m - 1;
+    if (pm < 1) { pm = 12; py -= 1; }
+    const prevKey = `${py}-${String(pm).padStart(2, "0")}`;
+    const prevMtd = (await getExpenses(u, prevKey)).filter((e) => wib(e.ts).d <= w.d);
+    const prevTotal = prevMtd.reduce((s, e) => s + e.amt, 0);
+    if (prevMtd.length >= 3 && prevTotal > 0) {
+      const pct = Math.round(((bm.total - prevTotal) / prevTotal) * 100);
+      if (Math.abs(pct) >= 15) {
+        const curByCat = {}, prevByCat = {};
+        for (const e of month) curByCat[e.cat] = (curByCat[e.cat] || 0) + e.amt;
+        for (const e of prevMtd) prevByCat[e.cat] = (prevByCat[e.cat] || 0) + e.amt;
+        let topCat = null, topInc = 0;
+        for (const c of Object.keys(curByCat)) {
+          const inc = curByCat[c] - (prevByCat[c] || 0);
+          if (inc > topInc) { topInc = inc; topCat = c; }
+        }
+        insight = pct > 0
+          ? `📈 Pengeluaran sejauh ini ${pct}% lebih tinggi dari bulan lalu di periode yang sama` + (topCat ? `, paling banyak naik di kategori ${topCat} (+${rupiah(topInc)})` : "") + "."
+          : `📉 Pengeluaran sejauh ini ${Math.abs(pct)}% lebih rendah dari bulan lalu di periode yang sama. Mantap!`;
+      }
+    }
+  }
+
   const parts = [];
   parts.push("💰 Uang bulan ini");
   parts.push(
@@ -1113,6 +1193,7 @@ async function recapText(u, interactive = false) {
     `⚖️ Selisih: ${sg(incTotal - bm.total)}` +
     (remaining != null ? `\n👛 Sisa uang: ${sg(remaining)}` : "")
   );
+  if (insight) parts.push(insight);
   if (month.length) {
     parts.push("📊 Pengeluaran per kategori\n" + bm.lines.map((l) => l.replace(/^\s*-\s*/, "• ")).join("\n"));
     if (week.length) parts.push(`📅 Minggu ini: ${rupiah(bw.total)} (${week.length} transaksi)`);
@@ -1253,7 +1334,7 @@ async function moneyContext(u) {
 // ---------- Konteks & prompt ----------
 async function loadContext(u) {
   const [facts, rows, profile, tasks, notes, money, partner] = await Promise.all([
-    redis("LRANGE", key(u, "facts"), 0, -1),
+    getFacts(u),
     redis("ZRANGE", key(u, "reminders"), 0, 9, "WITHSCORES"),
     getProfile(u), getTasks(u), getNotes(u), moneyContext(u), partnerContext(u).catch(() => ""),
   ]);
@@ -1302,6 +1383,7 @@ Tag khusus (ditaruh di baris terakhir balasan; pengguna tidak melihatnya):
 - Catatan jika pengguna minta mencatat sesuatu: [[CATAT: isi catatan]]
   JANGAN buat CATAT atau TASK untuk permintaan menghapus/menyelesaikan. Kata seperti "hapus" bukan isi catatan.
 - Pengingat BISA dihapus lewat tag [[HAPUS_PENGINGAT: N]] (N = nomor di daftar Pengingat mendatang). Buat tag ini hanya kalau pengguna jelas minta menghapus/membatalkan dan jelas pengingat yang mana; kalau belum jelas, tanyakan dulu. Jangan pernah bilang sudah dihapus tanpa tag ini: sistem menulis baris 🗑️ kalau berhasil.
+- Pengingat BISA digeser jamnya lewat tag [[GESER_PENGINGAT: N | waktu_baru]] (N = nomor di daftar Pengingat mendatang, waktu_baru format ISO 8601 +07:00 seperti REMIND). Pakai ini kalau pengguna minta mengubah/menggeser/memajukan/memundurkan jam pengingat yang sudah ada (mis. "geser yang bayar wifi jadi besok jam 9", "pengingat nomor 2 majuin jam 7 aja"), BUKAN [[HAPUS_PENGINGAT]] lalu [[REMIND]] baru. Kalau tidak jelas pengingat yang mana atau jam barunya, tanyakan dulu. Pola berulang dan tautan ke tugas (kalau ada) tetap dipertahankan otomatis.
 - Kamu TIDAK bisa menghapus catatan, tugas, pengeluaran, atau pemasukan. Jika pengguna minta menghapus, jangan bilang sudah dihapus dan jangan buat tag apa pun; arahkan: catatan -> ketik /hapuscatatan lalu balas nomornya; pengeluaran -> /rekap lalu balas nomornya (atau ketik "hapus pengeluaran 3"); pemasukan -> /masuk lalu balas nomornya (atau ketik "hapus pemasukan 3"); tugas -> /hapustugas lalu balas nomornya (menandai selesai: /tugasdone); pengingat -> /hapus N.
 - Kamu punya akses pencarian Google. Untuk hal yang terkini atau bisa berubah (jadwal pertandingan, skor, harga, berita, cuaca, hasil, tanggal rilis), cari dulu lalu jawab; jangan bilang kamu tidak bisa browsing. Jawab ringkas dan sebut waktu/tanggal datanya kalau penting. Hasil pencarian tidak perlu dicatat kecuali pengguna minta.
 - Pertanyaan info (kurs, jadwal, harga, berita, dll) dijawab SEKARANG dalam balasan yang sama. Jangan bilang "sebentar aku cek" lalu membuat pengingat atau tugas; REMIND hanya kalau pengguna jelas minta diingatkan.
@@ -1357,7 +1439,7 @@ const CURHAT_RULES = `Aturan:
 - Obrolan curhat ini terpisah dari mode asisten dan tidak ikut disimpan ke tempat lain. Kalau ditanya, begitu penjelasannya.`;
 
 async function loadCurhatContext(u) {
-  const [facts, profile] = await Promise.all([redis("LRANGE", key(u, "facts"), 0, -1), getProfile(u)]);
+  const [facts, profile] = await Promise.all([getFacts(u), getProfile(u)]);
   return { facts: facts || [], profile };
 }
 
@@ -1664,9 +1746,9 @@ module.exports = {
   getNotes, addNote, deleteNoteById,
   getExpenses, addExpense, deleteExpenseById, getSaldo, setSaldo, addOutsideMoney, moneyContext,
   getIncomes, addIncome, deleteIncomeById, incomesSince, moneySummary, incomeListText, deleteIncomeNumber,
-  getProfile, saveProfile,
+  getProfile, saveProfile, getFacts, addFacts, clearFacts,
   getMode, setMode, switchMode, takeCurhatExpiredNotice, CURHAT_TTL,
   getHist, saveHist, hasHist, clearHist,
-  getReminders, addReminder, dropDuplicateReminders, deleteReminderById, deleteReminderNumber, DELETE_INTENT,
+  getReminders, addReminder, dropDuplicateReminders, deleteReminderById, deleteReminderNumber, rescheduleReminderNumber, DELETE_INTENT,
   mentionsAmount, getLink, linkStatus, makeLinkCode, useLinkCode, unlinkPartner, incomingTransfers, sendTransfer, acceptTransfer, declineTransfer, handlePartnerIncome, answerDupMasuk, partnerContext,
 };

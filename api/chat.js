@@ -6,8 +6,9 @@ const {
   trimHist, geminiRaw, geminiSearch, sourceLine, REMIND_INTENT, DELETE_INTENT, deleteReminderNumber, fmtWib, rupiah,
   getMode, takeCurhatExpiredNotice, getHist, saveHist, getProfile, gemini, loadCurhatContext, buildCurhatSystem, stripTags,
   getTasks, addTask, getNotes, addNote, getExpenses, addExpense,
-  getReminders, addReminder, parseRepeat, repeatLabel, getBot, sendTelegram, cfgOn, quotaStatus, setSaldo, addOutsideMoney, moneyContext, parseWib, addIncome, getIncomes, moneySummary,
+  getReminders, addReminder, parseRepeat, repeatLabel, rescheduleReminderNumber, getBot, sendTelegram, cfgOn, quotaStatus, setSaldo, addOutsideMoney, moneyContext, parseWib, addIncome, getIncomes, moneySummary,
   mentionsAmount, partnerContext, incomingTransfers, sendTransfer, handlePartnerIncome, answerDupMasuk,
+  getFacts, addFacts,
 } = require("./_lib");
 
 const { requireUser } = require("./_auth");
@@ -26,12 +27,15 @@ Kalau pengguna terlihat sedang curhat atau emosional, berubah jadi pendengar yan
 - Dukung hubungannya dengan teman dan keluarga; jangan membuat dia bergantung hanya padamu.`,
 };
 
-function buildSystem(mode, { profile, taskList, noteList, moneyText, remindText, botLinked, partnerText }) {
+function buildSystem(mode, { profile, taskList, noteList, moneyText, remindText, botLinked, partnerText, factsList }) {
   return `${mode === "curhat" ? PERSONA.curhat : PERSONA.asisten}
 Nama kamu: ${profile.assistantName || "Asisten"}.
 Pengguna bernama: ${profile.name || "(belum diisi)"}.
 Catatan tentang pengguna: ${profile.notes || "(belum ada)"}.
 Waktu sekarang pengguna: ${fmtWib(Date.now())}.
+
+Yang kamu ingat tentang pengguna:
+${factsList}
 
 Daftar tugas pengguna:
 ${taskList}
@@ -62,6 +66,8 @@ Tag khusus (taruh di baris terakhir balasan; pengguna tidak melihatnya):
   Pakai REMIND hanya untuk pengingat murni yang bukan tugas (minum obat, rapat, tagihan) atau yang berulang.
 - Catatan jika pengguna minta mencatat sesuatu: [[CATAT: isi catatan]]
 - Pengingat BISA dihapus lewat tag [[HAPUS_PENGINGAT: N]] (N = nomor di daftar Pengingat mendatang). Buat tag ini hanya kalau pengguna jelas minta menghapus/membatalkan dan jelas pengingat yang mana; kalau belum jelas, tanyakan dulu. Jangan pernah bilang sudah dihapus tanpa tag ini: sistem menulis baris 🗑️ kalau berhasil.
+- Pengingat BISA digeser jamnya lewat tag [[GESER_PENGINGAT: N | waktu_baru]] (N = nomor di daftar Pengingat mendatang, waktu_baru format ISO 8601 +07:00 seperti REMIND). Pakai ini kalau pengguna minta mengubah/menggeser/memajukan/memundurkan jam pengingat yang sudah ada, BUKAN hapus lalu bikin REMIND baru. Kalau tidak jelas pengingat yang mana atau jam barunya, tanyakan dulu.
+- Fakta jangka panjang tentang pengguna (nama, orang penting, kebiasaan, preferensi, hal besar yang sedang dihadapi): [[INGAT: fakta singkat]]. Jangan simpan detail yang sangat sensitif kecuali pengguna memintanya. Tag ini tidak terlihat pengguna, jangan bilang "sudah kucatat" secara eksplisit kecuali relevan.
 - Kamu TIDAK bisa menghapus tugas, catatan, pengeluaran, atau pemasukan. Kalau pengguna minta, jangan bilang sudah dihapus dan jangan buat tag; arahkan ke Panel (tombol x di samping item yang mau dihapus).
 - Pengeluaran yang sudah terjadi (mis. "makan siang 25rb", "beli bensin 50 ribu"): [[BELI: 25000 | makan | makan siang]]
   Jumlah rupiah angka bulat tanpa titik ("25rb" = 25000, "1,5jt" = 1500000). Kategori satu kata: makan, transport, belanja, tagihan, hiburan, kesehatan, lainnya.
@@ -100,17 +106,18 @@ async function processTags(u, reply, userText = "", hasImage = false) {
     const n = await addNote(u, m[1]);
     if (n) added.push("🗒️ Dicatat: " + n.text);
   }
+  await addFacts(u, [...reply.matchAll(/\[\[INGAT:\s*([^\]]+?)\s*\]\]/g)].map((m) => m[1]));
   const amountOk = hasImage || mentionsAmount(userText); // foto struk boleh tanpa angka di teks
   for (const m of amountOk ? [...reply.matchAll(/\[\[BELI:\s*([^|\]]+?)\s*\|\s*([^|\]]+?)\s*\|\s*([^\]]*?)\s*\]\]/g)] : []) {
     const amt = Number(String(m[1]).replace(/[^\d]/g, ""));
     const e = await addExpense(u, amt, m[2].trim(), m[3].trim());
-    if (e) added.push("💰 Dicatat: " + rupiah(e.amt) + " (" + e.cat + ")" + (e.note ? " - " + e.note : ""));
+    if (e) added.push("💰 Dicatat: " + rupiah(e.amt) + " (" + e.cat + ")" + (e.note ? " - " + e.note : "") + (e.dup ? "\n⚠️ Mirip pencatatan beberapa menit lalu (nominal & kategori sama) — kalau ini memang transaksi lain, nggak apa-apa." : ""));
   }
 
   for (const m of amountOk ? [...reply.matchAll(/\[\[MASUK:\s*([^|\]]+?)\s*\|\s*([^|\]]+?)\s*\|\s*([^\]]*?)\s*\]\]/g)] : []) {
     const amt = Number(String(m[1]).replace(/[^\d]/g, ""));
     const e = await addIncome(u, amt, m[2].trim(), m[3].trim());
-    if (e) added.push("💵 Pemasukan dicatat: " + rupiah(e.amt) + " (" + e.cat + ")" + (e.note ? " - " + e.note : ""));
+    if (e) added.push("💵 Pemasukan dicatat: " + rupiah(e.amt) + " (" + e.cat + ")" + (e.note ? " - " + e.note : "") + (e.dup ? "\n⚠️ Mirip pemasukan beberapa menit lalu (nominal & kategori sama) — kalau ini memang beda, nggak apa-apa." : ""));
   }
 
   // Kirim uang ke pasangan (pasangan diminta konfirmasi) dan terima uang dari pasangan (dicocokkan supaya tidak dobel)
@@ -149,7 +156,16 @@ async function processTags(u, reply, userText = "", hasImage = false) {
     }
   }
 
-  const clean = reply.replace(/\[\[(TASK|REMIND|CATAT|BELI|MASUK|KIRIM|PASANGAN_MASUK|SALDO_LAIN|SALDO|HAPUS_PENGINGAT):[\s\S]*?\]\]/g, "").trim();
+  // Geser jam pengingat (mis. "geser yang bayar wifi jadi besok jam 9")
+  if (remindOk) {
+    for (const m of reply.matchAll(/\[\[GESER_PENGINGAT:\s*(\d+)\s*\|\s*([^\]]+?)\s*\]\]/g)) {
+      const n = Number(m[1]);
+      const r = await rescheduleReminderNumber(u, n, parseWib(m[2]));
+      added.push(r ? "⏰ Pengingat digeser: " + r.text + " -> " + fmtWib(r.ts) : "Gagal menggeser: pengingat nomor " + n + " tidak ditemukan atau waktu tidak valid.");
+    }
+  }
+
+  const clean = reply.replace(/\[\[(TASK|REMIND|INGAT|CATAT|BELI|MASUK|KIRIM|PASANGAN_MASUK|SALDO_LAIN|SALDO|HAPUS_PENGINGAT|GESER_PENGINGAT):[\s\S]*?\]\]/g, "").trim();
   return { clean, added };
 }
 
@@ -278,9 +294,10 @@ module.exports = async (req, res) => {
 
     const expiredNotice = await takeCurhatExpiredNotice(u); // curhat kedaluwarsa sendiri: kabari sekali
     if (wantStream && expiredNotice) out.emit({ t: "delta", text: expiredNotice + "\n\n" });
-    const [hist, tasks, notes, expenses, profile, reminders, bot] = await Promise.all([
-      getHist(u, "asisten"), getTasks(u), getNotes(u), getExpenses(u), getProfile(u), getReminders(u), getBot(u).catch(() => null),
+    const [hist, tasks, notes, expenses, profile, reminders, bot, facts] = await Promise.all([
+      getHist(u, "asisten"), getTasks(u), getNotes(u), getExpenses(u), getProfile(u), getReminders(u), getBot(u).catch(() => null), getFacts(u),
     ]);
+    const factsList = facts.length ? facts.map((f) => "- " + f).join("\n") : "(belum ada)";
     const remindText = reminders.length
       ? reminders.slice(0, 10).map((r, i) => `${i + 1}. ${r.text}${r.repeat ? " [" + repeatLabel(r.repeat) + (r.until ? " sampai " + fmtWib(r.until) : "") + "]" : ""} (${fmtWib(r.ts)})`).join("\n")
       : "(belum ada)";
@@ -305,7 +322,7 @@ module.exports = async (req, res) => {
       });
     }
 
-    const system = buildSystem(mode, { profile, taskList, noteList, moneyText: await moneyContext(u), remindText, botLinked: !!(bot && bot.chatId), partnerText: await partnerContext(u).catch(() => "") });
+    const system = buildSystem(mode, { profile, taskList, noteList, moneyText: await moneyContext(u), remindText, botLinked: !!(bot && bot.chatId), partnerText: await partnerContext(u).catch(() => ""), factsList });
 
     const userTurn = { role: "user", parts: [{ text: histText }], ts: Date.now() };
     const contents = withImage(trimHist([...hist, userTurn]), image, text);
